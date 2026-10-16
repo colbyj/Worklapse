@@ -145,7 +145,7 @@ public sealed class BatchEncoder : IDisposable
                 {
                     cancel.ThrowIfCancellationRequested();
                     staging.Apply(offset, length);
-                    var frame = encoder.Encode(staging.Frame, width * 4, staging.FramePtsMs);
+                    var frame = encoder.Encode(staging.Frame, staging.FramePtsMs);
                     var position = writer.WriteFrame(staging.FramePtsMs, frame.Data.Span);
                     encoded.Add((index, position, frame.Data.Length, frame.IsKey));
                 }

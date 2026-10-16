@@ -1,3 +1,4 @@
+using Worklapse.Core.Imaging;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
@@ -32,7 +33,6 @@ public sealed class Recorder : IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly CancellationTokenSource _stop = new();
     private readonly Dictionary<long, (FrameRef Frame, PixelRect? Mask)> _lastFrames = [];
-    private readonly Dictionary<long, byte[]> _maskBuffers = [];
 
     private WorklapseDatabase? _db;
     private RecordingStore? _store;
@@ -176,8 +176,9 @@ public sealed class Recorder : IAsyncDisposable
                 }
                 else
                 {
+                    // The source captures afresh every time, so its buffer can be masked in place.
                     if (mask is { } keep)
-                        capture = MaskedCopy(monitorId, capture, keep);
+                        I420.BlackOutsideOf(capture.Frame.Span, capture.Width, capture.Height, keep);
                     frame = _sink!.Append(monitorId, capture, now);
                     _lastFrames[monitorId] = (frame, mask);
                 }
@@ -221,47 +222,6 @@ public sealed class Recorder : IAsyncDisposable
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(settings), settings.CaptureMode, "Unknown capture mode.");
-        }
-    }
-
-    /// <summary>
-    /// Copies the capture with everything outside the focused window blacked out. The source buffer is
-    /// left alone: a later unchanged capture of this monitor may need its pixels with a different mask.
-    /// </summary>
-    private ScreenCapture MaskedCopy(long monitorId, ScreenCapture capture, PixelRect keep)
-    {
-        if (!_maskBuffers.TryGetValue(monitorId, out var buffer) || buffer.Length != capture.Pixels.Length)
-            _maskBuffers[monitorId] = buffer = new byte[capture.Pixels.Length];
-        capture.Pixels.Span.CopyTo(buffer);
-
-        var copy = new ScreenCapture
-        {
-            Monitor = capture.Monitor,
-            Width = capture.Width,
-            Height = capture.Height,
-            Stride = capture.Stride,
-            Pixels = buffer,
-            Changed = capture.Changed,
-        };
-        BlackOutsideOf(copy, keep);
-        return copy;
-    }
-
-    /// <summary>Blacks out everything outside <paramref name="keep"/> (monitor-relative) in place.</summary>
-    internal static void BlackOutsideOf(ScreenCapture capture, PixelRect keep)
-    {
-        keep = keep.Intersect(new PixelRect(0, 0, capture.Width, capture.Height));
-        var pixels = capture.Pixels.Span;
-        for (var y = 0; y < capture.Height; y++)
-        {
-            var row = pixels.Slice(y * capture.Stride, capture.Width * 4);
-            if (keep.IsEmpty || y < keep.Y || y >= keep.Bottom)
-            {
-                row.Clear();
-                continue;
-            }
-            row[..(keep.X * 4)].Clear();
-            row[(keep.Right * 4)..].Clear();
         }
     }
 

@@ -40,27 +40,11 @@ public sealed class StagedVideoSink : IFrameSink
 
         segment ??= _open[monitorId] = OpenSegment.Create(_store, monitorId, capture.Width, capture.Height, _quality(), timestamp);
 
-        var (offset, length) = segment.Writer.WriteFrame(Packed(capture), timestamp.ToUnixTimeMilliseconds());
+        var (offset, length) = segment.Writer.WriteFrame(capture.Frame.Span, timestamp.ToUnixTimeMilliseconds());
         var index = segment.FrameCount++;
         _store.InsertSegmentFrame(segment.Id, index, offset, length, isKey: index == 0);
         return new FrameRef(segment.Id, index);
     }
-
-    /// <summary>The capture's pixels with rows packed (stride = width × 4), copying only if they have padding.</summary>
-    private ReadOnlySpan<byte> Packed(ScreenCapture capture)
-    {
-        var rowBytes = capture.Width * 4;
-        if (capture.Stride == rowBytes)
-            return capture.Pixels.Span[..(rowBytes * capture.Height)];
-
-        if (_packBuffer.Length != rowBytes * capture.Height)
-            _packBuffer = new byte[rowBytes * capture.Height];
-        for (var y = 0; y < capture.Height; y++)
-            capture.Pixels.Span.Slice(y * capture.Stride, rowBytes).CopyTo(_packBuffer.AsSpan(y * rowBytes));
-        return _packBuffer;
-    }
-
-    private byte[] _packBuffer = [];
 
     public void Committed()
     {

@@ -1,3 +1,5 @@
+using Worklapse.Core.Imaging;
+
 namespace Worklapse.Video;
 
 public readonly record struct EncodedFrame(ReadOnlyMemory<byte> Data, bool IsKey);
@@ -45,18 +47,18 @@ public sealed unsafe class Av1Encoder : IDisposable
     internal static int DefaultThreads => Math.Clamp(Environment.ProcessorCount / 2, 1, 8);
 
     /// <summary>
-    /// Encodes a BGRA image of this encoder's size. The returned data is a copy the caller owns.
+    /// Encodes a packed I420 frame of this encoder's size. The returned data is a copy the caller owns.
     /// <paramref name="quality"/> changes the quantizer from this frame on; null keeps it.
     /// </summary>
-    public EncodedFrame Encode(ReadOnlySpan<byte> bgra, int stride, long ptsMs, int? quality = null)
+    public EncodedFrame Encode(ReadOnlySpan<byte> i420, long ptsMs, int? quality = null)
     {
         ObjectDisposedException.ThrowIf(_handle == 0, this);
-        if (stride < Width * 4 || bgra.Length < (long)stride * (Height - 1) + Width * 4)
-            throw new ArgumentException("The image is smaller than the encoder's frame size.", nameof(bgra));
+        if (i420.Length < I420.Size(Width, Height))
+            throw new ArgumentException("The frame is smaller than the encoder's frame size.", nameof(i420));
 
-        fixed (byte* pixels = bgra)
+        fixed (byte* frame = i420)
         {
-            var size = Av1Native.EncoderEncodeBgra(_handle, pixels, stride, ptsMs, quality ?? -1, out var data, out var isKey);
+            var size = Av1Native.EncoderEncodeI420(_handle, frame, ptsMs, quality ?? -1, out var data, out var isKey);
             if (size < 0)
                 throw new InvalidOperationException("AV1 encoding failed: " + Av1Native.Utf8(Av1Native.EncoderError(_handle)));
             return new EncodedFrame(new ReadOnlySpan<byte>(data, size).ToArray(), isKey != 0);

@@ -1,3 +1,4 @@
+using Worklapse.Core.Imaging;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Storage;
 using Worklapse.Video;
@@ -18,7 +19,7 @@ public class VideoRoundTripTests
         for (var i = 0; i < 5; i++)
         {
             var frame = TestImage(i);
-            var encoded = encoder.Encode(frame, Width * 4, i * 10_000);
+            var encoded = encoder.Encode(ToI420(frame), i * 10_000);
             Assert.Equal(i == 0, encoded.IsKey);
 
             decoder.Decode(encoded.Data.Span);
@@ -37,16 +38,48 @@ public class VideoRoundTripTests
         using (var writer = new StagingWriter(path, Width, Height))
         {
             for (var i = 0; i < 4; i++)
-                records.Add(writer.WriteFrame(TestImage(i), 1000L * i));
+                records.Add(writer.WriteFrame(ToI420(TestImage(i)), 1000L * i));
         }
 
         using var reader = new StagingReader(path);
         for (var i = 0; i < records.Count; i++)
         {
             reader.Apply(records[i].Offset, records[i].Length);
-            Assert.Equal(TestImage(i), reader.Frame.ToArray());
+            Assert.Equal(ToI420(TestImage(i)), reader.Frame.ToArray());
             Assert.Equal(1000L * i, reader.FramePtsMs);
         }
+    }
+
+    [Fact]
+    public void LegacyBgraStagingFilesAreReadAsI420()
+    {
+        // Version 2 of the staging format stored BGRA; segments left in it must still be readable.
+        using var folder = new TempFolder();
+        var path = Path.Combine(folder.Path, "legacy.staging");
+        var bgra = TestImage(3);
+        using (var file = File.Create(path))
+        {
+            var header = new byte[StagingFile.HeaderSize];
+            "WLST"u8.CopyTo(header);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(4), 2);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(8), Width);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(12), Height);
+            file.Write(header);
+
+            using var payload = new MemoryStream();
+            using (var brotli = new System.IO.Compression.BrotliStream(payload, System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true))
+                brotli.Write(bgra);
+            var record = new byte[StagingFile.RecordHeaderSize];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(record, (int)payload.Length);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(4), 1234);
+            file.Write(record);
+            file.Write(payload.ToArray());
+        }
+
+        using var reader = new StagingReader(path);
+        reader.Apply(StagingFile.HeaderSize, (int)new FileInfo(path).Length - StagingFile.HeaderSize);
+        Assert.Equal(ToI420(bgra), reader.Frame.ToArray());
+        Assert.Equal(1234, reader.FramePtsMs);
     }
 
     [Fact]
@@ -64,8 +97,7 @@ public class VideoRoundTripTests
         {
             for (var i = 0; i < StagedVideoSink.FramesPerSegment + 3; i++)
             {
-                var pixels = TestImage(i);
-                var capture = new ScreenCapture { Monitor = monitor, Width = Width, Height = Height, Stride = Width * 4, Pixels = pixels, Changed = true };
+                var capture = new ScreenCapture { Monitor = monitor, Width = Width, Height = Height, Frame = ToI420(TestImage(i)), Changed = true };
                 using var transaction = store.BeginTransaction();
                 refs.Add(sink.Append(monitorId, capture, start.AddSeconds(10 * i)));
                 transaction.Commit();
@@ -129,7 +161,7 @@ public class VideoRoundTripTests
         {
             for (var i = 0; i < 5; i++)
             {
-                var capture = new ScreenCapture { Monitor = monitor, Width = Width, Height = Height, Stride = Width * 4, Pixels = TestImage(i), Changed = true };
+                var capture = new ScreenCapture { Monitor = monitor, Width = Width, Height = Height, Frame = ToI420(TestImage(i)), Changed = true };
                 sink.Append(monitorId, capture, start.AddSeconds(10 * i));
             }
         }
@@ -149,6 +181,13 @@ public class VideoRoundTripTests
         while (reader.Read())
             states.Add(reader.GetInt32(0));
         return states;
+    }
+
+    private static byte[] ToI420(byte[] bgra)
+    {
+        var frame = new byte[I420.Size(Width, Height)];
+        I420.FromBgraRows(bgra, Width * 4, Width, Height, 0, Height, frame);
+        return frame;
     }
 
     /// <summary>A gradient with a moving bar and some fine detail, different for each index.</summary>

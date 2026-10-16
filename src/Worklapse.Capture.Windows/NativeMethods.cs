@@ -21,7 +21,6 @@ internal static partial class NativeMethods
     }
 
     public const uint SrcCopy = 0x00CC0020;
-    public const uint CaptureBlt = 0x40000000;
     public const uint MonitorInfoPrimary = 1;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

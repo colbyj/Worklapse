@@ -155,7 +155,7 @@ public sealed class FrameProvider : IDisposable
             if (_state == SegmentState.Encoded)
                 _decoder!.CopyBgra(pixels, _width * 4);
             else
-                _staging!.Frame.CopyTo(pixels);
+                ColorConversion.I420ToBgra(_staging!.Frame, _width, _height, pixels, _width * 4);
             return new DecodedFrame(_width, _height, pixels);
         }
 

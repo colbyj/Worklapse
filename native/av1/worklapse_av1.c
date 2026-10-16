@@ -1,6 +1,9 @@
 // Thin wrapper over libaom for Worklapse. It keeps libaom's large, version-specific structs on the C
-// side, so the .NET code only sees a few plain functions, and does the BGRA <-> I420 conversion.
-// Colour is BT.709 full range in both directions, and the stream says so.
+// side, so the .NET code only sees a few plain functions.
+//
+// Frames go in as packed I420 (Y plane, then U, then V; chroma planes are ceil(w/2) x ceil(h/2), rows
+// packed), BT.709 full range — the format Worklapse captures and stages in. Frames come out either as
+// BGRA or not at all (decoding forward through a segment without converting).
 
 #include <stdint.h>
 #include <stdio.h>
@@ -34,42 +37,9 @@ static uint8_t clamp_u8(int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v)
 
 // --- colour conversion -------------------------------------------------------------------------
 
-static void bgra_to_i420(const uint8_t *bgra, int stride, int width, int height, aom_image_t *img) {
-  uint8_t *py = img->planes[AOM_PLANE_Y];
-  uint8_t *pu = img->planes[AOM_PLANE_U];
-  uint8_t *pv = img->planes[AOM_PLANE_V];
-  const int sy = img->stride[AOM_PLANE_Y], su = img->stride[AOM_PLANE_U], sv = img->stride[AOM_PLANE_V];
-
-  for (int y = 0; y < height; y++) {
-    const uint8_t *row = bgra + (size_t)y * stride;
-    uint8_t *out = py + (size_t)y * sy;
-    for (int x = 0; x < width; x++) {
-      const int b = row[x * 4], g = row[x * 4 + 1], r = row[x * 4 + 2];
-      out[x] = (uint8_t)((54 * r + 183 * g + 19 * b + 128) >> 8);
-    }
-  }
-
-  // Chroma from the average of each 2x2 block (edge pixels repeat for odd sizes).
-  for (int cy = 0; cy < (height + 1) / 2; cy++) {
-    const int y0 = cy * 2, y1 = y0 + 1 < height ? y0 + 1 : y0;
-    const uint8_t *r0 = bgra + (size_t)y0 * stride, *r1 = bgra + (size_t)y1 * stride;
-    for (int cx = 0; cx < (width + 1) / 2; cx++) {
-      const int x0 = cx * 2, x1 = x0 + 1 < width ? x0 + 1 : x0;
-      const int b = r0[x0 * 4] + r0[x1 * 4] + r1[x0 * 4] + r1[x1 * 4];
-      const int g = r0[x0 * 4 + 1] + r0[x1 * 4 + 1] + r1[x0 * 4 + 1] + r1[x1 * 4 + 1];
-      const int r = r0[x0 * 4 + 2] + r0[x1 * 4 + 2] + r1[x0 * 4 + 2] + r1[x1 * 4 + 2];
-      // Sums are of four pixels, hence the extra >> 2 folded into >> 10.
-      pu[(size_t)cy * su + cx] = clamp_u8(((-29 * r - 99 * g + 128 * b + 512) >> 10) + 128);
-      pv[(size_t)cy * sv + cx] = clamp_u8(((128 * r - 116 * g - 12 * b + 512) >> 10) + 128);
-    }
-  }
-}
-
-static void i420_to_bgra(const aom_image_t *img, uint8_t *bgra, int stride) {
-  const int width = (int)img->d_w, height = (int)img->d_h;
-  const uint8_t *py = img->planes[AOM_PLANE_Y], *pu = img->planes[AOM_PLANE_U], *pv = img->planes[AOM_PLANE_V];
-  const int sy = img->stride[AOM_PLANE_Y], su = img->stride[AOM_PLANE_U], sv = img->stride[AOM_PLANE_V];
-
+// I420 planes to BGRA, BT.709 full range. Chroma is upsampled by repeating each sample 2x2.
+static void i420_planes_to_bgra(const uint8_t *py, int sy, const uint8_t *pu, int su, const uint8_t *pv, int sv,
+                                int width, int height, uint8_t *bgra, int stride) {
   for (int y = 0; y < height; y++) {
     const uint8_t *yr = py + (size_t)y * sy, *ur = pu + (size_t)(y >> 1) * su, *vr = pv + (size_t)(y >> 1) * sv;
     uint8_t *out = bgra + (size_t)y * stride;
@@ -84,6 +54,17 @@ static void i420_to_bgra(const aom_image_t *img, uint8_t *bgra, int stride) {
   }
 }
 
+WL_API int wl_abi_version(void) { return 2; }
+
+WL_API const char *wl_aom_version(void) { return aom_codec_version_str(); }
+
+// Converts a packed I420 frame to BGRA.
+WL_API void wl_i420_to_bgra(const uint8_t *i420, int width, int height, uint8_t *bgra, int stride) {
+  const int cw = (width + 1) / 2, ch = (height + 1) / 2;
+  const uint8_t *py = i420, *pu = i420 + (size_t)width * height, *pv = pu + (size_t)cw * ch;
+  i420_planes_to_bgra(py, width, pu, cw, pv, cw, width, height, bgra, stride);
+}
+
 // --- encoder -----------------------------------------------------------------------------------
 
 typedef struct wl_encoder {
@@ -94,10 +75,6 @@ typedef struct wl_encoder {
   size_t out_capacity;
   char error[WL_ERROR_LEN];
 } wl_encoder;
-
-WL_API int wl_abi_version(void) { return 1; }
-
-WL_API const char *wl_aom_version(void) { return aom_codec_version_str(); }
 
 WL_API void wl_enc_destroy(wl_encoder *e) {
   if (!e) return;
@@ -168,11 +145,19 @@ WL_API wl_encoder *wl_enc_create(int width, int height, int quality, int cpu_use
   return e;
 }
 
-// Encodes one BGRA image. quality < 0 keeps the current quantizer. On success returns the size of the
-// compressed frame and points *data at it (valid until the next call); returns -1 on failure.
-WL_API int wl_enc_encode_bgra(wl_encoder *e, const uint8_t *bgra, int stride, int64_t pts_ms, int quality,
-                              const uint8_t **data, int *is_key) {
-  bgra_to_i420(bgra, stride, e->width, e->height, &e->image);
+static void copy_plane(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int width, int height) {
+  for (int y = 0; y < height; y++) memcpy(dst + (size_t)y * dst_stride, src + (size_t)y * src_stride, (size_t)width);
+}
+
+// Encodes one packed I420 frame. quality < 0 keeps the current quantizer. On success returns the size of
+// the compressed frame and points *data at it (valid until the next call); returns -1 on failure.
+WL_API int wl_enc_encode_i420(wl_encoder *e, const uint8_t *i420, int64_t pts_ms, int quality, const uint8_t **data,
+                              int *is_key) {
+  const int w = e->width, h = e->height, cw = (w + 1) / 2, ch = (h + 1) / 2;
+  const uint8_t *py = i420, *pu = i420 + (size_t)w * h, *pv = pu + (size_t)cw * ch;
+  copy_plane(py, w, e->image.planes[AOM_PLANE_Y], e->image.stride[AOM_PLANE_Y], w, h);
+  copy_plane(pu, cw, e->image.planes[AOM_PLANE_U], e->image.stride[AOM_PLANE_U], cw, ch);
+  copy_plane(pv, cw, e->image.planes[AOM_PLANE_V], e->image.stride[AOM_PLANE_V], cw, ch);
 
   if (quality >= 0 && quality != e->quality) {
     if (aom_codec_control(&e->codec, AOME_SET_CQ_LEVEL, (unsigned)quality) != AOM_CODEC_OK) {
@@ -296,7 +281,10 @@ WL_API int wl_dec_copy_bgra(wl_decoder *d, uint8_t *bgra, int stride) {
     set_error(d->error, "no decoded frame", NULL);
     return -1;
   }
-  i420_to_bgra(d->last, bgra, stride);
+  const aom_image_t *img = d->last;
+  i420_planes_to_bgra(img->planes[AOM_PLANE_Y], img->stride[AOM_PLANE_Y], img->planes[AOM_PLANE_U],
+                      img->stride[AOM_PLANE_U], img->planes[AOM_PLANE_V], img->stride[AOM_PLANE_V], (int)img->d_w,
+                      (int)img->d_h, bgra, stride);
   return 0;
 }
 

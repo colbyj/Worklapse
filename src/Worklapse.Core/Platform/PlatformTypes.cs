@@ -25,16 +25,16 @@ public sealed record MonitorInfo(string DeviceName, PixelRect Bounds, bool IsPri
 public sealed record ForegroundWindow(string ProcessName, string? ProcessPath, string Title, PixelRect Bounds);
 
 /// <summary>
-/// One monitor's pixels in BGRA order (the alpha byte is not meaningful). The memory belongs to the screen
-/// source and stays valid only until the next capture of the same monitor.
+/// One monitor's pixels as a packed I420 frame (see <see cref="Imaging.I420"/>). The memory belongs to the
+/// screen source and is reused for every capture: it stays valid only until the source's next capture of
+/// any monitor. The recorder may modify it in place (to black out areas) before passing it on.
 /// </summary>
 public sealed class ScreenCapture
 {
     public required MonitorInfo Monitor { get; init; }
     public required int Width { get; init; }
     public required int Height { get; init; }
-    public required int Stride { get; init; }
-    public required Memory<byte> Pixels { get; init; }
+    public required Memory<byte> Frame { get; init; }
 
     /// <summary>False when the pixels are identical to the source's previous capture of this monitor.</summary>
     public required bool Changed { get; init; }

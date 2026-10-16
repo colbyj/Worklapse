@@ -47,23 +47,4 @@ public class RecorderTests
         var settings = new WorklapseSettings { CaptureMode = CaptureMode.ActiveApplication };
         Assert.Empty(Recorder.ChooseMonitors(settings, All, null));
     }
-
-    [Fact]
-    public void BlackOutsideOfKeepsOnlyTheWindow()
-    {
-        var capture = new ScreenCapture
-        {
-            Monitor = Main, Width = 4, Height = 3, Stride = 16, Changed = true,
-            Pixels = Enumerable.Repeat((byte)200, 48).ToArray(),
-        };
-
-        Recorder.BlackOutsideOf(capture, new PixelRect(1, 1, 2, 1));
-
-        for (var y = 0; y < 3; y++)
-        for (var x = 0; x < 4; x++)
-        {
-            var inside = y == 1 && x is 1 or 2;
-            Assert.Equal(inside ? 200 : 0, capture.Pixels.Span[y * 16 + x * 4]);
-        }
-    }
 }

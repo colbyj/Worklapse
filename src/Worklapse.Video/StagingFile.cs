@@ -2,11 +2,12 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Worklapse.Core.Imaging;
 
 namespace Worklapse.Video;
 
 /// <summary>
-/// Holds a segment's captures until the segment is encoded to AV1. The first frame is stored whole and
+/// Holds a segment's captures (packed I420) until the segment is encoded to AV1. The first frame is stored whole and
 /// each later one as the XOR with the frame before it; both are Brotli-compressed (quality 1,
 /// as fast as Deflate's fastest level and much smaller on screen content). Unchanged screen
 /// areas XOR to zero, so a capture that differs in a few places costs a few kilobytes.
@@ -20,7 +21,10 @@ public static class StagingFile
 {
     public const int HeaderSize = 16;
     public const int RecordHeaderSize = 13;
-    private const int Version = 2;
+    private const int Version = 3;
+
+    /// <summary>Version 2 stored BGRA frames instead of I420; still read so leftover segments can be encoded.</summary>
+    internal const int LegacyBgraVersion = 2;
 
     internal enum FrameKind : byte
     {
@@ -40,14 +44,15 @@ public static class StagingFile
         stream.Write(header);
     }
 
-    internal static (int Width, int Height) ReadHeader(Stream stream)
+    internal static (int Width, int Height, int Version) ReadHeader(Stream stream)
     {
         Span<byte> header = stackalloc byte[HeaderSize];
         stream.Position = 0;
         stream.ReadExactly(header);
-        if (!header[..4].SequenceEqual("WLST"u8) || BinaryPrimitives.ReadInt32LittleEndian(header[4..]) != Version)
+        var version = BinaryPrimitives.ReadInt32LittleEndian(header[4..]);
+        if (!header[..4].SequenceEqual("WLST"u8) || version is not (Version or LegacyBgraVersion))
             throw new InvalidDataException("Not a Worklapse staging file, or an unsupported version.");
-        return (BinaryPrimitives.ReadInt32LittleEndian(header[8..]), BinaryPrimitives.ReadInt32LittleEndian(header[12..]));
+        return (BinaryPrimitives.ReadInt32LittleEndian(header[8..]), BinaryPrimitives.ReadInt32LittleEndian(header[12..]), version);
     }
 
     /// <summary>XORs <paramref name="other"/> into <paramref name="target"/>.</summary>
@@ -82,28 +87,25 @@ public sealed class StagingWriter : IDisposable
         _stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
         StagingFile.WriteHeader(_stream, width, height);
         _stream.Flush();
-        _previous = new byte[width * height * 4];
+        _previous = new byte[I420.Size(width, height)];
     }
 
     public int Width { get; }
     public int Height { get; }
 
-    /// <summary>
-    /// Appends a frame (BGRA, rows packed: stride = width × 4); returns where its record starts and its
-    /// total length.
-    /// </summary>
-    public (long Offset, int Length) WriteFrame(ReadOnlySpan<byte> bgra, long ptsMs)
+    /// <summary>Appends a packed I420 frame; returns where its record starts and its total length.</summary>
+    public (long Offset, int Length) WriteFrame(ReadOnlySpan<byte> frame, long ptsMs)
     {
-        if (bgra.Length != _previous.Length)
-            throw new ArgumentException("The frame must be width × height × 4 bytes with packed rows.", nameof(bgra));
+        if (frame.Length != _previous.Length)
+            throw new ArgumentException("The frame must be a packed I420 frame of the writer's size.", nameof(frame));
 
         // For a delta, XOR the new frame into the previous one, compress that, then make the previous
         // frame a copy of the new one for next time. One buffer per monitor is enough.
         var kind = StagingFile.FrameKind.Full;
-        var payloadSource = bgra;
+        var payloadSource = frame;
         if (_hasPrevious)
         {
-            StagingFile.Xor(_previous, bgra);
+            StagingFile.Xor(_previous, frame);
             payloadSource = _previous;
             kind = StagingFile.FrameKind.Delta;
         }
@@ -114,7 +116,7 @@ public sealed class StagingWriter : IDisposable
         using (var brotli = new BrotliStream(payload, new BrotliCompressionOptions { Quality = BrotliQuality }, leaveOpen: true))
             brotli.Write(payloadSource);
 
-        bgra.CopyTo(_previous);
+        frame.CopyTo(_previous);
         _hasPrevious = true;
 
         var offset = _stream.Position;
@@ -136,22 +138,46 @@ public sealed class StagingWriter : IDisposable
 public sealed class StagingReader : IDisposable
 {
     private readonly FileStream _stream;
-    private readonly byte[] _frame;
+    private readonly byte[] _frame;          // as stored: I420, or BGRA in a legacy file
+    private readonly byte[]? _converted;     // I420 of a legacy file's frame
+    private bool _convertedCurrent;
     private byte[] _payload = [];
     private bool _hasFrame;
 
     public StagingReader(string path)
     {
         _stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        (Width, Height) = StagingFile.ReadHeader(_stream);
-        _frame = new byte[Width * Height * 4];
+        var (width, height, version) = StagingFile.ReadHeader(_stream);
+        (Width, Height) = (width, height);
+        if (version == StagingFile.LegacyBgraVersion)
+        {
+            _frame = new byte[width * height * 4];
+            _converted = new byte[I420.Size(width, height)];
+        }
+        else
+        {
+            _frame = new byte[I420.Size(width, height)];
+        }
     }
 
     public int Width { get; }
     public int Height { get; }
 
-    /// <summary>The most recently rebuilt frame, BGRA with a stride of Width × 4.</summary>
-    public ReadOnlySpan<byte> Frame => _frame;
+    /// <summary>The most recently rebuilt frame, packed I420.</summary>
+    public ReadOnlySpan<byte> Frame
+    {
+        get
+        {
+            if (_converted is null)
+                return _frame;
+            if (!_convertedCurrent)
+            {
+                I420.FromBgraRows(_frame, Width * 4, Width, Height, 0, Height, _converted);
+                _convertedCurrent = true;
+            }
+            return _converted;
+        }
+    }
 
     /// <summary>Timestamp (Unix milliseconds) of the most recently rebuilt frame.</summary>
     public long FramePtsMs { get; private set; }
@@ -198,6 +224,7 @@ public sealed class StagingReader : IDisposable
             }
         }
         _hasFrame = true;
+        _convertedCurrent = false;
         FramePtsMs = pts;
     }
 

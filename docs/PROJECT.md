@@ -21,10 +21,10 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | What to capture | Choice of active application, primary monitor, selected monitors, or all monitors. The developer uses all monitors. | Matches TimeSnapper's options; all monitors became practical once video compression was in. |
 | Idle | Stop capturing after N minutes without input (default 5) and while the screen is locked. When the limit is hit, the captures since the last input are re-marked as idle. | Idle time should be time without input, not time after the threshold. |
 | Video format | AV1 (libaom), one stream per monitor, 90-frame segments (15 min at 10 s), constant quantizer, default 40, adjustable 20–55 in Settings (warning from 48). | Measured: roughly 2.5× smaller than per-frame WebP or JPEG at the same readability. |
-| Encoding | **Batch encoding.** Captures go into a staging file per segment (XOR against the previous capture, Brotli-compressed); full segments are encoded one at a time on a low-priority thread. Staged segments left over by a crash or quit are encoded on the next start. | Four live libaom encoders used about 850 MB (their frame-buffer pool is fixed; options barely help). |
+| Encoding | **Batch encoding.** Captures are converted to I420 (YUV 4:2:0, 1.5 bytes per pixel) at capture time and go into a staging file per segment (XOR against the previous capture, Brotli-compressed); full segments are encoded one at a time on a low-priority thread. Staged segments left over by a crash or quit are encoded on the next start. | Four live libaom encoders used about 850 MB (their frame-buffer pool is fixed; options barely help). |
 | Encoding modes | One mode only (no battery mode, no quick encode). | The developer's laptop is effectively always plugged in; simplest to build. |
 | Small-text accuracy | Accepted: at the default quantizer, small changes (a clock digit, a status label) can show the previous value for a while. The app/title log is exact regardless. A two-level fix exists (key frames q45, other frames q10) but costs 30–125 MB/hour during video playback, so it's not used. | Tracking relies on the log; the video is for context. |
-| Screen capture (Windows) | GDI BitBlt into a DIB section per monitor; change detection by hashing (XxHash3). | DirectX Desktop Duplication needed Direct3D devices that cost ~90 MB+ of driver memory on the hybrid-GPU laptop. |
+| Screen capture (Windows) | GDI BitBlt in 64-row strips into one small shared bitmap; each strip is hashed (XxHash3, for change detection) and converted straight into one shared I420 frame. No `CAPTUREBLT` (it makes the cursor flicker and isn't needed with DWM). | DirectX Desktop Duplication needed Direct3D devices that cost ~90 MB+ of driver memory on the hybrid-GPU laptop; strips and I420 cut pixel buffers from ~105 MB to ~28 MB. |
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. Disk space is reclaimed by re-encoding affected segments in the background (not built yet). | Matches the review workflow: decide at the end of the day. |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
 | Shared history across OSes | Wanted eventually (likely on D:, BitLocker-unlocked under Linux, with Fast Startup off). Not started. | — |
@@ -35,8 +35,12 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
   changed-tiles-only WebP ≈ 40–55 KB, **AV1 low-delay q40 ≈ 22 KB** (all monitors together).
 - AV1 above about q48 starts showing wrong/stale small text; SSIM does not catch this, only visual checks do.
 - libaom keyframes cost about 12 CPU-seconds for all four monitors; ordinary frames 0.2–0.3 s.
-- Memory: four live encoders ≈ 850 MB. After batch encoding and GDI capture, recording runs at
-  ≈ 225–250 MB, with a short spike while a segment is encoded.
+- Memory: four live encoders ≈ 850 MB. After batch encoding and GDI capture, recording ran at
+  ≈ 225–250 MB; with strip capture and I420 staging it runs at ≈ 160–170 MB (status window open),
+  with a short spike while a segment is encoded. Most of what's left is Avalonia/.NET (~100–140 MB).
+- An 8-hour day (from the developer's first recordings, all four monitors): ≈ 75–100 MB, against
+  ≈ 240 MB for TimeSnapper's active-window JPEGs (its archive averages 123 MB per calendar day).
+- For comparison, TimeSnapper itself (a .NET Framework WinForms app) runs at ≈ 43 MB private memory.
 - The developer's previous TimeSnapper archive: 415,736 captures (Dec 2025 – Oct 2026), 34.7 GB of JPEGs
   at ~85 KB each.
 
@@ -121,7 +125,7 @@ for this and for screen readers.
 
 ---
 
-## Status (2026-10-16)
+## Status (2026-10-16, updated after the I420 change)
 
 Working on Windows:
 
@@ -143,8 +147,8 @@ Known gaps and caveats:
 - Nothing can be marked productive yet, so all active time shows as "Other".
 - Deleting permanently removes the captures but not their video; segments still need to be rebuilt to free space.
 - Small text can lag behind in the video (see Decisions).
-- Avalonia's own memory (~100 MB) and the per-monitor pixel buffers (~105 MB) are the bulk of the
-  remaining footprint.
+- Avalonia and .NET (~100–140 MB) are the bulk of the remaining footprint while recording; see the
+  recorder/UI split below.
 
 ---
 
@@ -173,6 +177,14 @@ The priority is a complete, usable Windows app. Alternatives and ports come afte
 5. **Everyday app behaviour (confirm each with the developer before building):** start with Windows,
    start hidden in the tray, a second launch bringing up the status window, a log file for errors.
 6. **Packaging:** a self-contained publish with the native DLL, and an installer or zip.
+
+### 1b. Memory: split the recorder from the UI (proposed, not yet agreed)
+
+A small background recorder process (capture, staging, batch encoding, a Win32 tray icon; no Avalonia)
+with the Avalonia app started only for Day review and Settings. Estimated 60–80 MB while recording,
+plus the UI's ~100–150 MB only while a window is open; a UI crash would no longer stop recording. Native
+AOT for the recorder could save another 10–20 MB. On Linux the recorder's tray icon needs a
+StatusNotifierItem implementation.
 
 ### 2. Linux (Kubuntu first)
 
