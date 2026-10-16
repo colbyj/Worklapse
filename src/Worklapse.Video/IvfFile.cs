@@ -78,6 +78,16 @@ public static class IvfReader
         return data;
     }
 
+    /// <summary>Reads a frame's data into <paramref name="buffer"/>, growing it if needed; returns the data.</summary>
+    public static ReadOnlySpan<byte> ReadFrame(FileStream stream, long offset, int length, ref byte[] buffer)
+    {
+        if (buffer.Length < length)
+            buffer = new byte[Math.Max(length, buffer.Length * 2)];
+        stream.Position = offset;
+        stream.ReadExactly(buffer.AsSpan(0, length));
+        return buffer.AsSpan(0, length);
+    }
+
     /// <summary>Lists every whole frame in a file (offset of its data, length, timestamp).</summary>
     public static IEnumerable<(long Offset, int Length, long PtsMs)> EnumerateFrames(FileStream stream)
     {

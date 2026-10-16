@@ -1,3 +1,5 @@
+using Worklapse.Core.Imaging;
+
 namespace Worklapse.Video;
 
 /// <summary>
@@ -43,6 +45,19 @@ public sealed unsafe class Av1Decoder : IDisposable
         fixed (byte* p = destination)
         {
             if (Av1Native.DecoderCopyBgra(_handle, p, stride) != 0)
+                throw new InvalidOperationException(Av1Native.Utf8(Av1Native.DecoderError(_handle)));
+        }
+    }
+
+    /// <summary>Copies the most recently decoded frame as packed I420.</summary>
+    public void CopyI420(Span<byte> destination)
+    {
+        ObjectDisposedException.ThrowIf(_handle == 0, this);
+        if (destination.Length < I420.Size(Width, Height))
+            throw new ArgumentException("The destination is smaller than the decoded frame.", nameof(destination));
+        fixed (byte* p = destination)
+        {
+            if (Av1Native.DecoderCopyI420(_handle, p) != 0)
                 throw new InvalidOperationException(Av1Native.Utf8(Av1Native.DecoderError(_handle)));
         }
     }

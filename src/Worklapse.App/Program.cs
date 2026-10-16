@@ -1,4 +1,5 @@
 using Avalonia;
+using Worklapse.Core.Settings;
 
 namespace Worklapse.App;
 
@@ -18,5 +19,24 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            // Software rendering on Windows unless the settings ask for the GPU: GPU rendering (ANGLE on
+            // Direct3D 11) cost ~80 MB more while recording and ~450 MB more while reviewing four monitors
+            // (texture copies of each frame), and kept ~200 MB after the Day review closed.
+            .With(new Win32PlatformOptions
+            {
+                RenderingMode = UseGpuRendering() ? [Win32RenderingMode.AngleEgl, Win32RenderingMode.Software] : [Win32RenderingMode.Software],
+            })
             .LogToTrace();
+
+    private static bool UseGpuRendering()
+    {
+        try
+        {
+            return new SettingsStore().Current.UseGpuRendering;
+        }
+        catch (SettingsFileException)
+        {
+            return false; // the app reports the broken file once it starts
+        }
+    }
 }

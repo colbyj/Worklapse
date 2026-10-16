@@ -5,15 +5,30 @@ namespace Worklapse.App.Playback;
 
 public sealed record FrameRequest(int Version, IReadOnlyList<(long MonitorId, FrameRef Frame)> Frames);
 
-public sealed record FrameResult(int Version, IReadOnlyDictionary<long, DecodedFrame> Frames, Exception? Error);
+/// <summary>Decoded frames for a request. The receiver owns them and must call <see cref="Release"/> once.</summary>
+public sealed record FrameResult(int Version, IReadOnlyDictionary<long, DecodedFrame> Frames, Exception? Error)
+{
+    public void Release()
+    {
+        foreach (var frame in Frames.Values)
+            frame.Release();
+    }
+}
 
 /// <summary>
 /// Decodes frames for playback on a background thread. Only the most recent request matters: requests
 /// that arrive while one is being decoded replace each other, so holding an arrow key or playing fast never
-/// builds a backlog.
+/// builds a backlog. Decoders left unused for a while are closed to give their memory back.
 /// </summary>
 public sealed class FrameRenderer : IDisposable
 {
+    /// <summary>
+    /// How long a monitor's decoder stays open without being used. Reopening costs a decode from the
+    /// segment's key frame (up to about a second on a large monitor), so this covers pauses while stepping
+    /// or reading a frame, but not the window sitting open.
+    /// </summary>
+    private static readonly TimeSpan DecoderIdleTime = TimeSpan.FromSeconds(15);
+
     private readonly string _dataFolder;
     private readonly Thread _thread;
     private readonly AutoResetEvent _signal = new(false);
@@ -28,7 +43,7 @@ public sealed class FrameRenderer : IDisposable
         _thread.Start();
     }
 
-    /// <summary>Raised on the decoder thread with the frames of a request.</summary>
+    /// <summary>Raised on the decoder thread with the frames of a request; the handler takes ownership of the result.</summary>
     public event Action<FrameResult>? Rendered;
 
     public void Request(FrameRequest request)
@@ -52,7 +67,11 @@ public sealed class FrameRenderer : IDisposable
         using var provider = new FrameProvider(_dataFolder);
         while (true)
         {
-            _signal.WaitOne();
+            if (!_signal.WaitOne(DecoderIdleTime / 3))
+            {
+                provider.CloseIdle(DecoderIdleTime);
+                continue;
+            }
             if (_stopping)
                 return;
 
@@ -78,9 +97,18 @@ public sealed class FrameRenderer : IDisposable
                     error = ex;
                 }
                 if (_stopping)
+                {
+                    foreach (var decoded in frames.Values)
+                        decoded.Release();
                     return;
+                }
             }
-            Rendered?.Invoke(new FrameResult(request.Version, frames, error));
+
+            var result = new FrameResult(request.Version, frames, error);
+            if (Rendered is { } rendered)
+                rendered(result);
+            else
+                result.Release();
         }
     }
 }

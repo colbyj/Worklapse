@@ -34,36 +34,67 @@ public partial class App : Application
         {
             // Closing windows hides them; the app keeps recording until Quit is chosen from the tray.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
-            _settings = new SettingsStore();
-            _platform = CreatePlatform();
-            var settings = _settings;
-            _recorder = new Recorder(settings, _platform, store => new StagedVideoSink(store, () => settings.Current.Quality));
-
-            var status = new StatusViewModel(_recorder, _settings, ShowSettingsAsync, ShowDayReview);
-            _statusWindow = new StatusWindow { DataContext = status };
-            _statusWindow.Closing += (_, e) =>
-            {
-                if (_quitting)
-                    return;
-                e.Cancel = true;
-                _statusWindow.Hide();
-            };
-
-            _recorder.StatusChanged += (_, s) => Dispatcher.UIThread.Post(() =>
-            {
-                status.Update(s);
-                if (_pauseItem is not null)
-                    _pauseItem.Header = _recorder.IsPaused ? "Resume Recording" : "Pause Recording";
-            });
-            _settings.Changed += (_, _) => Dispatcher.UIThread.Post(() => status.Update(_recorder.Status));
-
-            CreateTrayIcon(desktop);
-            _recorder.Start();
-            _statusWindow.Show();
+            StartOrReportSettingsError(desktop);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Starts recording, unless the settings file can't be read: then the developer chooses between fixing
+    /// it by hand (quit) and starting from defaults, rather than Worklapse quietly recording somewhere else.
+    /// </summary>
+    private void StartOrReportSettingsError(IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        SettingsStore settings;
+        try
+        {
+            settings = new SettingsStore();
+        }
+        catch (SettingsFileException ex)
+        {
+            var dialog = new SettingsErrorWindow(ex);
+            dialog.Closed += (_, _) =>
+            {
+                if (dialog.StartWithDefaults)
+                    StartOrReportSettingsError(desktop);
+                else
+                    desktop.Shutdown(1);
+            };
+            dialog.Show();
+            return;
+        }
+        Start(desktop, settings);
+    }
+
+    private void Start(IClassicDesktopStyleApplicationLifetime desktop, SettingsStore settingsStore)
+    {
+        _settings = settingsStore;
+        _platform = CreatePlatform();
+        var settings = _settings;
+        _recorder = new Recorder(settings, _platform, store => new StagedVideoSink(store, () => settings.Current.Quality));
+
+        var status = new StatusViewModel(_recorder, _settings, ShowSettingsAsync, ShowDayReview);
+        _statusWindow = new StatusWindow { DataContext = status };
+        _statusWindow.Closing += (_, e) =>
+        {
+            if (_quitting)
+                return;
+            e.Cancel = true;
+            _statusWindow.Hide();
+        };
+
+        _recorder.StatusChanged += (_, s) => Dispatcher.UIThread.Post(() =>
+        {
+            status.Update(s);
+            if (_pauseItem is not null)
+                _pauseItem.Header = _recorder.IsPaused ? "Resume Recording" : "Pause Recording";
+        });
+        _settings.Changed += (_, _) => Dispatcher.UIThread.Post(() => status.Update(_recorder.Status));
+
+        CreateTrayIcon(desktop);
+        _recorder.Start();
+        _statusWindow.Show();
     }
 
     private static PlatformServices CreatePlatform()
@@ -119,7 +150,16 @@ public partial class App : Application
         var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder));
         var viewModel = new DayReviewViewModel(history, TimeSpan.FromSeconds(settings.IntervalSeconds));
         _reviewWindow = new DayReviewWindow(viewModel, settings.DataFolder);
-        _reviewWindow.Closed += (_, _) => _reviewWindow = null;
+        _reviewWindow.Closed += (_, _) =>
+        {
+            _reviewWindow = null;
+            // Reviewing leaves a large heap behind (the window, frame buffers) that the GC would otherwise
+            // keep committed for a long time, since recording allocates too little to trigger collections.
+            // Once the window is torn down, collect and give the memory back to the OS.
+            Dispatcher.UIThread.Post(
+                () => GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true),
+                DispatcherPriority.Background);
+        };
         _reviewWindow.Show();
     }
 

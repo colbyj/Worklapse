@@ -8,7 +8,7 @@ internal static unsafe partial class Av1Native
     private const string Library = "worklapse_av1";
 
     /// <summary>The wrapper ABI these bindings were written for; checked once on first use.</summary>
-    public const int ExpectedAbiVersion = 2;
+    public const int ExpectedAbiVersion = 3;
 
     public const int ErrorBufferLength = 512;
 
@@ -44,6 +44,9 @@ internal static unsafe partial class Av1Native
 
     [LibraryImport(Library, EntryPoint = "wl_dec_copy_bgra")]
     public static partial int DecoderCopyBgra(nint decoder, byte* bgra, int stride);
+
+    [LibraryImport(Library, EntryPoint = "wl_dec_copy_i420")]
+    public static partial int DecoderCopyI420(nint decoder, byte* i420);
 
     [LibraryImport(Library, EntryPoint = "wl_dec_error")]
     public static partial nint DecoderError(nint decoder);

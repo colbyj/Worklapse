@@ -19,11 +19,14 @@ public sealed class SettingsStore
     private readonly Lock _gate = new();
     private WorklapseSettings _current;
 
+    /// <exception cref="SettingsFileException">The settings file exists but can't be used.</exception>
     public SettingsStore(string? path = null)
     {
-        _path = path ?? Path.Combine(ConfigFolder, "settings.json");
+        _path = path ?? DefaultPath;
         _current = Load(_path);
     }
+
+    public static string DefaultPath => Path.Combine(ConfigFolder, "settings.json");
 
     /// <summary>
     /// The per-user config folder. WORKLAPSE_CONFIG_DIR overrides it, so test runs can use their own
@@ -52,6 +55,17 @@ public sealed class SettingsStore
         Changed?.Invoke(this, settings);
     }
 
+    /// <summary>
+    /// Renames an unusable settings file out of the way (keeping it for reference), so the next
+    /// <see cref="SettingsStore"/> starts from defaults. Returns the new name.
+    /// </summary>
+    public static string SetAside(string path)
+    {
+        var aside = $"{path}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
+        File.Move(path, aside);
+        return aside;
+    }
+
     private static WorklapseSettings Load(string path)
     {
         if (!File.Exists(path))
@@ -59,8 +73,22 @@ public sealed class SettingsStore
 
         // A corrupt or unreadable file is surfaced rather than silently replaced with defaults,
         // which would quietly change where data is written.
-        var settings = JsonSerializer.Deserialize<WorklapseSettings>(File.ReadAllText(path), JsonOptions)
-            ?? throw new InvalidDataException($"Settings file '{path}' is empty.");
-        return settings.Normalized();
+        try
+        {
+            var settings = JsonSerializer.Deserialize<WorklapseSettings>(File.ReadAllText(path), JsonOptions)
+                ?? throw new InvalidDataException("The file contains null instead of settings.");
+            return settings.Normalized();
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            throw new SettingsFileException(path, ex);
+        }
     }
+}
+
+/// <summary>The settings file exists but can't be used: not valid JSON, a wrong value, or unreadable.</summary>
+public sealed class SettingsFileException(string path, Exception inner)
+    : Exception($"The settings file '{path}' can't be read: {inner.Message}", inner)
+{
+    public string Path { get; } = path;
 }

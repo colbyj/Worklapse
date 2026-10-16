@@ -2,7 +2,7 @@
 
 `av1/worklapse_av1.c` is a small C wrapper around [libaom](https://aomedia.googlesource.com/aom/).
 It keeps libaom's version-specific structs on the C side and exposes a few plain functions
-(create encoder, encode a BGRA image, decode a frame to BGRA) that `Worklapse.Video` calls through
+(create encoder, encode an I420 frame, decode a frame to I420 or BGRA) that `Worklapse.Video` calls through
 P/Invoke. libaom is linked in statically, so each platform ships one library.
 
 ## Windows

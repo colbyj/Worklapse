@@ -60,7 +60,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool QualityWarning => Quality >= QualityWarningThreshold;
     public string QualityText => ((int)Quality).ToString();
 
-    public void RestoreDefaults() => Load(new WorklapseSettings());
+    // Settings the dialog doesn't show (set in the settings file) are kept as they are.
+    public void RestoreDefaults() => Load(new WorklapseSettings { UseGpuRendering = _store.Current.UseGpuRendering });
 
     public void Apply()
     {
@@ -68,7 +69,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         IsDirty = false;
     }
 
-    private WorklapseSettings ToSettings() => new()
+    private WorklapseSettings ToSettings() => _store.Current with
     {
         CaptureMode = IsActiveApplication ? CaptureMode.ActiveApplication
             : IsPrimaryMonitor ? CaptureMode.PrimaryMonitor

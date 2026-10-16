@@ -25,6 +25,8 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Encoding modes | One mode only (no battery mode, no quick encode). | The developer's laptop is effectively always plugged in; simplest to build. |
 | Small-text accuracy | Accepted: at the default quantizer, small changes (a clock digit, a status label) can show the previous value for a while. The app/title log is exact regardless. A two-level fix exists (key frames q45, other frames q10) but costs 30–125 MB/hour during video playback, so it's not used. | Tracking relies on the log; the video is for context. |
 | Screen capture (Windows) | GDI BitBlt in 64-row strips into one small shared bitmap; each strip is hashed (XxHash3, for change detection) and converted straight into one shared I420 frame. No `CAPTUREBLT` (it makes the cursor flicker and isn't needed with DWM). | DirectX Desktop Duplication needed Direct3D devices that cost ~90 MB+ of driver memory on the hybrid-GPU laptop; strips and I420 cut pixel buffers from ~105 MB to ~28 MB. |
+| Playback decoding | One libaom decoder per monitor, single-threaded, closed after 15 s unused; a 64 MB cache of recent frames as I420 in pooled buffers, converted straight into the on-screen bitmap. | Each open decoder holds ~60 MB (1920×1080) to ~145 MB (3440×1440) of reference frames and buffers; every extra thread adds 30–40 MB for little speed. The old setup (8 decoders × 8 threads, 400 MB BGRA cache, a new 20 MB array per frame) reached ~3 GB. |
+| Rendering (Windows) | Avalonia software rendering by default; `"UseGpuRendering": true` in `settings.json` switches to the GPU (ANGLE/Direct3D 11) at the next start. Not in the Settings dialog. Agreed 2026-10-16. | Measured: GPU rendering cost ~80 MB more while recording, ~450 MB more while reviewing four monitors, and kept ~200 MB after the review closed, with no CPU saving in a normal-sized window. It may be smoother with Day review maximized on a very large or high-DPI screen (not measured). |
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. Disk space is reclaimed by re-encoding affected segments in the background (not built yet). | Matches the review workflow: decide at the end of the day. |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
 | Shared history across OSes | Wanted eventually (likely on D:, BitLocker-unlocked under Linux, with Fast Startup off). Not started. | — |
@@ -36,11 +38,19 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 - AV1 above about q48 starts showing wrong/stale small text; SSIM does not catch this, only visual checks do.
 - libaom keyframes cost about 12 CPU-seconds for all four monitors; ordinary frames 0.2–0.3 s.
 - Memory: four live encoders ≈ 850 MB. After batch encoding and GDI capture, recording ran at
-  ≈ 225–250 MB; with strip capture and I420 staging it runs at ≈ 160–170 MB (status window open),
-  with a short spike while a segment is encoded. Most of what's left is Avalonia/.NET (~100–140 MB).
+  ≈ 225–250 MB; with strip capture and I420 staging it runs at ≈ 160–170 MB (status window open;
+  ≈ 88 MB since switching Avalonia to software rendering),
+  with a short spike while a segment is encoded. Most of what is left is Avalonia/.NET.
 - An 8-hour day (from the developer's first recordings, all four monitors): ≈ 75–100 MB, against
   ≈ 240 MB for TimeSnapper's active-window JPEGs (its archive averages 123 MB per calendar day).
 - For comparison, TimeSnapper itself (a .NET Framework WinForms app) runs at ≈ 43 MB private memory.
+- Playback decoding (libaom 3.15, screen content at q40): key frame 50–100 ms, inter frames ~12 ms single-threaded
+  (~8 ms with 4 threads) for 3440×1440. Decoder memory grows by one ~9 MB frame buffer per frame until all 8
+  reference slots are filled (the encoder uses them all); one decoder's memory is ~62 MB at 1920×1080 and
+  ~144 MB at 3440×1440 with one thread, ~190 / ~225 MB with 2–8 threads.
+- Day review, all four monitors (2026-10-16, software rendering, private memory): ~88 MB recording only →
+  ~640 MB peak while stepping or playing → ~260 MB once decoders close after 15 s idle → ~100 MB after the window
+  closes. Before the fix: up to ~2.8–3.1 GB, and memory stayed high after closing.
 - The developer's previous TimeSnapper archive: 415,736 captures (Dec 2025 – Oct 2026), 34.7 GB of JPEGs
   at ~85 KB each.
 
@@ -57,7 +67,7 @@ src/
   Worklapse.Video/            AV1 interop, IVF files, staging files, batch encoder, frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, idle time, lock detection
   Worklapse.App/              Avalonia app: tray icon, status window, settings dialog, Day review
-tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, history)
+tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history)
 docs/PROJECT.md               this file
 ```
 
@@ -76,11 +86,15 @@ docs/PROJECT.md               this file
 ### How playback works
 
 `HistoryStore` loads a day (captures, frame references, monitors). `FrameProvider` decodes any frame,
-whether its segment is staged or encoded; it keeps a decoder positioned in recent segments so stepping
-forward decodes one frame, plus a 400 MB cache of recent frames so stepping back is usually free.
-`FrameRenderer` runs the provider on a background thread, newest request wins. `TimelineControl` and
-`FrameView` are custom-drawn controls; `DayReviewViewModel` holds the playhead, selection, summaries and
-the mark/restore/confirm deletion logic.
+whether its segment is staged or encoded; it keeps one single-threaded decoder per monitor positioned in
+that monitor's current segment, so stepping forward decodes one frame. Stepping back restarts from the
+segment's key frame; on the way it keeps the two frames before the target, so the next steps back are free.
+Frames are `DecodedFrame`s: packed I420 in pooled buffers, reference-counted between the provider's 64 MB
+cache and the window (each holder calls `Release`). `FrameRenderer` runs the provider on a background
+thread, newest request wins, and closes decoders unused for 15 s. `DayReviewWindow` converts each frame
+straight into its `WriteableBitmap`, and closing the window runs an aggressive GC so the memory goes back to
+the OS. `TimelineControl` and `FrameView` are custom-drawn controls; `DayReviewViewModel` holds the playhead,
+selection, summaries and the mark/restore/confirm deletion logic.
 
 ### Storage
 
@@ -125,7 +139,7 @@ for this and for screen readers.
 
 ---
 
-## Status (2026-10-16, updated after the I420 change)
+## Status (2026-10-16, updated after the Day review memory fix)
 
 Working on Windows:
 
@@ -137,6 +151,9 @@ Working on Windows:
   Shift+arrows and drag to select, playback at four speeds, selection/whole-day summary (length, active,
   productive, other, idle, not recorded, marked), mark for deletion / restore / delete permanently, F5 refresh.
 - Breeze-style theme across all windows.
+- An unreadable `settings.json` (bad JSON, unknown value) no longer crashes at startup: a window shows the
+  file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
+  to `settings.json.broken-<date>`.
 
 Tested less or not at all: active-application mode over a longer session, selected monitors, plugging
 displays in and out, rotated displays (GDI should handle them, untested), Store-app window detection,
@@ -147,14 +164,30 @@ Known gaps and caveats:
 - Nothing can be marked productive yet, so all active time shows as "Other".
 - Deleting permanently removes the captures but not their video; segments still need to be rebuilt to free space.
 - Small text can lag behind in the video (see Decisions).
-- Avalonia and .NET (~100–140 MB) are the bulk of the remaining footprint while recording; see the
-  recorder/UI split below.
+- Avalonia and .NET are the bulk of the remaining footprint while recording (~88 MB in all with software
+  rendering, measured shortly after start); see the recorder/UI split below.
 
 ---
 
 ## Next steps
 
 The priority is a complete, usable Windows app. Alternatives and ports come after.
+
+### 0. Memory while reviewing — done 2026-10-16 (not yet reviewed by the developer)
+
+The Day review reached ~2.8 GB. Measured causes (no leak: everything was freed on dispose): ~1.4 GB of
+native libaom decoders (8 open, 8 threads each), the 400 MB BGRA cache, ~1–2 GB of committed but unused
+large-object heap from a new 20 MB array per decoded frame, and ~450 MB for GPU rendering. Fixed as listed
+in Decisions (Playback decoding, Rendering). Now: ~640 MB peak with four monitors, ~260 MB idle, back to
+~100 MB after closing.
+
+Still open, if the peak matters:
+
+- Most of the peak is the four open decoders (~380 MB), which hold the 8 reference frames the encoder fills.
+  Encoding new segments with fewer reference slots would cut that for future recordings (a format/quality
+  trade-off to measure first).
+- After 15 s idle the first step costs ~0.7 s while decoders reopen and decode from the key frame; stepping
+  back costs ~0.3–1 s every third step for the same reason.
 
 ### 1. Make it usable day to day
 

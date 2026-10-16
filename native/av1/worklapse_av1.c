@@ -2,8 +2,8 @@
 // side, so the .NET code only sees a few plain functions.
 //
 // Frames go in as packed I420 (Y plane, then U, then V; chroma planes are ceil(w/2) x ceil(h/2), rows
-// packed), BT.709 full range — the format Worklapse captures and stages in. Frames come out either as
-// BGRA or not at all (decoding forward through a segment without converting).
+// packed), BT.709 full range — the format Worklapse captures and stages in. Frames come out as packed
+// I420, as BGRA, or not at all (decoding forward through a segment without converting).
 
 #include <stdint.h>
 #include <stdio.h>
@@ -54,7 +54,7 @@ static void i420_planes_to_bgra(const uint8_t *py, int sy, const uint8_t *pu, in
   }
 }
 
-WL_API int wl_abi_version(void) { return 2; }
+WL_API int wl_abi_version(void) { return 3; }
 
 WL_API const char *wl_aom_version(void) { return aom_codec_version_str(); }
 
@@ -285,6 +285,21 @@ WL_API int wl_dec_copy_bgra(wl_decoder *d, uint8_t *bgra, int stride) {
   i420_planes_to_bgra(img->planes[AOM_PLANE_Y], img->stride[AOM_PLANE_Y], img->planes[AOM_PLANE_U],
                       img->stride[AOM_PLANE_U], img->planes[AOM_PLANE_V], img->stride[AOM_PLANE_V], (int)img->d_w,
                       (int)img->d_h, bgra, stride);
+  return 0;
+}
+
+// Copies the most recently decoded frame as packed I420. Returns 0 on success, -1 if there is none.
+WL_API int wl_dec_copy_i420(wl_decoder *d, uint8_t *i420) {
+  if (!d->last) {
+    set_error(d->error, "no decoded frame", NULL);
+    return -1;
+  }
+  const aom_image_t *img = d->last;
+  const int w = (int)img->d_w, h = (int)img->d_h, cw = (w + 1) / 2, ch = (h + 1) / 2;
+  uint8_t *pu = i420 + (size_t)w * h, *pv = pu + (size_t)cw * ch;
+  copy_plane(img->planes[AOM_PLANE_Y], img->stride[AOM_PLANE_Y], i420, w, w, h);
+  copy_plane(img->planes[AOM_PLANE_U], img->stride[AOM_PLANE_U], pu, cw, cw, ch);
+  copy_plane(img->planes[AOM_PLANE_V], img->stride[AOM_PLANE_V], pv, cw, cw, ch);
   return 0;
 }
 

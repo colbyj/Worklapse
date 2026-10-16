@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -22,6 +21,7 @@ public partial class DayReviewWindow : Window
     private readonly Dictionary<long, WriteableBitmap> _bitmaps = [];
     private int _requestVersion;
     private PlannedFrame? _plan;
+    private bool _closed;
 
     // Needed by the XAML loader; the app always uses the other constructor.
     public DayReviewWindow() : this(null!, null!) { }
@@ -59,10 +59,18 @@ public partial class DayReviewWindow : Window
         base.OnClosed(e);
         if (_viewModel is null)
             return;
+        _closed = true;
         _viewModel.TimelineChanged -= UpdateTimeline;
         _viewModel.FrameChanged -= RequestFrames;
         _renderer.Dispose();
         _viewModel.Dispose();
+
+        // The bitmaps hold a full-size copy of each monitor; don't leave them to the finalizer.
+        _plan = null;
+        Frames.SetContent([], null);
+        foreach (var bitmap in _bitmaps.Values)
+            bitmap.Dispose();
+        _bitmaps.Clear();
     }
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
@@ -148,12 +156,19 @@ public partial class DayReviewWindow : Window
 
     private void ShowFrames(FrameResult result)
     {
-        if (_plan is null || result.Version != _plan.Version)
-            return; // superseded by a newer request
+        try
+        {
+            if (_closed || _plan is null || result.Version != _plan.Version)
+                return; // superseded by a newer request
 
-        foreach (var (monitorId, frame) in result.Frames)
-            CopyToBitmap(monitorId, frame);
-        ApplyPlan(result.Error);
+            foreach (var (monitorId, frame) in result.Frames)
+                CopyToBitmap(monitorId, frame);
+            ApplyPlan(result.Error);
+        }
+        finally
+        {
+            result.Release();
+        }
     }
 
     private void ApplyPlan(Exception? error)
@@ -177,17 +192,9 @@ public partial class DayReviewWindow : Window
             _bitmaps[monitorId] = bitmap = new WriteableBitmap(new PixelSize(frame.Width, frame.Height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
         }
 
+        // Converted straight into the bitmap: no full-size BGRA copy of the frame exists anywhere else.
         using var buffer = bitmap.Lock();
-        var rowBytes = frame.Width * 4;
-        if (buffer.RowBytes == rowBytes)
-        {
-            Marshal.Copy(frame.Pixels, 0, buffer.Address, frame.Pixels.Length);
-        }
-        else
-        {
-            for (var y = 0; y < frame.Height; y++)
-                Marshal.Copy(frame.Pixels, y * rowBytes, buffer.Address + y * buffer.RowBytes, rowBytes);
-        }
+        frame.CopyBgra(buffer.Address, buffer.RowBytes);
     }
 
     private void UpdateViewText()
