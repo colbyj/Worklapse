@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="../Worklapse.Core/Worklapse.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Worklapse.Tests" />
+  </ItemGroup>
+
+  <!-- Built by native/build-windows.sh. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)../../native/win-x64/worklapse_av1.dll')">
+    <None Include="$(MSBuildThisFileDirectory)../../native/win-x64/worklapse_av1.dll" Link="worklapse_av1.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

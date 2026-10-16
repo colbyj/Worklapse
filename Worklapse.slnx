@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Worklapse.App/Worklapse.App.csproj" />
+    <Project Path="src/Worklapse.Capture.Windows/Worklapse.Capture.Windows.csproj" />
+    <Project Path="src/Worklapse.Core/Worklapse.Core.csproj" />
+    <Project Path="src/Worklapse.Video/Worklapse.Video.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Worklapse.Tests/Worklapse.Tests.csproj" />
+  </Folder>
+</Solution>

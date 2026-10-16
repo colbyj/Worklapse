@@ -1,0 +1,31 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Worklapse.App.App"
+             RequestedThemeVariant="Light">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Worklapse/Styles/BreezeResources.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <!-- Fluent's control templates, recoloured to Breeze Light. -->
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light"
+                               Accent="#3DAEE9"
+                               RegionColor="#EFF0F1"
+                               AltHigh="#FCFCFC" AltMediumHigh="#FCFCFC" AltMedium="#FCFCFC" AltMediumLow="#FCFCFC" AltLow="#FCFCFC"
+                               BaseHigh="#232629" BaseMediumHigh="#4D5156" BaseMedium="#6E757C" BaseMediumLow="#A0A4A8" BaseLow="#D6D8DA"
+                               ChromeAltLow="#232629" ChromeBlackHigh="#000000" ChromeBlackMedium="#232629" ChromeBlackMediumLow="#A0A4A8" ChromeBlackLow="#D6D8DA"
+                               ChromeDisabledHigh="#D6D8DA" ChromeDisabledLow="#A0A4A8"
+                               ChromeGray="#6E757C" ChromeHigh="#BDC0C3" ChromeMedium="#EFF0F1" ChromeMediumLow="#F5F6F7" ChromeLow="#F5F6F7" ChromeWhite="#FFFFFF"
+                               ListLow="#D8EEFA" ListMedium="#BCE2F6"
+                               ErrorText="#DA4453" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://Worklapse/Styles/Breeze.axaml" />
+  </Application.Styles>
+</Application>

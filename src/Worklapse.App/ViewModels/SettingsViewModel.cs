@@ -1,0 +1,114 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Worklapse.Core.Platform;
+using Worklapse.Core.Settings;
+
+namespace Worklapse.App.ViewModels;
+
+public sealed partial class MonitorOption : ObservableObject
+{
+    public required string DeviceName { get; init; }
+    public required string Label { get; init; }
+    [ObservableProperty] private bool _isChecked;
+}
+
+public sealed partial class SettingsViewModel : ObservableObject
+{
+    /// <summary>From this quantizer up, small text was seen garbled or showing stale content.</summary>
+    public const int QualityWarningThreshold = 48;
+
+    private readonly SettingsStore _store;
+    private bool _loading;
+
+    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors)
+    {
+        _store = store;
+        var number = 1;
+        foreach (var monitor in monitors.OrderByDescending(m => m.IsPrimary).ThenBy(m => m.Bounds.X))
+        {
+            var option = new MonitorOption
+            {
+                DeviceName = monitor.DeviceName,
+                Label = $"{number++} — {monitor.Bounds.Width} × {monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}",
+            };
+            option.PropertyChanged += (_, _) => MarkDirty();
+            Monitors.Add(option);
+        }
+
+        Load(store.Current);
+        PropertyChanged += OnAnyPropertyChanged;
+    }
+
+    public ObservableCollection<MonitorOption> Monitors { get; } = [];
+
+    [ObservableProperty] private bool _isActiveApplication;
+    [ObservableProperty] private bool _isPrimaryMonitor;
+    [ObservableProperty] private bool _isSelectedMonitors;
+    [ObservableProperty] private bool _isAllMonitors;
+    [ObservableProperty] private decimal? _intervalSeconds;
+    [ObservableProperty] private decimal? _idleMinutes;
+    [ObservableProperty] private bool _pauseWhenLocked;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QualityWarning), nameof(QualityText))]
+    private double _quality;
+
+    [ObservableProperty] private string _dataFolder = "";
+    [ObservableProperty] private bool _isDirty;
+
+    public bool QualityWarning => Quality >= QualityWarningThreshold;
+    public string QualityText => ((int)Quality).ToString();
+
+    public void RestoreDefaults() => Load(new WorklapseSettings());
+
+    public void Apply()
+    {
+        _store.Save(ToSettings());
+        IsDirty = false;
+    }
+
+    private WorklapseSettings ToSettings() => new()
+    {
+        CaptureMode = IsActiveApplication ? CaptureMode.ActiveApplication
+            : IsPrimaryMonitor ? CaptureMode.PrimaryMonitor
+            : IsSelectedMonitors ? CaptureMode.SelectedMonitors
+            : CaptureMode.AllMonitors,
+        SelectedMonitors = Monitors.Where(m => m.IsChecked).Select(m => m.DeviceName).ToList(),
+        IntervalSeconds = (int)(IntervalSeconds ?? 10),
+        IdleMinutes = (int)(IdleMinutes ?? 5),
+        PauseWhenLocked = PauseWhenLocked,
+        Quality = (int)Quality,
+        DataFolder = DataFolder.Trim(),
+    };
+
+    private void Load(WorklapseSettings settings)
+    {
+        _loading = true;
+        IsActiveApplication = settings.CaptureMode == CaptureMode.ActiveApplication;
+        IsPrimaryMonitor = settings.CaptureMode == CaptureMode.PrimaryMonitor;
+        IsSelectedMonitors = settings.CaptureMode == CaptureMode.SelectedMonitors;
+        IsAllMonitors = settings.CaptureMode == CaptureMode.AllMonitors;
+        foreach (var monitor in Monitors)
+            monitor.IsChecked = settings.SelectedMonitors.Contains(monitor.DeviceName, StringComparer.OrdinalIgnoreCase);
+        IntervalSeconds = settings.IntervalSeconds;
+        IdleMinutes = settings.IdleMinutes;
+        PauseWhenLocked = settings.PauseWhenLocked;
+        Quality = settings.Quality;
+        DataFolder = settings.DataFolder;
+        _loading = false;
+        IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors);
+    }
+
+    private void OnAnyPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(IsDirty))
+            MarkDirty();
+    }
+
+    private void MarkDirty()
+    {
+        if (!_loading)
+            IsDirty = true;
+    }
+}

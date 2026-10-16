@@ -1,0 +1,114 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Worklapse.App.ViewModels"
+        x:Class="Worklapse.App.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings — Worklapse"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="620" Height="600" MinWidth="520" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+  <Window.Styles>
+    <Style Selector="TextBlock.label">
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar">
+      <DockPanel>
+        <Button DockPanel.Dock="Left" Content="Defaults" Click="OnDefaults" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button Content="OK" Classes="accent" IsDefault="True" Click="OnOk" />
+          <Button Content="Cancel" IsCancel="True" Click="OnCancel" />
+          <Button Content="Apply" IsEnabled="{Binding IsDirty}" Click="OnApply" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel Margin="14,12" Spacing="10">
+
+        <Border Classes="group">
+          <StackPanel>
+            <TextBlock Classes="groupHeader" Text="Capture" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <TextBlock Classes="label" Text="Capture:" VerticalAlignment="Top" Margin="0,6,10,0" />
+              <StackPanel Grid.Column="1" Spacing="2">
+                <RadioButton GroupName="mode" Content="Active application only" IsChecked="{Binding IsActiveApplication}" />
+                <RadioButton GroupName="mode" Content="Primary monitor" IsChecked="{Binding IsPrimaryMonitor}" />
+                <RadioButton GroupName="mode" Content="Selected monitors:" IsChecked="{Binding IsSelectedMonitors}" />
+                <ItemsControl ItemsSource="{Binding Monitors}" Margin="26,0,0,4" IsEnabled="{Binding IsSelectedMonitors}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MonitorOption">
+                      <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <RadioButton GroupName="mode" Content="All monitors" IsChecked="{Binding IsAllMonitors}" />
+              </StackPanel>
+
+              <TextBlock Grid.Row="1" Classes="label" Text="Interval:" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <NumericUpDown Value="{Binding IntervalSeconds}" Minimum="2" Maximum="300" Increment="1" FormatString="0" Width="110" />
+                <TextBlock Text="seconds" VerticalAlignment="Center" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="group">
+          <StackPanel>
+            <TextBlock Classes="groupHeader" Text="Idle" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+              <TextBlock Classes="label" Text="Stop capturing after:" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <NumericUpDown Value="{Binding IdleMinutes}" Minimum="1" Maximum="120" Increment="1" FormatString="0" Width="110" />
+                <TextBlock Text="minutes without keyboard or mouse input" VerticalAlignment="Center" />
+              </StackPanel>
+              <CheckBox Grid.Row="1" Grid.Column="1" Content="Stop capturing while the screen is locked" IsChecked="{Binding PauseWhenLocked}" />
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint"
+                         Text="When the idle limit is reached, the minutes since the last input are counted as idle too." />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="group">
+          <StackPanel>
+            <TextBlock Classes="groupHeader" Text="Video" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+              <TextBlock Classes="label" Text="Compression:" />
+              <DockPanel Grid.Column="1">
+                <TextBlock DockPanel.Dock="Right" Text="{Binding QualityText}" FontWeight="SemiBold" MinWidth="24" TextAlignment="Right" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Right" Classes="hint" Text="Smaller" VerticalAlignment="Center" Margin="6,0" />
+                <TextBlock DockPanel.Dock="Left" Classes="hint" Text="Sharper" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <Slider Value="{Binding Quality}" Minimum="20" Maximum="55" TickFrequency="1" IsSnapToTickEnabled="True" />
+              </DockPanel>
+              <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Text="Applies to video recorded from now on." />
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="warning" IsVisible="{Binding QualityWarning}"
+                         Text="At this setting small text can come out garbled or out of date." />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="group">
+          <StackPanel>
+            <TextBlock Classes="groupHeader" Text="Storage" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="6">
+              <TextBlock Classes="label" Text="History folder:" />
+              <DockPanel Grid.Column="1">
+                <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0" Click="OnBrowse" />
+                <TextBox Text="{Binding DataFolder}" />
+              </DockPanel>
+              <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint"
+                         Text="Video and the activity log are kept here. Changing it doesn't move existing history." />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

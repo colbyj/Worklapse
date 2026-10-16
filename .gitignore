@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+.idea/
+TestResults/
+
+# Native dependencies built locally (see native/README.md)
+native/vcpkg_installed/
+native/win-x64/
+native/av1/build/
+
+# Reference material that must not be committed
+*.FDB
+*.fdb
+/*.png
+
+# Local test exports
+test-recording/

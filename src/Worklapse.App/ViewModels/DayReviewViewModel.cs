@@ -1,0 +1,525 @@
+using System.Collections.ObjectModel;
+using System.Globalization;
+using Avalonia.Media;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Worklapse.App.Controls;
+using Worklapse.Core.History;
+using Worklapse.Core.Storage;
+
+namespace Worklapse.App.ViewModels;
+
+public sealed record MonitorChoice(long? MonitorId, string Label)
+{
+    public override string ToString() => Label;
+}
+
+public sealed record StatItem(string Label, string Value, string Note, IBrush? Swatch);
+
+public sealed partial class MarkedRange : ObservableObject
+{
+    public required DateTimeOffset Start { get; init; }
+    public required DateTimeOffset End { get; init; }
+    public required int FirstIndex { get; init; }
+    public required string RangeText { get; init; }
+    public required string Detail { get; init; }
+    public required IRelayCommand GoTo { get; init; }
+    public required IRelayCommand Restore { get; init; }
+}
+
+/// <summary>
+/// State of the Day review window. Positions are indexes into the day's captures; the playhead is always
+/// on a capture, and a selection covers whole captures.
+/// </summary>
+public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
+{
+    public static readonly IBrush ProductiveBrush = new SolidColorBrush(Color.Parse("#2980B9"));
+    public static readonly IBrush OtherBrush = new SolidColorBrush(Color.Parse("#F39C1F"));
+    public static readonly IBrush IdleBrush = new SolidColorBrush(Color.Parse("#BDC3C7"));
+    public static readonly IBrush MarkedBrush = new SolidColorBrush(Color.Parse("#DA4453"));
+    public static readonly IBrush NotRecordedBrush = new SolidColorBrush(Color.Parse("#A0A4A8"));
+
+    private static readonly int[] SpeedSteps = [1, 3, 12, 36];
+
+    private readonly HistoryStore _history;
+    private readonly TimeSpan _maxCaptureLength;
+    private readonly DispatcherTimer _playTimer;
+    private IReadOnlyList<DateOnly> _days = [];
+    private int? _anchor;
+
+    public DayReviewViewModel(HistoryStore history, TimeSpan captureInterval)
+    {
+        _history = history;
+        _maxCaptureLength = captureInterval * 1.5;
+        _playTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => PlayTick());
+        Speeds = ["Slow", "Normal", "Fast", "Very fast"];
+        _speed = "Normal";
+        LoadDays();
+        var initial = _days.Count > 0 ? _days[^1] : DateOnly.FromDateTime(DateTime.Today);
+        LoadDay(initial);
+        if (Captures.Count > 0)
+            MoveTo(Captures.Count - 1);
+    }
+
+    /// <summary>Raised when what the timeline shows changes (data, selection or playhead).</summary>
+    public event Action? TimelineChanged;
+
+    /// <summary>Raised when the frame to show changes.</summary>
+    public event Action? FrameChanged;
+
+    public DayHistory Day { get; private set; } = new(DateOnly.MinValue, [], []);
+    public IReadOnlyList<CaptureRecord> Captures => Day.Captures;
+    public IReadOnlyList<TimelineSpan> Spans { get; private set; } = [];
+    public (double Start, double End) View { get; private set; }
+
+    public ObservableCollection<MonitorChoice> MonitorChoices { get; } = [];
+    public ObservableCollection<StatItem> Stats { get; } = [];
+    public ObservableCollection<MarkedRange> MarkedRanges { get; } = [];
+    public IReadOnlyList<string> Speeds { get; }
+
+    [ObservableProperty] private int _current = -1;
+    [ObservableProperty] private int? _selectionStart;
+    [ObservableProperty] private int? _selectionEnd;
+    [ObservableProperty] private string _speed;
+    [ObservableProperty] private MonitorChoice? _selectedMonitor;
+    [ObservableProperty] private bool _isPlaying;
+
+    [ObservableProperty] private string _title = "";
+    [ObservableProperty] private string _dayText = "";
+    [ObservableProperty] private string _frameTime = "";
+    [ObservableProperty] private string _frameState = "";
+    [ObservableProperty] private IBrush _frameStateBrush = NotRecordedBrush;
+    [ObservableProperty] private string _frameApp = "";
+    [ObservableProperty] private string _summaryTitle = "";
+    [ObservableProperty] private string _summaryRange = "";
+    [ObservableProperty] private string _markedButtonText = "Marked";
+    [ObservableProperty] private string _confirmMessage = "";
+
+    public bool HasSelection => SelectionStart is not null && SelectionEnd is not null;
+    public bool HasMarked => MarkedRanges.Count > 0;
+    public bool HasNoMarked => MarkedRanges.Count == 0;
+    public bool CanGoNextDay => _days.Any(d => d > Day.Day);
+    public bool CanGoPreviousDay => _days.Any(d => d < Day.Day);
+    public string PlayText => IsPlaying ? "Pause" : "Play";
+
+    // --- navigation ---------------------------------------------------------------------------
+
+    [RelayCommand(CanExecute = nameof(CanGoPreviousDay))]
+    private void PreviousDay() => GoToDay(_days.Where(d => d < Day.Day).Max());
+
+    [RelayCommand(CanExecute = nameof(CanGoNextDay))]
+    private void NextDay() => GoToDay(_days.Where(d => d > Day.Day).Min());
+
+    [RelayCommand]
+    private void Refresh()
+    {
+        var keepId = Current >= 0 && Current < Captures.Count ? Captures[Current].Id : (long?)null;
+        var atEnd = Current == Captures.Count - 1;
+        LoadDays();
+        Reload(keepId);
+        if (atEnd && Captures.Count > 0)
+            MoveTo(Captures.Count - 1);
+    }
+
+    public void GoToDay(DateOnly day)
+    {
+        Stop();
+        LoadDay(day);
+        if (Captures.Count > 0)
+            MoveTo(0);
+    }
+
+    [RelayCommand]
+    private void PreviousFrame() => Step(-1, extendSelection: false);
+
+    [RelayCommand]
+    private void NextFrame() => Step(1, extendSelection: false);
+
+    /// <summary>Moves the playhead to the neighbouring visible capture; with Shift, extends the selection.</summary>
+    public void Step(int direction, bool extendSelection)
+    {
+        Stop();
+        var next = NextVisible(Current + direction, direction);
+        if (next < 0)
+            return;
+
+        if (!extendSelection)
+        {
+            _anchor = null;
+            MoveTo(next);
+            return;
+        }
+
+        if (_anchor is not { } anchor)
+        {
+            // Extending an existing selection from one of its ends keeps the other end fixed.
+            anchor = (SelectionStart, SelectionEnd) switch
+            {
+                (int start, int end) when Current == start => end,
+                (int start, int end) when Current == end => start,
+                _ => Current,
+            };
+            _anchor = anchor;
+        }
+        SetSelection(Math.Min(anchor, next), Math.Max(anchor, next));
+        MoveTo(next);
+    }
+
+    /// <summary>Moves the playhead to the capture showing at a timeline position.</summary>
+    public void Seek(double seconds)
+    {
+        Stop();
+        _anchor = null;
+        var index = IndexAt(seconds);
+        if (index >= 0)
+            MoveTo(index);
+    }
+
+    /// <summary>A drag on the timeline: selects the captures between the two times; the playhead follows the pointer.</summary>
+    public void DragSelect(double anchorSeconds, double pointerSeconds, bool finished)
+    {
+        Stop();
+        var (from, to) = anchorSeconds <= pointerSeconds ? (anchorSeconds, pointerSeconds) : (pointerSeconds, anchorSeconds);
+        var first = Captures.Count;
+        var last = -1;
+        for (var i = 0; i < Captures.Count; i++)
+        {
+            var t = Seconds(Captures[i]);
+            if (t < from || t > to)
+                continue;
+            first = Math.Min(first, i);
+            last = Math.Max(last, i);
+        }
+        if (last < first)
+            return;
+
+        SetSelection(first, last);
+        var pointerIndex = pointerSeconds >= anchorSeconds ? last : first;
+        MoveTo(pointerIndex);
+        if (finished)
+            _anchor = pointerSeconds >= anchorSeconds ? first : last;
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    public void ClearSelection()
+    {
+        _anchor = null;
+        SetSelection(null, null);
+    }
+
+    // --- playback -----------------------------------------------------------------------------
+
+    [RelayCommand]
+    private void TogglePlay()
+    {
+        if (IsPlaying)
+        {
+            Stop();
+            return;
+        }
+        if (Captures.Count == 0)
+            return;
+        // With a selection, play it from its start unless the playhead is already inside it.
+        if (HasSelection && (Current < SelectionStart || Current >= SelectionEnd))
+            MoveTo(SelectionStart!.Value);
+        IsPlaying = true;
+        _playTimer.Start();
+    }
+
+    private void Stop()
+    {
+        _playTimer.Stop();
+        IsPlaying = false;
+    }
+
+    private void PlayTick()
+    {
+        var step = SpeedSteps[Math.Max(0, Speeds.ToList().IndexOf(Speed))];
+        var end = HasSelection && Current <= SelectionEnd ? SelectionEnd!.Value : Captures.Count - 1;
+        var next = Current;
+        for (var i = 0; i < step && next >= 0 && next < end; i++)
+            next = NextVisible(next + 1, 1);
+        if (next < 0 || next >= end)
+        {
+            if (next >= 0)
+                MoveTo(Math.Min(next, end));
+            Stop();
+            return;
+        }
+        MoveTo(next);
+    }
+
+    partial void OnIsPlayingChanged(bool value) => OnPropertyChanged(nameof(PlayText));
+
+    // --- marking for deletion -----------------------------------------------------------------
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void MarkSelection()
+    {
+        if (!HasSelection)
+            return;
+        var (start, end) = SelectionTimes();
+        _history.SetPendingDelete(start, end, pending: true);
+        _anchor = null;
+        ConfirmMessage = "";
+        var keepId = Captures[Current].Id;
+        SetSelection(null, null);
+        Reload(keepId);
+    }
+
+    [RelayCommand]
+    private void ConfirmDeletes()
+    {
+        var keep = NextVisible(Current, 1) is var v and >= 0 ? Captures[v].Id : (long?)null;
+        var removed = Enumerable.Range(0, Captures.Count).Where(i => Captures[i].PendingDelete).Sum(i => CaptureLength(i).TotalSeconds);
+        var count = _history.DeleteMarked(Day.Day);
+        ConfirmMessage = count == 0 ? "" : $"Deleted {Duration(TimeSpan.FromSeconds(removed))}.";
+        Reload(keep);
+    }
+
+    private void Restore(DateTimeOffset start, DateTimeOffset end)
+    {
+        _history.SetPendingDelete(start, end, pending: false);
+        ConfirmMessage = "";
+        Reload(Current >= 0 ? Captures[Current].Id : null);
+    }
+
+    // --- monitor and speed choices ------------------------------------------------------------
+
+    partial void OnSelectedMonitorChanged(MonitorChoice? value) => FrameChanged?.Invoke();
+
+    // --- loading ------------------------------------------------------------------------------
+
+    private void LoadDays() => _days = _history.GetDays();
+
+    private void LoadDay(DateOnly day)
+    {
+        Day = _history.LoadDay(day);
+        _anchor = null;
+        SelectionStart = SelectionEnd = null;
+        Current = -1;
+        RebuildDerived();
+
+        var previousMonitor = SelectedMonitor?.MonitorId;
+        MonitorChoices.Clear();
+        MonitorChoices.Add(new MonitorChoice(null, "All monitors"));
+        var number = 1;
+        foreach (var monitor in Day.Monitors.OrderByDescending(m => m.IsPrimary).ThenBy(m => m.Bounds.X))
+            MonitorChoices.Add(new MonitorChoice(monitor.Id, $"{number++} — {monitor.Bounds.Width}×{monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}"));
+        SelectedMonitor = MonitorChoices.FirstOrDefault(m => m.MonitorId == previousMonitor) ?? MonitorChoices[0];
+
+        DayText = Day.Day.ToString("ddd d MMM yyyy", CultureInfo.CurrentCulture);
+        Title = $"{Day.Day.ToString("D", CultureInfo.CurrentCulture)} — Day review — Worklapse";
+        OnPropertyChanged(nameof(CanGoNextDay));
+        OnPropertyChanged(nameof(CanGoPreviousDay));
+        PreviousDayCommand.NotifyCanExecuteChanged();
+        NextDayCommand.NotifyCanExecuteChanged();
+        UpdateFrameText();
+        UpdateSummary();
+        TimelineChanged?.Invoke();
+        FrameChanged?.Invoke();
+    }
+
+    /// <summary>Reloads the current day after an edit, keeping the playhead on the same capture if it still exists.</summary>
+    private void Reload(long? keepCaptureId)
+    {
+        var selected = (SelectionStart, SelectionEnd) is (int s, int e) ? (Captures[s].Id, Captures[e].Id) : ((long, long)?)null;
+        Day = _history.LoadDay(Day.Day);
+        RebuildDerived();
+
+        int Find(long id) => Captures.ToList().FindIndex(c => c.Id == id);
+        if (selected is { } sel && Find(sel.Item1) is >= 0 and var a && Find(sel.Item2) is >= 0 and var b)
+            SetSelection(a, b);
+        else
+            SetSelection(null, null);
+
+        var index = keepCaptureId is { } id ? Find(id) : -1;
+        Current = -1;
+        MoveTo(index >= 0 ? index : Math.Min(Captures.Count - 1, Math.Max(0, Current)));
+        TimelineChanged?.Invoke();
+    }
+
+    private void RebuildDerived()
+    {
+        var spans = new List<TimelineSpan>();
+        for (var i = 0; i < Captures.Count; i++)
+        {
+            var c = Captures[i];
+            var start = Seconds(c);
+            var end = start + CaptureLength(i).TotalSeconds;
+            var kind = !c.IsActive ? TimelineKind.Idle : c.Productive ? TimelineKind.Productive : TimelineKind.Other;
+            if (spans.Count > 0 && spans[^1] is var last && last.Kind == kind && last.Marked == c.PendingDelete && start - last.End < 1)
+                spans[^1] = last with { End = end };
+            else
+                spans.Add(new TimelineSpan(start, end, kind, c.PendingDelete));
+        }
+        Spans = spans;
+        View = Captures.Count == 0
+            ? (8 * 3600, 17 * 3600)
+            : (Math.Floor(spans[0].Start / 1800) * 1800, Math.Ceiling(spans[^1].End / 1800) * 1800);
+
+        MarkedRanges.Clear();
+        for (var i = 0; i < Captures.Count; i++)
+        {
+            if (!Captures[i].PendingDelete)
+                continue;
+            var first = i;
+            while (i + 1 < Captures.Count && Captures[i + 1].PendingDelete)
+                i++;
+            var last = i;
+            var start = Captures[first].Time;
+            var end = Captures[last].Time + CaptureLength(last);
+            var apps = Captures.Skip(first).Take(last - first + 1).Select(c => c.AppName).Where(a => a is not null).Distinct().Take(2);
+            var length = TimeSpan.FromSeconds(Enumerable.Range(first, last - first + 1).Sum(k => CaptureLength(k).TotalSeconds));
+            var goTo = first;
+            MarkedRanges.Add(new MarkedRange
+            {
+                Start = start,
+                End = end,
+                FirstIndex = first,
+                RangeText = $"{Clock(start)} – {Clock(end)}",
+                Detail = $"{Duration(length)} · {string.Join(", ", apps)}",
+                GoTo = new RelayCommand(() => { Stop(); MoveTo(goTo); }),
+                Restore = new RelayCommand(() => Restore(start, end.AddMilliseconds(1))),
+            });
+        }
+        var markedTotal = TimeSpan.FromSeconds(Enumerable.Range(0, Captures.Count).Where(k => Captures[k].PendingDelete).Sum(k => CaptureLength(k).TotalSeconds));
+        MarkedButtonText = MarkedRanges.Count == 0 ? "Marked" : $"Marked ({Duration(markedTotal)})";
+        OnPropertyChanged(nameof(HasMarked));
+        OnPropertyChanged(nameof(HasNoMarked));
+        UpdateSummary();
+    }
+
+    // --- derived text -------------------------------------------------------------------------
+
+    private void MoveTo(int index)
+    {
+        if (index < 0 || index >= Captures.Count)
+            return;
+        Current = index;
+        UpdateFrameText();
+        TimelineChanged?.Invoke();
+        FrameChanged?.Invoke();
+    }
+
+    private void SetSelection(int? start, int? end)
+    {
+        SelectionStart = start;
+        SelectionEnd = end;
+        OnPropertyChanged(nameof(HasSelection));
+        MarkSelectionCommand.NotifyCanExecuteChanged();
+        ClearSelectionCommand.NotifyCanExecuteChanged();
+        UpdateSummary();
+        TimelineChanged?.Invoke();
+    }
+
+    private void UpdateFrameText()
+    {
+        if (Current < 0 || Current >= Captures.Count)
+        {
+            FrameTime = "No captures";
+            FrameState = "";
+            FrameApp = "";
+            return;
+        }
+        var c = Captures[Current];
+        FrameTime = c.Time.ToLocalTime().ToString("T", CultureInfo.CurrentCulture);
+        (FrameState, FrameStateBrush) = c.PendingDelete ? ("Marked for deletion", MarkedBrush)
+            : !c.IsActive ? ("Idle", IdleBrush)
+            : c.Productive ? ("Productive", ProductiveBrush)
+            : ("Other", OtherBrush);
+        FrameApp = !c.IsActive ? "No keyboard or mouse input" : $"{c.AppName} — {c.WindowTitle}";
+    }
+
+    private void UpdateSummary()
+    {
+        Stats.Clear();
+        if (Captures.Count == 0)
+        {
+            SummaryTitle = "No recordings this day";
+            SummaryRange = "";
+            return;
+        }
+
+        var (start, end) = HasSelection ? SelectionTimes() : (Captures[0].Time, Captures[^1].Time + CaptureLength(Captures.Count - 1));
+        var summary = SpanSummary.For(Captures, start, end, _maxCaptureLength);
+        SummaryTitle = HasSelection ? "Selection" : "Whole day";
+        SummaryRange = $"{Clock(start)} – {Clock(end)}";
+        var activeShare = summary.Length.Ticks == 0 ? 0 : (int)Math.Round(100.0 * summary.Active.Ticks / summary.Length.Ticks);
+        var productiveShare = summary.Active.Ticks == 0 ? 0 : (int)Math.Round(100.0 * summary.Productive.Ticks / summary.Active.Ticks);
+        Stats.Add(new StatItem("Length", Duration(summary.Length), "", null));
+        Stats.Add(new StatItem("Active", Duration(summary.Active), $"({activeShare}%)", null));
+        Stats.Add(new StatItem("Productive", Duration(summary.Productive), $"({productiveShare}% of active)", ProductiveBrush));
+        Stats.Add(new StatItem("Other", Duration(summary.Other), "", OtherBrush));
+        Stats.Add(new StatItem("Idle", Duration(summary.Idle), "", IdleBrush));
+        if (summary.NotRecorded >= TimeSpan.FromMinutes(1))
+            Stats.Add(new StatItem("Not recorded", Duration(summary.NotRecorded), "", null));
+        if (summary.Marked > TimeSpan.Zero)
+            Stats.Add(new StatItem("Marked", Duration(summary.Marked), "(not counted)", MarkedBrush));
+    }
+
+    // --- helpers ------------------------------------------------------------------------------
+
+    public double Seconds(CaptureRecord capture)
+    {
+        var local = capture.Time.ToLocalTime().DateTime;
+        return (local - Day.Day.ToDateTime(TimeOnly.MinValue)).TotalSeconds;
+    }
+
+    public double? PlayheadSeconds => Current >= 0 && Current < Captures.Count ? Seconds(Captures[Current]) : null;
+
+    public (double, double)? SelectionSeconds => HasSelection
+        ? (Seconds(Captures[SelectionStart!.Value]), Seconds(Captures[SelectionEnd!.Value]) + CaptureLength(SelectionEnd.Value).TotalSeconds)
+        : null;
+
+    private (DateTimeOffset Start, DateTimeOffset End) SelectionTimes() =>
+        (Captures[SelectionStart!.Value].Time, Captures[SelectionEnd!.Value].Time + CaptureLength(SelectionEnd.Value));
+
+    private TimeSpan CaptureLength(int index)
+    {
+        if (index + 1 < Captures.Count)
+        {
+            var gap = Captures[index + 1].Time - Captures[index].Time;
+            return gap < _maxCaptureLength ? gap : _maxCaptureLength;
+        }
+        return _maxCaptureLength / 1.5;
+    }
+
+    /// <summary>The nearest capture at or past <paramref name="index"/> in a direction that isn't marked for deletion.</summary>
+    private int NextVisible(int index, int direction)
+    {
+        for (; index >= 0 && index < Captures.Count; index += direction)
+            if (!Captures[index].PendingDelete)
+                return index;
+        return -1;
+    }
+
+    private int IndexAt(double seconds)
+    {
+        var best = -1;
+        for (var i = 0; i < Captures.Count; i++)
+        {
+            if (Seconds(Captures[i]) > seconds)
+                break;
+            best = i;
+        }
+        return best >= 0 ? best : (Captures.Count > 0 ? 0 : -1);
+    }
+
+    private static string Clock(DateTimeOffset time) => time.ToLocalTime().ToString("T", CultureInfo.CurrentCulture);
+
+    private static string Duration(TimeSpan span)
+    {
+        var minutes = (int)Math.Round(span.TotalMinutes);
+        if (span.TotalSeconds < 60)
+            return $"{(int)Math.Round(span.TotalSeconds)} s";
+        return minutes < 60 ? $"{minutes} m" : $"{minutes / 60} h {minutes % 60:00} m";
+    }
+
+    public void Dispose()
+    {
+        _playTimer.Stop();
+        _history.Dispose();
+    }
+}

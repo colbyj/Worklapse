@@ -1,0 +1,108 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Breeze-style layout pieces on top of BreezeResources.axaml. -->
+
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{DynamicResource BreezeWindowBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource BreezeTextBrush}" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+
+  <Style Selector="TextBlock.secondary">
+    <Setter Property="Foreground" Value="{DynamicResource BreezeSecondaryTextBrush}" />
+  </Style>
+  <Style Selector="TextBlock.hint">
+    <Setter Property="Foreground" Value="{DynamicResource BreezeSecondaryTextBrush}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.warning">
+    <Setter Property="Foreground" Value="{DynamicResource BreezeNegativeBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.strong">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Push buttons: Breeze keeps them at their text width with comfortable padding. -->
+  <Style Selector="Button">
+    <Setter Property="MinWidth" Value="80" />
+    <Setter Property="Padding" Value="12,5" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+
+  <!-- Header areas (menu bar, tool bar), as in Plasma's "header" colour. -->
+  <Style Selector="Menu.header">
+    <Setter Property="Background" Value="{DynamicResource BreezeHeaderBrush}" />
+    <Setter Property="Padding" Value="2,0" />
+  </Style>
+  <Style Selector="Border.toolBar">
+    <Setter Property="Background" Value="{DynamicResource BreezeHeaderBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeSeparatorBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Padding" Value="6,4" />
+  </Style>
+  <Style Selector="Border.toolBar > WrapPanel > :is(Control)">
+    <Setter Property="Margin" Value="2,0" />
+  </Style>
+
+  <!-- Tool buttons: flat until hovered, then Breeze's light blue face with a blue frame. -->
+  <Style Selector="Button.tool">
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Height" Value="30" />
+    <Setter Property="Padding" Value="7,0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BreezeAccentTintBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeAccentHoverBrush}" />
+  </Style>
+  <Style Selector="Button.tool:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BreezeAccentPressedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeAccentBrush}" />
+  </Style>
+  <Style Selector="Button.tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.tool StackPanel">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="Spacing" Value="6" />
+  </Style>
+
+  <Style Selector="Border.separator">
+    <Setter Property="Width" Value="1" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Background" Value="{DynamicResource BreezeSeparatorBrush}" />
+    <Setter Property="Margin" Value="6,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Border.statusBar">
+    <Setter Property="Background" Value="{DynamicResource BreezeWindowBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeSeparatorBrush}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+
+  <!-- Dialog button row, separated from the content the way KDE dialogs are. -->
+  <Style Selector="Border.buttonBar">
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeSeparatorBrush}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="Padding" Value="12,10" />
+  </Style>
+
+  <!-- Group boxes: a title above a framed area. -->
+  <Style Selector="Border.group">
+    <Setter Property="Background" Value="{DynamicResource BreezeViewBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeFrameBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="14,10,14,12" />
+  </Style>
+  <Style Selector="TextBlock.groupHeader">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+  </Style>
+</Styles>
