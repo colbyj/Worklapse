@@ -8,9 +8,7 @@
     <InternalsVisibleTo Include="Worklapse.Tests" />
   </ItemGroup>
 
-  <!-- Built by native/build-windows.sh. -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)../../native/win-x64/worklapse_av1.dll')">
-    <None Include="$(MSBuildThisFileDirectory)../../native/win-x64/worklapse_av1.dll" Link="worklapse_av1.dll" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <!-- Builds the native AV1 wrapper (worklapse_av1.dll) when needed and copies it to the output. -->
+  <Import Project="../../native/worklapse_av1.targets" />
 
 </Project>

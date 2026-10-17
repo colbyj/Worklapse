@@ -60,8 +60,8 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 
 ```
 native/
-  av1/worklapse_av1.c         C wrapper around libaom (encode BGRA, decode to BGRA, set options)
-  build-windows.sh            builds native/win-x64/worklapse_av1.dll (libaom static, via VS vcpkg)
+  av1/worklapse_av1.c         C wrapper around libaom (encode I420, decode to I420 or BGRA, set options)
+  worklapse_av1.targets       MSBuild: builds native/win-x64/worklapse_av1.dll (libaom static, via VS vcpkg) when needed
 src/
   Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading
   Worklapse.Video/            AV1 interop, IVF files, staging files, batch encoder, frame provider for playback
@@ -116,10 +116,10 @@ SQLite schema (version 3, migrations in `WorklapseDatabase`):
 ## Building, running, testing
 
 Requirements: .NET 10 SDK; Visual Studio 2026 or its Build Tools with the C++ workload (for the native
-library). From Git Bash in the repository root:
+library, which `dotnet build` builds when needed: ≈5 min the first time, see `native/README.md`). From the
+repository root:
 
 ```sh
-bash native/build-windows.sh            # once, or after changing native/av1 (≈5 min the first time)
 dotnet build
 dotnet test tests/Worklapse.Tests
 dotnet run --project src/Worklapse.App
