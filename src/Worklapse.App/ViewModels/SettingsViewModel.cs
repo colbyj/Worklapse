@@ -38,9 +38,16 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         Load(store.Current);
         PropertyChanged += OnAnyPropertyChanged;
+
+        Programs = new ProgramsViewModel(TimeSpan.FromSeconds(store.Current.IntervalSeconds));
+        Programs.Changed += MarkDirty;
+        _ = Programs.LoadAsync(store.Current.DataFolder);
     }
 
     public ObservableCollection<MonitorOption> Monitors { get; } = [];
+
+    /// <summary>The Programs page; its marks are kept in the history in the data folder.</summary>
+    public ProgramsViewModel Programs { get; }
 
     [ObservableProperty] private bool _isActiveApplication;
     [ObservableProperty] private bool _isPrimaryMonitor;
@@ -54,8 +61,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(QualityWarning), nameof(QualityText))]
     private double _quality;
 
-    [ObservableProperty] private string _dataFolder = "";
-    [ObservableProperty] private bool _isDirty;
+    // An empty folder used to mean the default one silently; now it has to be chosen (Browse or Default).
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDataFolder), nameof(CanApply))]
+    private string _dataFolder = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApply))]
+    private bool _isDirty;
+
+    public bool HasDataFolder => !string.IsNullOrWhiteSpace(DataFolder);
+    public bool CanApply => IsDirty && HasDataFolder;
+
+    public void UseDefaultDataFolder() => DataFolder = WorklapseSettings.DefaultDataFolder;
 
     public bool QualityWarning => Quality >= QualityWarningThreshold;
     public string QualityText => ((int)Quality).ToString();
@@ -65,8 +83,13 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public void Apply()
     {
+        // The marks go to the history they were read from, before a change of folder takes effect.
+        var folder = _store.Current.DataFolder;
+        Programs.Apply(folder);
         _store.Save(ToSettings());
         IsDirty = false;
+        if (!string.Equals(_store.Current.DataFolder, folder, StringComparison.OrdinalIgnoreCase))
+            _ = Programs.LoadAsync(_store.Current.DataFolder);
     }
 
     private WorklapseSettings ToSettings() => _store.Current with
@@ -98,7 +121,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         Quality = settings.Quality;
         DataFolder = settings.DataFolder;
         _loading = false;
-        IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors);
+        // Defaults don't touch the Programs page (its marks are history, not settings); its changes still count.
+        IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)
+            || Programs is { IsDirty: true };
     }
 
     private void OnAnyPropertyChanged(object? sender, PropertyChangedEventArgs e)

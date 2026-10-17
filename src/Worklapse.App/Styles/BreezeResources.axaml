@@ -137,6 +137,26 @@
   <StaticResource x:Key="ToolTipForeground" ResourceKey="BreezeTextBrush" />
   <StaticResource x:Key="ToolTipBorderBrush" ResourceKey="BreezeFrameBrush" />
 
+  <!-- Tabs: compact, in the window's font size, the selected one underlined in the accent colour -->
+  <x:Double x:Key="TabItemHeaderFontSize">13</x:Double>
+  <x:Double x:Key="TabItemMinHeight">32</x:Double>
+  <x:Double x:Key="TabItemHeaderMinHeight">32</x:Double>
+  <StaticResource x:Key="TabItemHeaderSelectedPipeFill" ResourceKey="BreezeAccentBrush" />
+  <StaticResource x:Key="TabItemHeaderForegroundUnselected" ResourceKey="BreezeSecondaryTextBrush" />
+  <StaticResource x:Key="TabItemHeaderForegroundUnselectedPointerOver" ResourceKey="BreezeTextBrush" />
+  <StaticResource x:Key="TabItemHeaderForegroundUnselectedPressed" ResourceKey="BreezeTextBrush" />
+  <StaticResource x:Key="TabItemHeaderForegroundSelected" ResourceKey="BreezeTextBrush" />
+  <StaticResource x:Key="TabItemHeaderForegroundSelectedPointerOver" ResourceKey="BreezeTextBrush" />
+  <StaticResource x:Key="TabItemHeaderForegroundSelectedPressed" ResourceKey="BreezeTextBrush" />
+
+  <!-- Lists: rows highlighted in the light accent tint, as in Breeze views -->
+  <Thickness x:Key="ListBoxItemPadding">8,3</Thickness>
+  <StaticResource x:Key="SystemControlHighlightListLowBrush" ResourceKey="BreezeAccentTintBrush" />
+  <StaticResource x:Key="SystemControlHighlightListMediumBrush" ResourceKey="BreezeAccentPressedBrush" />
+  <StaticResource x:Key="SystemControlHighlightListAccentLowBrush" ResourceKey="BreezeAccentTintBrush" />
+  <StaticResource x:Key="SystemControlHighlightListAccentMediumBrush" ResourceKey="BreezeAccentPressedBrush" />
+  <StaticResource x:Key="SystemControlHighlightListAccentHighBrush" ResourceKey="BreezeAccentPressedBrush" />
+
   <!-- Keyboard focus: Breeze's blue outline -->
   <StaticResource x:Key="SystemControlFocusVisualPrimaryBrush" ResourceKey="BreezeAccentBrush" />
   <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="Transparent" />

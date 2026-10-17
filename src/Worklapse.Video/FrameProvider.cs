@@ -4,6 +4,16 @@ using Worklapse.Core.Storage;
 namespace Worklapse.Video;
 
 /// <summary>
+/// The frame is no longer in its segment, or the segment no longer exists: it was rebuilt or removed after
+/// captures were deleted. Its capture, if it still exists, refers to a frame in another segment now; reload it.
+/// </summary>
+public sealed class FrameUnavailableException(FrameRef frame)
+    : Exception($"Frame {frame.FrameIndex} of segment {frame.SegmentId} is no longer stored there.")
+{
+    public FrameRef Frame { get; } = frame;
+}
+
+/// <summary>
 /// Decodes recorded frames for playback, whether their segment is still staged or already encoded.
 /// Keeps one decoder per monitor positioned in the segment last used, so stepping forward decodes one
 /// frame, and a small byte-limited cache of recent frames so stepping back a little is usually free.
@@ -40,6 +50,8 @@ public sealed class FrameProvider : IDisposable
 
     /// <summary>
     /// Returns the frame with a reference the caller owns: call <see cref="DecodedFrame.Release"/> when done.
+    /// Throws <see cref="FrameUnavailableException"/> if the frame has moved to another segment or is gone.
+    /// A frame still cached or in a segment already open is returned even then (it is the same picture).
     /// </summary>
     public DecodedFrame Get(FrameRef frame)
     {
@@ -57,7 +69,8 @@ public sealed class FrameProvider : IDisposable
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or InvalidOperationException)
         {
-            // The segment was encoded (its staging file removed) since the cursor was opened; reopen once.
+            // The segment was encoded (its staging file removed), rebuilt or removed since the cursor was
+            // opened; reopen once. If it's gone, opening it says so.
             DropCursor(frame.SegmentId);
             decoded = Decode(frame);
         }
@@ -68,18 +81,18 @@ public sealed class FrameProvider : IDisposable
 
     private DecodedFrame Decode(FrameRef frame)
     {
-        var cursor = Cursor(frame.SegmentId);
-        var index = frame.FrameIndex;
-        var restarted = cursor.MoveBefore(index);
+        var cursor = Cursor(frame);
+        var target = cursor.Find(frame);
+        var restarted = cursor.MoveBefore(target);
 
         // Going back means decoding again from the key frame. Keep the frames just before the one wanted
         // on the way, since the next steps back are likely to need them.
-        var keepFrom = restarted ? index - FramesKeptWhenSteppingBack : index;
-        while (cursor.Position < index)
+        var keepFrom = restarted ? target - FramesKeptWhenSteppingBack : target;
+        while (cursor.Position < target)
         {
             cursor.Advance();
-            var passing = frame with { FrameIndex = cursor.Position };
-            if (cursor.Position >= keepFrom && cursor.Position < index && !_cache.ContainsKey(passing))
+            var passing = frame with { FrameIndex = cursor.FrameIndex };
+            if (cursor.Position >= keepFrom && cursor.Position < target && !_cache.ContainsKey(passing))
             {
                 MakeRoom(cursor.FrameBytes);
                 Remember(passing, cursor.Copy(_pool));
@@ -114,11 +127,11 @@ public sealed class FrameProvider : IDisposable
         _db.Dispose();
     }
 
-    private SegmentCursor Cursor(long segmentId)
+    private SegmentCursor Cursor(FrameRef frame)
     {
         foreach (var open in _cursorsByMonitor.Values)
         {
-            if (open.SegmentId == segmentId)
+            if (open.SegmentId == frame.SegmentId)
             {
                 open.LastUsed = Environment.TickCount64;
                 return open;
@@ -126,7 +139,7 @@ public sealed class FrameProvider : IDisposable
         }
 
         // A monitor's frames are decoded by one decoder: opening another of its segments closes the last one.
-        var cursor = SegmentCursor.Open(_db, segmentId, DecoderThreads);
+        var cursor = SegmentCursor.Open(_db, frame.SegmentId, DecoderThreads) ?? throw new FrameUnavailableException(frame);
         if (_cursorsByMonitor.Remove(cursor.MonitorId, out var previous))
             previous.Dispose();
         _cursorsByMonitor[cursor.MonitorId] = cursor;
@@ -177,14 +190,17 @@ public sealed class FrameProvider : IDisposable
         _cacheBytes += frame.I420.Length;
     }
 
-    /// <summary>A decoder positioned somewhere in one segment.</summary>
+    /// <summary>
+    /// A decoder positioned somewhere in one segment. Positions count the frames stored in the segment, in
+    /// order; frame indexes can have gaps where frames were left out after deletes.
+    /// </summary>
     private sealed class SegmentCursor : IDisposable
     {
         private readonly WorklapseDatabase _db;
         private readonly string _path;
         private readonly SegmentState _state;
         private readonly int _width, _height, _threads;
-        private List<(long Offset, int Length)> _frames = [];
+        private List<(int Index, long Offset, int Length)> _frames = [];
         private FileStream? _ivf;
         private Av1Decoder? _decoder;
         private StagingReader? _staging;
@@ -208,39 +224,53 @@ public sealed class FrameProvider : IDisposable
         public long MonitorId { get; }
         public long LastUsed { get; set; }
 
-        public static SegmentCursor Open(WorklapseDatabase db, long segmentId, int threads)
+        /// <summary>Opens a segment; null if it doesn't exist (any more).</summary>
+        public static SegmentCursor? Open(WorklapseDatabase db, long segmentId, int threads)
         {
-            using var command = db.Command("SELECT path, state, width, height, monitor_id FROM segments WHERE id = $id;");
-            command.Parameters.AddWithValue("$id", segmentId);
-            using var reader = command.ExecuteReader();
-            if (!reader.Read())
-                throw new InvalidDataException($"Segment {segmentId} does not exist.");
-            var path = Path.Combine(db.DataFolder, reader.GetString(0));
-            var cursor = new SegmentCursor(db, segmentId, reader.GetInt64(4), path, (SegmentState)reader.GetInt32(1),
-                reader.GetInt32(2), reader.GetInt32(3), threads);
+            SegmentCursor cursor;
+            using (var command = db.Command("SELECT path, state, width, height, monitor_id FROM segments WHERE id = $id;"))
+            {
+                command.Parameters.AddWithValue("$id", segmentId);
+                using var reader = command.ExecuteReader();
+                if (!reader.Read())
+                    return null;
+                var path = Path.Combine(db.DataFolder, reader.GetString(0));
+                cursor = new SegmentCursor(db, segmentId, reader.GetInt64(4), path, (SegmentState)reader.GetInt32(1),
+                    reader.GetInt32(2), reader.GetInt32(3), threads);
+            }
             cursor.LoadFrameIndex();
             return cursor;
         }
 
-        /// <summary>The frame last decoded, or −1 before the first.</summary>
+        /// <summary>The position of the frame last decoded, or −1 before the first.</summary>
         public int Position => _position;
+
+        /// <summary>The frame index of the frame last decoded.</summary>
+        public int FrameIndex => _frames[_position].Index;
 
         public int FrameBytes => I420.Size(_width, _height);
 
+        /// <summary>The position of a frame in the segment.</summary>
+        public int Find(FrameRef frame)
+        {
+            var position = PositionOf(frame.FrameIndex);
+            if (position < 0)
+            {
+                // A staged segment may have grown since the index was loaded.
+                LoadFrameIndex();
+                position = PositionOf(frame.FrameIndex);
+            }
+            return position >= 0 ? position : throw new FrameUnavailableException(frame);
+        }
+
         /// <summary>
-        /// Gets ready to decode up to <paramref name="index"/> with <see cref="Advance"/>. Frames can only be
+        /// Gets ready to decode up to <paramref name="position"/> with <see cref="Advance"/>. Frames can only be
         /// rebuilt forward from the first, so going back starts over; returns whether it did.
         /// </summary>
-        public bool MoveBefore(int index)
+        public bool MoveBefore(int position)
         {
-            // A staged segment may have grown since the index was loaded.
-            if (index >= _frames.Count)
-                LoadFrameIndex();
-            if (index >= _frames.Count)
-                throw new InvalidDataException($"Segment {SegmentId} has no frame {index}.");
-
             // At or before the frame (possibly on it already): carry on from here.
-            if (index >= _position && _position >= 0)
+            if (position >= _position && _position >= 0)
                 return false;
             Restart();
             return true;
@@ -297,9 +327,9 @@ public sealed class FrameProvider : IDisposable
             }
         }
 
-        private void Apply(int index)
+        private void Apply(int position)
         {
-            var (offset, length) = _frames[index];
+            var (_, offset, length) = _frames[position];
             if (_state == SegmentState.Encoded)
                 _decoder!.Decode(IvfReader.ReadFrame(_ivf!, offset, length, ref _readBuffer));
             else
@@ -309,7 +339,8 @@ public sealed class FrameProvider : IDisposable
         private void LoadFrameIndex()
         {
             // Encoding a staged segment rewrites its offsets to point into the AV1 file; offsets for one
-            // format must never be used with the other, so a change of state reopens the cursor.
+            // format must never be used with the other, so a change of state (or the segment's removal)
+            // reopens the cursor.
             using (var state = _db.Command("SELECT state FROM segments WHERE id = $id;"))
             {
                 state.Parameters.AddWithValue("$id", SegmentId);
@@ -317,13 +348,30 @@ public sealed class FrameProvider : IDisposable
                     throw new InvalidOperationException($"Segment {SegmentId} changed state; reopen it.");
             }
 
-            using var command = _db.Command("SELECT file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;");
+            using var command = _db.Command("SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;");
             command.Parameters.AddWithValue("$id", SegmentId);
             using var reader = command.ExecuteReader();
-            var frames = new List<(long, int)>();
+            var frames = new List<(int, long, int)>();
             while (reader.Read())
-                frames.Add((reader.GetInt64(0), reader.GetInt32(1)));
+                frames.Add((reader.GetInt32(0), reader.GetInt64(1), reader.GetInt32(2)));
             _frames = frames;
+        }
+
+        private int PositionOf(int frameIndex)
+        {
+            int low = 0, high = _frames.Count - 1;
+            while (low <= high)
+            {
+                var middle = (low + high) / 2;
+                var index = _frames[middle].Index;
+                if (index == frameIndex)
+                    return middle;
+                if (index < frameIndex)
+                    low = middle + 1;
+                else
+                    high = middle - 1;
+            }
+            return -1;
         }
     }
 }

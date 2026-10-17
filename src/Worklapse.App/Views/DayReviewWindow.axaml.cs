@@ -21,6 +21,7 @@ public partial class DayReviewWindow : Window
     private readonly Dictionary<long, WriteableBitmap> _bitmaps = [];
     private int _requestVersion;
     private PlannedFrame? _plan;
+    private FrameRef? _reloadedFor;
     private bool _closed;
 
     // Needed by the XAML loader; the app always uses the other constructor.
@@ -38,6 +39,11 @@ public partial class DayReviewWindow : Window
         Timeline.Clicked += viewModel.Seek;
         Timeline.Dragged += viewModel.DragSelect;
         Frames.ZoomChanged += UpdateViewText;
+
+        // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, what
+        // the selection contains (or the frame's, without a selection).
+        Frames.ContextMenu = ClassificationMenu(forSelection: false);
+        Timeline.ContextMenu = ClassificationMenu(forSelection: true);
 
         _renderer = new FrameRenderer(dataFolder);
         _renderer.Rendered += result => Dispatcher.UIThread.Post(() => ShowFrames(result));
@@ -91,6 +97,36 @@ public partial class DayReviewWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    /// <summary>A menu filled when it opens, from the capture or selection at that moment; empty means none.</summary>
+    private ContextMenu ClassificationMenu(bool forSelection)
+    {
+        var menu = new ContextMenu();
+        menu.Opening += (_, e) =>
+        {
+            var (choices, more) = _viewModel.ClassificationChoices(forSelection && _viewModel.HasSelection);
+            if (choices.Count == 0)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            var items = new List<Control>();
+            foreach (var choice in choices)
+            {
+                var item = new MenuItem { Header = choice.Label };
+                item.Click += (_, _) => _viewModel.SetProductive(choice.Program, choice.MakeProductive);
+                items.Add(item);
+            }
+            if (more > 0)
+            {
+                items.Add(new Separator());
+                items.Add(new MenuItem { Header = $"{more} more in Settings → Programs", IsEnabled = false });
+            }
+            menu.ItemsSource = items;
+        };
+        return menu;
     }
 
     private void UpdateTimeline()
@@ -160,6 +196,16 @@ public partial class DayReviewWindow : Window
         {
             if (_closed || _plan is null || result.Version != _plan.Version)
                 return; // superseded by a newer request
+
+            // Reclaiming the space of deleted captures moves frames to rebuilt segments, so the day loaded here
+            // can refer to frames that are gone. Reload it and ask again, once per missing frame: if the
+            // reloaded day still refers to it, the error is shown.
+            if (result.Error is FrameUnavailableException missing && _reloadedFor != missing.Frame)
+            {
+                _reloadedFor = missing.Frame;
+                _viewModel.RefreshCommand.Execute(null);
+                return;
+            }
 
             foreach (var (monitorId, frame) in result.Frames)
                 CopyToBitmap(monitorId, frame);

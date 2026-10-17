@@ -25,6 +25,8 @@
       <TextBlock Text="{Binding ModeText}" />
       <TextBlock Text="{Binding DetailText}" Classes="secondary" TextWrapping="Wrap"
                  Classes.warning="{Binding HasError}" />
+      <TextBlock Text="{Binding DeletedContentText}" Classes="secondary warning" TextWrapping="Wrap"
+                 IsVisible="{Binding HasDeletedContentLeft}" Margin="0,6,0,0" />
     </StackPanel>
   </DockPanel>
 </Window>

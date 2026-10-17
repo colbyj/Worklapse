@@ -23,29 +23,46 @@ public enum SegmentState
 /// <summary>Writes captures, segments and frame indexes. Used only from the recorder thread.</summary>
 public sealed class RecordingStore(WorklapseDatabase db)
 {
-    private readonly Dictionary<(string Name, string? Path), long> _apps = [];
     private readonly Dictionary<MonitorInfo, long> _monitors = [];
 
     public WorklapseDatabase Database => db;
 
+    /// <summary>
+    /// Looks the app up every time rather than caching its id: deleting captures deletes the apps left without
+    /// any, so an id remembered from earlier may be gone. Call it inside the capture's transaction.
+    /// </summary>
     public long GetOrAddApp(string exeName, string? exePath)
     {
-        if (_apps.TryGetValue((exeName, exePath), out var id))
-            return id;
-
         // exe_path can be NULL, which UNIQUE treats as distinct, so look up before inserting.
         using (var find = db.Command("SELECT id FROM apps WHERE exe_name = $name AND exe_path IS $path;"))
         {
             find.Parameters.AddWithValue("$name", exeName);
             find.Parameters.AddWithValue("$path", (object?)exePath ?? DBNull.Value);
             if (find.ExecuteScalar() is long existing)
-                return _apps[(exeName, exePath)] = existing;
+                return existing;
         }
 
-        using var insert = db.Command("INSERT INTO apps (exe_name, exe_path) VALUES ($name, $path) RETURNING id;");
+        // Apps are classified by name, so another copy of one already marked (another path) is marked too.
+        using var insert = db.Command("""
+            INSERT INTO apps (exe_name, exe_path, productive)
+            VALUES ($name, $path, coalesce((SELECT max(productive) FROM apps WHERE exe_name = $name), 0))
+            RETURNING id;
+            """);
         insert.Parameters.AddWithValue("$name", exeName);
         insert.Parameters.AddWithValue("$path", (object?)exePath ?? DBNull.Value);
-        return _apps[(exeName, exePath)] = (long)insert.ExecuteScalar()!;
+        return (long)insert.ExecuteScalar()!;
+    }
+
+    /// <summary>The site's id, adding it if new. Not cached, for the same reason as apps.</summary>
+    public long GetOrAddSite(string domain)
+    {
+        using var upsert = db.Command("""
+            INSERT INTO sites (domain) VALUES ($domain)
+            ON CONFLICT (domain) DO UPDATE SET domain = domain
+            RETURNING id;
+            """);
+        upsert.Parameters.AddWithValue("$domain", domain);
+        return (long)upsert.ExecuteScalar()!;
     }
 
     public long GetOrAddMonitor(MonitorInfo monitor)
@@ -68,17 +85,18 @@ public sealed class RecordingStore(WorklapseDatabase db)
         return _monitors[monitor] = (long)upsert.ExecuteScalar()!;
     }
 
-    public long InsertCapture(DateTimeOffset timestamp, CaptureKind kind, long? appId, string? title, PixelRect? window)
+    public long InsertCapture(DateTimeOffset timestamp, CaptureKind kind, long? appId, string? title, PixelRect? window, long? siteId = null)
     {
         using var insert = db.Command("""
-            INSERT INTO captures (ts_ms, utc_offset_min, kind, app_id, window_title, window_x, window_y, window_width, window_height)
-            VALUES ($ts, $offset, $kind, $app, $title, $wx, $wy, $ww, $wh)
+            INSERT INTO captures (ts_ms, utc_offset_min, kind, app_id, window_title, window_x, window_y, window_width, window_height, site_id)
+            VALUES ($ts, $offset, $kind, $app, $title, $wx, $wy, $ww, $wh, $site)
             RETURNING id;
             """);
         insert.Parameters.AddWithValue("$ts", timestamp.ToUnixTimeMilliseconds());
         insert.Parameters.AddWithValue("$offset", (int)timestamp.Offset.TotalMinutes);
         insert.Parameters.AddWithValue("$kind", (int)kind);
         insert.Parameters.AddWithValue("$app", (object?)appId ?? DBNull.Value);
+        insert.Parameters.AddWithValue("$site", (object?)siteId ?? DBNull.Value);
         insert.Parameters.AddWithValue("$title", (object?)title ?? DBNull.Value);
         insert.Parameters.AddWithValue("$wx", (object?)window?.X ?? DBNull.Value);
         insert.Parameters.AddWithValue("$wy", (object?)window?.Y ?? DBNull.Value);

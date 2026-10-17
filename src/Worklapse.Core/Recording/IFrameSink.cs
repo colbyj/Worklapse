@@ -9,7 +9,8 @@ public interface IFrameSink : IDisposable
     /// <summary>
     /// Adds <paramref name="capture"/> as the next frame of the monitor's open segment, starting a new
     /// segment when none is open, the size changed, or the open one is full. Called inside the recorder's
-    /// database transaction.
+    /// database transaction, which must also add the <c>frames</c> row showing it: frames no row refers to
+    /// once their segment is closed count as deleted, and are left out when it is stored for good.
     /// </summary>
     FrameRef Append(long monitorId, ScreenCapture capture, DateTimeOffset timestamp);
 

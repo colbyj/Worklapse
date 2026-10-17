@@ -100,10 +100,7 @@ public class FrameProviderTests
                 {
                     var (width, height) = (monitor.Bounds.Width, monitor.Bounds.Height);
                     var frame = ToI420(TestImage(width, height, index), width, height);
-                    using var transaction = store.BeginTransaction();
-                    var frameRef = sink.Append(monitorId, new ScreenCapture { Monitor = monitor, Width = width, Height = height, Frame = frame, Changed = true }, start.AddSeconds(10 * index));
-                    transaction.Commit();
-                    sink.Committed();
+                    var (_, frameRef) = TestRecording.Append(store, sink, monitor, monitorId, frame, start.AddSeconds(10 * index));
                     expected[frameRef] = frame;
                     return frameRef;
                 }

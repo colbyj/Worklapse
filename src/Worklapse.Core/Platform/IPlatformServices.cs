@@ -38,5 +38,6 @@ public sealed record PlatformServices(
     {
         Screen.Dispose();
         Session.Dispose();
+        (Foreground as IDisposable)?.Dispose();
     }
 }

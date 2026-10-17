@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 5;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -32,7 +32,9 @@ public sealed class WorklapseDatabase : IDisposable
         connection.Open();
 
         var db = new WorklapseDatabase(dataFolder, connection);
-        db.Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
+        // secure_delete: what is deleted (window titles, app names of deleted captures) is overwritten with
+        // zeros instead of lingering in free space, where anyone opening the file could still read it.
+        db.Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;");
         db.Migrate();
         return db;
     }
@@ -154,6 +156,60 @@ public sealed class WorklapseDatabase : IDisposable
             using var transaction = BeginTransaction();
             Execute("ALTER TABLE apps ADD COLUMN productive INTEGER NOT NULL DEFAULT 0;");
             Execute("PRAGMA user_version = 3;");
+            transaction.Commit();
+        }
+
+        if (version < 4)
+        {
+            // Removing deleted captures' video from disk. Segment frames can be dropped once no capture refers
+            // to them; the batch encoder then removes or rebuilds their segment.
+            using var transaction = BeginTransaction();
+            Execute("""
+                -- Finds who still refers to a segment frame (also what the foreign key check on deleting one uses).
+                CREATE INDEX ix_frames_segment ON frames (segment_id, frame_index);
+
+                -- Finds the apps left without captures after a delete.
+                CREATE INDEX ix_captures_app ON captures (app_id);
+
+                -- Segments that may hold frames nothing refers to any more. generation goes up each time a
+                -- segment is queued again, so a check that started before a newer delete doesn't clear it.
+                CREATE TABLE reclaim_queue (
+                    segment_id  INTEGER PRIMARY KEY REFERENCES segments (id) ON DELETE CASCADE,
+                    generation  INTEGER NOT NULL DEFAULT 0
+                );
+
+                -- Segments whose files are to be deleted: one no longer in segments, or one being written that
+                -- isn't yet. Recorded in the same transaction that lets go of the files (or before writing them),
+                -- so a crash in between leaves a note of what to clean up rather than an orphan. The path is the
+                -- segment's (relative, ".ivf"); its ".staging" and ".tmp" files go too.
+                CREATE TABLE dead_segment_files (
+                    path  TEXT PRIMARY KEY
+                );
+
+                -- Deletes made before this version left their frames behind.
+                INSERT INTO reclaim_queue (segment_id)
+                SELECT DISTINCT sf.segment_id FROM segment_frames sf
+                WHERE NOT EXISTS (SELECT 1 FROM frames f WHERE f.segment_id = sf.segment_id AND f.frame_index = sf.frame_index);
+                """);
+            Execute("PRAGMA user_version = 4;");
+            transaction.Commit();
+        }
+
+        if (version < 5)
+        {
+            // Websites, from the browser's address bar at capture time (domain only). A capture with a site is
+            // productive if the site is; otherwise it follows its app. Older captures have no site.
+            using var transaction = BeginTransaction();
+            Execute("""
+                CREATE TABLE sites (
+                    id          INTEGER PRIMARY KEY,
+                    domain      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    productive  INTEGER NOT NULL DEFAULT 0
+                );
+                ALTER TABLE captures ADD COLUMN site_id INTEGER REFERENCES sites (id);
+                CREATE INDEX ix_captures_site ON captures (site_id) WHERE site_id IS NOT NULL;
+                """);
+            Execute("PRAGMA user_version = 5;");
             transaction.Commit();
         }
     }

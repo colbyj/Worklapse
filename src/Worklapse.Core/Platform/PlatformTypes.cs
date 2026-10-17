@@ -22,7 +22,11 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 public sealed record MonitorInfo(string DeviceName, PixelRect Bounds, bool IsPrimary);
 
 /// <summary>The window that had focus at capture time.</summary>
-public sealed record ForegroundWindow(string ProcessName, string? ProcessPath, string Title, PixelRect Bounds);
+/// <param name="Site">
+/// For a browser, the site it shows (<see cref="SiteDomain"/>); null for other apps, browser pages, private
+/// windows, or when the address couldn't be read in time.
+/// </param>
+public sealed record ForegroundWindow(string ProcessName, string? ProcessPath, string Title, PixelRect Bounds, string? Site = null);
 
 /// <summary>
 /// One monitor's pixels as a packed I420 frame (see <see cref="Imaging.I420"/>). The memory belongs to the

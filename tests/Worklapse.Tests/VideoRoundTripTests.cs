@@ -96,13 +96,7 @@ public class VideoRoundTripTests
         using (var sink = new StagedVideoSink(store, () => 30))
         {
             for (var i = 0; i < StagedVideoSink.FramesPerSegment + 3; i++)
-            {
-                var capture = new ScreenCapture { Monitor = monitor, Width = Width, Height = Height, Frame = ToI420(TestImage(i)), Changed = true };
-                using var transaction = store.BeginTransaction();
-                refs.Add(sink.Append(monitorId, capture, start.AddSeconds(10 * i)));
-                transaction.Commit();
-                sink.Committed();
-            }
+                refs.Add(TestRecording.Append(store, sink, monitor, monitorId, ToI420(TestImage(i)), start.AddSeconds(10 * i)).Frame);
 
             // The first segment filled up and is being encoded; the second is still staged.
             Assert.True(sink.Encoder.WaitUntilIdle(TimeSpan.FromMinutes(1)));
@@ -160,10 +154,7 @@ public class VideoRoundTripTests
         using (var sink = new StagedVideoSink(store, () => 30))
         {
             for (var i = 0; i < 5; i++)
-            {
-                var capture = new ScreenCapture { Monitor = monitor, Width = Width, Height = Height, Frame = ToI420(TestImage(i)), Changed = true };
-                sink.Append(monitorId, capture, start.AddSeconds(10 * i));
-            }
+                TestRecording.Append(store, sink, monitor, monitorId, ToI420(TestImage(i)), start.AddSeconds(10 * i));
         }
         Assert.Equal([(int)SegmentState.Staged], SegmentStates(db));
 

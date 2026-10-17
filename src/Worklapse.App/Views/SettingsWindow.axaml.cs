@@ -17,10 +17,15 @@ public partial class SettingsWindow : Window
 
     private void OnOk(object? sender, RoutedEventArgs e)
     {
+        // OK is disabled without a history folder; this holds however it gets pressed (it's the default button).
+        if (!ViewModel.HasDataFolder)
+            return;
         if (ViewModel.IsDirty)
             ViewModel.Apply();
         Close();
     }
+
+    private void OnDefaultFolder(object? sender, RoutedEventArgs e) => ViewModel.UseDefaultDataFolder();
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
 

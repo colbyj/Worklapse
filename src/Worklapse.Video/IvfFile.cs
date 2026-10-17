@@ -88,6 +88,15 @@ public static class IvfReader
         return buffer.AsSpan(0, length);
     }
 
+    /// <summary>Reads the timestamp of the frame whose data starts at <paramref name="offset"/>.</summary>
+    public static long ReadTimestamp(FileStream stream, long offset)
+    {
+        Span<byte> pts = stackalloc byte[8];
+        stream.Position = offset - 8; // the frame header ends with it
+        stream.ReadExactly(pts);
+        return BinaryPrimitives.ReadInt64LittleEndian(pts);
+    }
+
     /// <summary>Lists every whole frame in a file (offset of its data, length, timestamp).</summary>
     public static IEnumerable<(long Offset, int Length, long PtsMs)> EnumerateFrames(FileStream stream)
     {

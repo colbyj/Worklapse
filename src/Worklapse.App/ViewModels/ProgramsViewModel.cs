@@ -1,0 +1,161 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Worklapse.Core.History;
+using Worklapse.Core.Storage;
+
+namespace Worklapse.App.ViewModels;
+
+/// <summary>An app or website on the Programs page.</summary>
+public sealed partial class ProgramRow : ObservableObject
+{
+    public ProgramRow(ProgramUsage usage)
+    {
+        Program = usage.Program;
+        Recorded = usage.Recorded;
+        Saved = usage.Productive;
+        _productive = usage.Productive;
+    }
+
+    public ProgramKey Program { get; }
+    public string Name => Program.Name;
+    public string KindText => Program.Kind == ProgramKind.App ? "App" : "Website";
+    public TimeSpan Recorded { get; }
+    public string RecordedText => DurationText.Of(Recorded);
+
+    /// <summary>The classification in the database; <see cref="Productive"/> is what the dialog shows.</summary>
+    public bool Saved { get; set; }
+
+    [ObservableProperty] private bool _productive;
+}
+
+public enum ProgramSort
+{
+    Productive,
+    Name,
+    Kind,
+    Recorded,
+}
+
+/// <summary>
+/// The Programs page of the Settings dialog: every app and website recorded, to mark productive. The marks
+/// live in the history database (they belong with the history), and like the other settings take effect on
+/// Apply or OK.
+/// </summary>
+public sealed partial class ProgramsViewModel : ObservableObject
+{
+    private readonly TimeSpan _maxCaptureLength;
+    private List<ProgramRow> _all = [];
+    private int _loads;
+
+    public ProgramsViewModel(TimeSpan captureInterval) => _maxCaptureLength = captureInterval * 1.5;
+
+    /// <summary>Raised when a row's checkbox changes.</summary>
+    public event Action? Changed;
+
+    [ObservableProperty] private IReadOnlyList<ProgramRow> _rows = [];
+    [ObservableProperty] private string _filter = "";
+    [ObservableProperty] private string _status = "";
+    [ObservableProperty] private ProgramSort _sort = ProgramSort.Recorded;
+    [ObservableProperty] private bool _descending = true;
+
+    public string ProductiveHeader => Header("Productive", ProgramSort.Productive);
+    public string NameHeader => Header("Name", ProgramSort.Name);
+    public string KindHeader => Header("Type", ProgramSort.Kind);
+    public string RecordedHeader => Header("Recorded", ProgramSort.Recorded);
+
+    public bool IsDirty => _all.Any(r => r.Productive != r.Saved);
+
+    /// <summary>Reads the list from the history in <paramref name="dataFolder"/>, off the UI thread.</summary>
+    public async Task LoadAsync(string dataFolder)
+    {
+        var load = ++_loads;
+        Status = "Loading…";
+        List<ProgramUsage> programs;
+        try
+        {
+            programs = await Task.Run(() =>
+            {
+                using var history = new HistoryStore(WorklapseDatabase.Open(dataFolder));
+                return history.GetPrograms(_maxCaptureLength);
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+        {
+            if (load == _loads)
+                Status = "Couldn't read the history: " + ex.Message;
+            return;
+        }
+        if (load != _loads)
+            return; // a newer load (another folder) replaced this one
+
+        _all = programs.Select(p => new ProgramRow(p)).ToList();
+        foreach (var row in _all)
+            row.PropertyChanged += (_, _) => Changed?.Invoke();
+        Refresh();
+    }
+
+    /// <summary>Writes the changed marks to the history in <paramref name="dataFolder"/>.</summary>
+    public void Apply(string dataFolder)
+    {
+        var changed = _all.Where(r => r.Productive != r.Saved).ToList();
+        if (changed.Count == 0)
+            return;
+        using var history = new HistoryStore(WorklapseDatabase.Open(dataFolder));
+        foreach (var row in changed)
+        {
+            history.SetProductive(row.Program, row.Productive);
+            row.Saved = row.Productive;
+        }
+    }
+
+    [RelayCommand]
+    private void SortBy(ProgramSort column)
+    {
+        if (Sort == column)
+            Descending = !Descending;
+        else
+            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.Productive);
+        Refresh();
+    }
+
+    partial void OnFilterChanged(string value) => Refresh();
+
+    private void Refresh()
+    {
+        var filter = Filter.Trim();
+        IEnumerable<ProgramRow> rows = filter.Length == 0 ? _all : _all.Where(r => r.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase));
+        Func<ProgramRow, object> key = Sort switch
+        {
+            ProgramSort.Productive => r => r.Productive,
+            ProgramSort.Name => r => r.Name,
+            ProgramSort.Kind => r => r.KindText,
+            _ => r => r.Recorded,
+        };
+        var ordered = Descending ? rows.OrderByDescending(key) : rows.OrderBy(key);
+        Rows = ordered.ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+        var apps = _all.Count(r => r.Program.Kind == ProgramKind.App);
+        var sites = _all.Count - apps;
+        Status = _all.Count == 0 ? "Nothing recorded yet."
+            : filter.Length > 0 ? $"{Rows.Count} of {apps} apps and {sites} websites"
+            : $"{apps} apps and {sites} websites";
+        OnPropertyChanged(nameof(ProductiveHeader));
+        OnPropertyChanged(nameof(NameHeader));
+        OnPropertyChanged(nameof(KindHeader));
+        OnPropertyChanged(nameof(RecordedHeader));
+    }
+
+    private string Header(string text, ProgramSort column) => Sort == column ? $"{text} {(Descending ? "▼" : "▲")}" : text;
+}
+
+internal static class DurationText
+{
+    /// <summary>"45 s", "12 m", "3 h 05 m", as in Day review.</summary>
+    public static string Of(TimeSpan span)
+    {
+        var minutes = (int)Math.Round(span.TotalMinutes);
+        if (span.TotalSeconds < 60)
+            return $"{(int)Math.Round(span.TotalSeconds)} s";
+        return minutes < 60 ? $"{minutes} m" : $"{minutes / 60} h {minutes % 60:00} m";
+    }
+}

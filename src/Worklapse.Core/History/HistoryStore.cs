@@ -3,6 +3,13 @@ using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.History;
 
+/// <param name="Captures">How many captures were deleted.</param>
+/// <param name="StagedSegmentsAffected">
+/// Some of them used a segment not encoded yet, possibly the one being recorded: its deleted frames leave
+/// the disk once it is closed and encoded (<see cref="Recording.Recorder.CloseSegmentsSoon"/>).
+/// </param>
+public readonly record struct DeleteResult(int Captures, bool StagedSegmentsAffected);
+
 /// <summary>
 /// Reads recorded days and edits them (marking ranges for deletion). Uses its own connection; meant for
 /// the UI thread, alongside the recorder writing through another connection.
@@ -54,8 +61,9 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         var captures = new List<CaptureRecord>();
         using (var command = db.Command("""
             SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, c.window_title,
-                   c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0), c.pending_delete
-            FROM captures c LEFT JOIN apps a ON a.id = c.app_id
+                   c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0), c.pending_delete,
+                   s.domain, s.productive
+            FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
             """))
@@ -73,11 +81,13 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                     id,
                     time,
                     (CaptureKind)reader.GetInt32(3),
-                    reader.IsDBNull(4) ? null : reader.GetString(4),
-                    reader.IsDBNull(5) ? null : reader.GetString(5),
+                    AppName: reader.IsDBNull(4) ? null : reader.GetString(4),
+                    Site: reader.IsDBNull(12) ? null : reader.GetString(12),
+                    WindowTitle: reader.IsDBNull(5) ? null : reader.GetString(5),
                     window,
-                    reader.GetInt64(10) != 0,
-                    reader.GetInt64(11) != 0,
+                    AppProductive: reader.GetInt64(10) != 0,
+                    SiteProductive: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
+                    PendingDelete: reader.GetInt64(11) != 0,
                     frames.TryGetValue(id, out var list) ? list : []));
             }
         }
@@ -106,16 +116,98 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
     }
 
     /// <summary>
-    /// Deletes the captures marked on <paramref name="day"/> (their frame references go with them).
-    /// The video stays on disk until the segments are rebuilt; returns how many captures were deleted.
+    /// Deletes the captures marked on <paramref name="day"/> (their frame references go with them), and the
+    /// apps left without captures unless marked productive, so their names go too. Queues the segments the
+    /// captures used, for the batch encoder to remove the frames nothing refers to any more from disk; the
+    /// video stays there until it does.
     /// </summary>
-    public int DeleteMarked(DateOnly day)
+    public DeleteResult DeleteMarked(DateOnly day)
     {
         var (startMs, endMs) = DayBounds(day);
+        using var transaction = db.BeginTransaction();
+
+        bool staged;
+        using (var touched = db.Command("""
+            SELECT EXISTS (
+                SELECT 1 FROM frames f JOIN captures c ON c.id = f.capture_id JOIN segments s ON s.id = f.segment_id
+                WHERE c.pending_delete = 1 AND c.ts_ms >= $start AND c.ts_ms < $end AND s.state = $staged);
+            """))
+        {
+            touched.Parameters.AddWithValue("$start", startMs);
+            touched.Parameters.AddWithValue("$end", endMs);
+            touched.Parameters.AddWithValue("$staged", (int)SegmentState.Staged);
+            staged = (long)touched.ExecuteScalar()! != 0;
+        }
+
+        using (var queue = db.Command("""
+            INSERT INTO reclaim_queue (segment_id)
+            SELECT DISTINCT f.segment_id FROM frames f JOIN captures c ON c.id = f.capture_id
+            WHERE c.pending_delete = 1 AND c.ts_ms >= $start AND c.ts_ms < $end
+            ON CONFLICT (segment_id) DO UPDATE SET generation = generation + 1;
+            """))
+        {
+            queue.Parameters.AddWithValue("$start", startMs);
+            queue.Parameters.AddWithValue("$end", endMs);
+            queue.ExecuteNonQuery();
+        }
+
         using var command = db.Command("DELETE FROM captures WHERE pending_delete = 1 AND ts_ms >= $start AND ts_ms < $end;");
         command.Parameters.AddWithValue("$start", startMs);
         command.Parameters.AddWithValue("$end", endMs);
-        return command.ExecuteNonQuery();
+        var deleted = command.ExecuteNonQuery();
+
+        db.Execute("""
+            DELETE FROM apps WHERE productive = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
+            DELETE FROM sites WHERE productive = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
+            """);
+        transaction.Commit();
+        return new DeleteResult(deleted, staged);
+    }
+
+    /// <summary>
+    /// Marks an app (every copy with that exe name) or a site productive or not. Classification is looked up
+    /// when a day is read, so this applies to all history at once.
+    /// </summary>
+    public void SetProductive(ProgramKey program, bool productive)
+    {
+        using var command = db.Command(program.Kind == ProgramKind.App
+            ? "UPDATE apps SET productive = $productive WHERE exe_name = $name;"
+            : "UPDATE sites SET productive = $productive WHERE domain = $name;");
+        command.Parameters.AddWithValue("$productive", productive ? 1 : 0);
+        command.Parameters.AddWithValue("$name", program.Name);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Every app and site recorded, with its classification and its active time (marked captures left out),
+    /// counted as in <see cref="SpanSummary"/>: each capture until the next, at most
+    /// <paramref name="maxCaptureLength"/>.
+    /// </summary>
+    public List<ProgramUsage> GetPrograms(TimeSpan maxCaptureLength)
+    {
+        using var command = db.Command("""
+            WITH spans AS (
+                SELECT app_id, site_id,
+                       CASE WHEN kind = 0 AND pending_delete = 0
+                            THEN min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) ELSE 0 END AS ms
+                FROM captures)
+            SELECT 0, a.exe_name, max(a.productive), coalesce(sum(s.ms), 0)
+            FROM apps a LEFT JOIN spans s ON s.app_id = a.id
+            GROUP BY a.exe_name
+            UNION ALL
+            SELECT 1, t.domain, t.productive, coalesce(sum(s.ms), 0)
+            FROM sites t LEFT JOIN spans s ON s.site_id = t.id
+            GROUP BY t.id;
+            """);
+        command.Parameters.AddWithValue("$max", (long)maxCaptureLength.TotalMilliseconds);
+        using var reader = command.ExecuteReader();
+        var programs = new List<ProgramUsage>();
+        while (reader.Read())
+            programs.Add(new ProgramUsage(
+                new ProgramKey(reader.GetInt32(0) == 0 ? ProgramKind.App : ProgramKind.Site, reader.GetString(1)),
+                reader.GetInt64(2) != 0,
+                TimeSpan.FromMilliseconds(reader.GetInt64(3))));
+        return programs;
     }
 
     public void Dispose() => db.Dispose();

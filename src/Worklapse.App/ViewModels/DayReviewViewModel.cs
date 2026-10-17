@@ -17,6 +17,12 @@ public sealed record MonitorChoice(long? MonitorId, string Label)
 
 public sealed record StatItem(string Label, string Value, string Note, IBrush? Swatch);
 
+/// <summary>One entry of the right-click menu: switches an app or site to <paramref name="MakeProductive"/>.</summary>
+public sealed record ClassificationChoice(string Label, ProgramKey Program, bool MakeProductive);
+
+/// <param name="More">Apps and sites in the selection beyond those listed.</param>
+public sealed record ClassificationMenu(IReadOnlyList<ClassificationChoice> Choices, int More);
+
 public sealed partial class MarkedRange : ObservableObject
 {
     public required DateTimeOffset Start { get; init; }
@@ -43,14 +49,17 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private static readonly int[] SpeedSteps = [1, 3, 12, 36];
 
     private readonly HistoryStore _history;
+    private readonly Action<DeleteResult>? _capturesDeleted;
     private readonly TimeSpan _maxCaptureLength;
     private readonly DispatcherTimer _playTimer;
     private IReadOnlyList<DateOnly> _days = [];
     private int? _anchor;
 
-    public DayReviewViewModel(HistoryStore history, TimeSpan captureInterval)
+    /// <param name="capturesDeleted">Called after captures are deleted permanently, to remove their video from disk.</param>
+    public DayReviewViewModel(HistoryStore history, TimeSpan captureInterval, Action<DeleteResult>? capturesDeleted = null)
     {
         _history = history;
+        _capturesDeleted = capturesDeleted;
         _maxCaptureLength = captureInterval * 1.5;
         _playTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => PlayTick());
         Speeds = ["Slow", "Normal", "Fast", "Very fast"];
@@ -273,9 +282,11 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     {
         var keep = NextVisible(Current, 1) is var v and >= 0 ? Captures[v].Id : (long?)null;
         var removed = Enumerable.Range(0, Captures.Count).Where(i => Captures[i].PendingDelete).Sum(i => CaptureLength(i).TotalSeconds);
-        var count = _history.DeleteMarked(Day.Day);
-        ConfirmMessage = count == 0 ? "" : $"Deleted {Duration(TimeSpan.FromSeconds(removed))}.";
+        var result = _history.DeleteMarked(Day.Day);
+        ConfirmMessage = result.Captures == 0 ? "" : $"Deleted {Duration(TimeSpan.FromSeconds(removed))}.";
         Reload(keep);
+        if (result.Captures > 0)
+            _capturesDeleted?.Invoke(result);
     }
 
     private void Restore(DateTimeOffset start, DateTimeOffset end)
@@ -283,6 +294,70 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         _history.SetPendingDelete(start, end, pending: false);
         ConfirmMessage = "";
         Reload(Current >= 0 ? Captures[Current].Id : null);
+    }
+
+    // --- productive or not --------------------------------------------------------------------
+
+    /// <summary>Apps and sites listed for a selection, longest first; the rest are on the Programs page.</summary>
+    public const int MaxClassificationChoices = 12;
+
+    /// <summary>
+    /// What the right-click menu offers: for the current capture, its site and its app; for the selection, each
+    /// app and site in it with its time there. Each one switches between Productive and Other.
+    /// </summary>
+    public ClassificationMenu ClassificationChoices(bool forSelection)
+    {
+        if (forSelection && HasSelection)
+        {
+            var (start, end) = SelectionTimes();
+            var inSelection = Captures.Skip(SelectionStart!.Value).Take(SelectionEnd!.Value - SelectionStart.Value + 1).ToList();
+            var times = SpanSummary.ByProgram(Captures, start, end, _maxCaptureLength);
+            var choices = times.Take(MaxClassificationChoices)
+                .Select(t => Choice(t.Program, inSelection, t.Time))
+                .ToList();
+            return new ClassificationMenu(choices, times.Count - choices.Count);
+        }
+
+        if (Current < 0 || Current >= Captures.Count || !Captures[Current].IsActive)
+            return new ClassificationMenu([], 0);
+        var capture = Captures[Current];
+        var programs = new List<ProgramKey>();
+        if (capture.Site is { } site)
+            programs.Add(new ProgramKey(ProgramKind.Site, site));
+        if (capture.AppName is { } app)
+            programs.Add(new ProgramKey(ProgramKind.App, app));
+        return new ClassificationMenu(programs.Select(p => Choice(p, [capture], null)).ToList(), 0);
+    }
+
+    /// <summary>Marks an app or site; it applies to all history, and the timeline and totals update.</summary>
+    public void SetProductive(ProgramKey program, bool productive)
+    {
+        _history.SetProductive(program, productive);
+        Reload(Current >= 0 && Current < Captures.Count ? Captures[Current].Id : null);
+    }
+
+    private static ClassificationChoice Choice(ProgramKey program, IReadOnlyList<CaptureRecord> captures, TimeSpan? time)
+    {
+        bool productive;
+        var browserWithSites = false;
+        if (program.Kind == ProgramKind.Site)
+        {
+            productive = captures.First(c => c.Site == program.Name).SiteProductive == true;
+        }
+        else
+        {
+            var ofApp = captures.Where(c => string.Equals(c.AppName, program.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+            productive = ofApp[0].AppProductive;
+            // Its classification doesn't reach the pages with a known site, which follow the site.
+            browserWithSites = ofApp.Any(c => c.Site is not null);
+        }
+
+        var label = $"Mark {program.Name} as {(productive ? "Other" : "Productive")}";
+        if (browserWithSites)
+            label += " (pages without a known site)";
+        if (time is { } t)
+            label += $"  —  {Duration(t)}";
+        return new ClassificationChoice(label, program, !productive);
     }
 
     // --- monitor and speed choices ------------------------------------------------------------
@@ -337,6 +412,12 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         var index = keepCaptureId is { } id ? Find(id) : -1;
         Current = -1;
         MoveTo(index >= 0 ? index : Math.Min(Captures.Count - 1, Math.Max(0, Current)));
+        if (Current < 0)
+        {
+            // Nothing left to move to (everything deleted): clear the frame shown.
+            UpdateFrameText();
+            FrameChanged?.Invoke();
+        }
         TimelineChanged?.Invoke();
     }
 
@@ -429,7 +510,8 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             : !c.IsActive ? ("Idle", IdleBrush)
             : c.Productive ? ("Productive", ProductiveBrush)
             : ("Other", OtherBrush);
-        FrameApp = !c.IsActive ? "No keyboard or mouse input" : $"{c.AppName} — {c.WindowTitle}";
+        FrameApp = !c.IsActive ? "No keyboard or mouse input"
+            : string.Join(" — ", new[] { c.AppName, c.Site, c.WindowTitle }.Where(s => !string.IsNullOrEmpty(s)));
     }
 
     private void UpdateSummary()
@@ -509,13 +591,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     private static string Clock(DateTimeOffset time) => time.ToLocalTime().ToString("T", CultureInfo.CurrentCulture);
 
-    private static string Duration(TimeSpan span)
-    {
-        var minutes = (int)Math.Round(span.TotalMinutes);
-        if (span.TotalSeconds < 60)
-            return $"{(int)Math.Round(span.TotalSeconds)} s";
-        return minutes < 60 ? $"{minutes} m" : $"{minutes / 60} h {minutes % 60:00} m";
-    }
+    private static string Duration(TimeSpan span) => DurationText.Of(span);
 
     public void Dispose()
     {

@@ -14,6 +14,34 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Margin" Value="0,0,10,0" />
     </Style>
+    <!-- Column headers of the Programs list: flat, click to sort. -->
+    <Style Selector="Button.columnHeader">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.columnHeader:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource BreezeAccentTintBrush}" />
+    </Style>
+    <!-- Dense rows: Fluent's check box template is 32 px tall around a 20 px box, which made each row ~38 px;
+         the rows' check boxes overlap the row padding by 6 px above and below instead (see their Margin). -->
+    <Style Selector="ListBox.programs ListBoxItem">
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="ListBox.programs CheckBox">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="TabControl">
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TabControl /template/ ItemsPresenter#PART_ItemsPresenter">
+      <Setter Property="Margin" Value="10,4,10,0" />
+    </Style>
   </Window.Styles>
 
   <DockPanel>
@@ -21,14 +49,16 @@
       <DockPanel>
         <Button DockPanel.Dock="Left" Content="Defaults" Click="OnDefaults" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-          <Button Content="OK" Classes="accent" IsDefault="True" Click="OnOk" />
+          <Button Content="OK" Classes="accent" IsDefault="True" IsEnabled="{Binding HasDataFolder}" Click="OnOk" />
           <Button Content="Cancel" IsCancel="True" Click="OnCancel" />
-          <Button Content="Apply" IsEnabled="{Binding IsDirty}" Click="OnApply" />
+          <Button Content="Apply" IsEnabled="{Binding CanApply}" Click="OnApply" />
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <ScrollViewer>
+    <TabControl>
+      <TabItem Header="General">
+    <ScrollViewer BorderBrush="{DynamicResource BreezeSeparatorBrush}" BorderThickness="0,1,0,0">
       <StackPanel Margin="14,12" Spacing="10">
 
         <Border Classes="group">
@@ -96,13 +126,17 @@
         <Border Classes="group">
           <StackPanel>
             <TextBlock Classes="groupHeader" Text="Storage" />
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="6">
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
               <TextBlock Classes="label" Text="History folder:" />
               <DockPanel Grid.Column="1">
+                <Button DockPanel.Dock="Right" Content="Default" Margin="6,0,0,0" Click="OnDefaultFolder"
+                        ToolTip.Tip="Use the standard history folder" />
                 <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0" Click="OnBrowse" />
                 <TextBox Text="{Binding DataFolder}" />
               </DockPanel>
-              <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint"
+              <TextBlock Grid.Row="1" Grid.Column="1" Classes="warning" IsVisible="{Binding !HasDataFolder}"
+                         Text="Choose a history folder (Browse…), or Default for the standard one." />
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint"
                          Text="Video and the activity log are kept here. Changing it doesn't move existing history." />
             </Grid>
           </StackPanel>
@@ -110,5 +144,43 @@
 
       </StackPanel>
     </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Programs">
+        <DockPanel Margin="14,12" DataContext="{Binding Programs}" x:DataType="vm:ProgramsViewModel">
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
+            <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
+          </DockPanel>
+          <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
+                     Text="A website decides for the pages recorded on it; a browser marked productive counts only for its pages without a known site (private windows, browser pages, captures from before sites were recorded). Changes apply to all history." />
+          <Border BorderBrush="{DynamicResource BreezeFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource BreezeViewBrush}" ClipToBounds="True">
+            <DockPanel>
+              <Border DockPanel.Dock="Top" Background="{DynamicResource BreezeHeaderBrush}" BorderBrush="{DynamicResource BreezeSeparatorBrush}" BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="110,*,90,100" Margin="0,0,16,0">
+                  <Button Classes="columnHeader" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
+                  <Button Grid.Column="1" Classes="columnHeader" Content="{Binding NameHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Name}" />
+                  <Button Grid.Column="2" Classes="columnHeader" Content="{Binding KindHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Kind}" />
+                  <Button Grid.Column="3" Classes="columnHeader" Content="{Binding RecordedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Recorded}" HorizontalContentAlignment="Right" />
+                </Grid>
+              </Border>
+              <ListBox Classes="programs" ItemsSource="{Binding Rows}" Background="Transparent" BorderThickness="0">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ProgramRow">
+                    <Grid ColumnDefinitions="102,*,90,92">
+                      <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}"
+                                HorizontalAlignment="Left" Margin="2,-6,0,-6" Padding="0" />
+                      <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="2" Text="{Binding KindText}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
+                      <TextBlock Grid.Column="3" Text="{Binding RecordedText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </DockPanel>
+          </Border>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
   </DockPanel>
 </Window>

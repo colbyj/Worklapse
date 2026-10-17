@@ -6,8 +6,12 @@ using static Worklapse.Capture.Windows.NativeMethods;
 namespace Worklapse.Capture.Windows;
 
 [SupportedOSPlatform("windows")]
-public sealed class Win32ForegroundWindowProbe : IForegroundWindowProbe
+public sealed class Win32ForegroundWindowProbe : IForegroundWindowProbe, IDisposable
 {
+    private readonly BrowserSiteReader _sites = new();
+
+    public void Dispose() => _sites.Dispose();
+
     public ForegroundWindow? GetForegroundWindow()
     {
         var hwnd = NativeMethods.GetForegroundWindow();
@@ -38,7 +42,8 @@ public sealed class Win32ForegroundWindowProbe : IForegroundWindowProbe
 
         var path = GetProcessPath(processId);
         var name = path is null ? GetProcessNameFallback(processId) : Path.GetFileName(path);
-        return new ForegroundWindow(name, path, GetTitle(hwnd), GetBounds(hwnd));
+        var title = GetTitle(hwnd);
+        return new ForegroundWindow(name, path, title, GetBounds(hwnd), _sites.ReadSite(hwnd, name, title));
     }
 
     /// <summary>

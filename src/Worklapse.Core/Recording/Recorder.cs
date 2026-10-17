@@ -39,6 +39,7 @@ public sealed class Recorder : IAsyncDisposable
     private IFrameSink? _sink;
     private Task? _loop;
     private volatile bool _paused;
+    private volatile bool _closeSegments;
     private bool _wasIdle;
     private RecorderStatus _status = new(RecorderState.Starting, null, 0, null);
 
@@ -65,6 +66,13 @@ public sealed class Recorder : IAsyncDisposable
                 SetStatus(Status with { State = RecorderState.Paused });
         }
     }
+
+    /// <summary>
+    /// Finishes the segments being recorded at the next tick, before capturing, so they are encoded now.
+    /// Called after captures in them were deleted: encoding leaves the deleted frames out, and until then
+    /// they are still on disk in the staging files. Safe to call from any thread.
+    /// </summary>
+    public void CloseSegmentsSoon() => _closeSegments = true;
 
     public void Start()
     {
@@ -109,9 +117,19 @@ public sealed class Recorder : IAsyncDisposable
         while (await timer.WaitForNextTickAsync(cancel));
     }
 
-    private void Tick()
+    internal void Tick()
     {
         var settings = _settings.Current;
+
+        // Opened even while paused or locked: the sink's batch encoder also removes deleted captures' video
+        // from disk, which shouldn't wait for recording to resume.
+        var store = EnsureStorage(settings.DataFolder);
+
+        if (_closeSegments)
+        {
+            _closeSegments = false;
+            CloseSegments();
+        }
 
         if (_paused)
         {
@@ -127,7 +145,6 @@ public sealed class Recorder : IAsyncDisposable
             return;
         }
 
-        var store = EnsureStorage(settings.DataFolder);
         var now = _time.GetLocalNow();
         var idleFor = _platform.Idle.GetIdleTime();
 
@@ -156,7 +173,8 @@ public sealed class Recorder : IAsyncDisposable
         using (var transaction = store.BeginTransaction())
         {
             long? appId = foreground is null ? null : store.GetOrAddApp(foreground.ProcessName, foreground.ProcessPath);
-            var captureId = store.InsertCapture(now, CaptureKind.Active, appId, foreground?.Title, foreground?.Bounds);
+            long? siteId = foreground?.Site is { } site ? store.GetOrAddSite(site) : null;
+            var captureId = store.InsertCapture(now, CaptureKind.Active, appId, foreground?.Title, foreground?.Bounds, siteId);
 
             foreach (var monitor in targets)
             {

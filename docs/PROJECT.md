@@ -27,7 +27,9 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Screen capture (Windows) | GDI BitBlt in 64-row strips into one small shared bitmap; each strip is hashed (XxHash3, for change detection) and converted straight into one shared I420 frame. No `CAPTUREBLT` (it makes the cursor flicker and isn't needed with DWM). | DirectX Desktop Duplication needed Direct3D devices that cost ~90 MB+ of driver memory on the hybrid-GPU laptop; strips and I420 cut pixel buffers from ~105 MB to ~28 MB. |
 | Playback decoding | One libaom decoder per monitor, single-threaded, closed after 15 s unused; a 64 MB cache of recent frames as I420 in pooled buffers, converted straight into the on-screen bitmap. | Each open decoder holds ~60 MB (1920×1080) to ~145 MB (3440×1440) of reference frames and buffers; every extra thread adds 30–40 MB for little speed. The old setup (8 decoders × 8 threads, 400 MB BGRA cache, a new 20 MB array per frame) reached ~3 GB. |
 | Rendering (Windows) | Avalonia software rendering by default; `"UseGpuRendering": true` in `settings.json` switches to the GPU (ANGLE/Direct3D 11) at the next start. Not in the Settings dialog. Agreed 2026-10-16. | Measured: GPU rendering cost ~80 MB more while recording, ~450 MB more while reviewing four monitors, and kept ~200 MB after the review closed, with no CPU saving in a normal-sized window. It may be smoother with Day review maximized on a very large or high-DPI screen (not measured). |
-| Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. Disk space is reclaimed by re-encoding affected segments in the background (not built yet). | Matches the review workflow: decide at the end of the day. |
+| Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
+| Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
+| Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
 | Shared history across OSes | Wanted eventually (likely on D:, BitLocker-unlocked under Linux, with Fast Startup off). Not started. | — |
 
@@ -53,6 +55,22 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
   closes. Before the fix: up to ~2.8–3.1 GB, and memory stayed high after closing.
 - The developer's previous TimeSnapper archive: 415,736 captures (Dec 2025 – Oct 2026), 34.7 GB of JPEGs
   at ~85 KB each.
+- Reclaiming space (2026-10-16, copy of real data): deleting 00:12–00:18 from a 90-frame 3440×1440 segment
+  (2.06 MB) rebuilt it as 55 frames, 1.30 MB (37% freed), in 11–18 s. Peak while
+  rebuilding: +320 MB private, the same as an ordinary staged encode (+302 MB measured the same way); back to
+  baseline afterwards. Twice-encoded vs once-encoded frames: PSNR (luma) mean 48.3 dB, min 38.1 dB; the frames
+  before the gap 47–63 dB, after it 38–48 dB (predicted across six minutes of change). Small text (taskbar clock,
+  terminal, IDE file list, Notepad++ lists and status bar) reads the same at 1:1 in the worst frames, with some
+  extra ringing at edges; no stale or wrong text seen. Recording memory unchanged (three alternating runs each:
+  90/81/81 MB vs 92/82/82 MB before).
+- Reading the site (2026-10-17, test windows): after the first read of a window, 0.2–1 ms (the address bar's
+  element is remembered per window); the first read 10–30 ms, and up to ~250 ms for a Firefox whose
+  accessibility tree isn't built yet (over the 300 ms limit that capture simply gets no site). Average over all
+  test windows, popups included: 1.1 ms. UI Automation adds ~7 MB to the reading process; Worklapse recording
+  all monitors stayed at 79–81 MB while reading sites. Browsers: a Firefox and a Chrome read every 2 s for 90 s
+  against an identical untouched one: same memory growth (Firefox +66 vs +58 MB, Chrome flat), same CPU for
+  Firefox, ~1 s more CPU for Chrome over the 90 s (with a full search every read; Worklapse reads a remembered
+  element every 10 s). A browser turns its accessibility on when first read and keeps it on until it restarts.
 
 ---
 
@@ -65,23 +83,79 @@ native/
 src/
   Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading
   Worklapse.Video/            AV1 interop, IVF files, staging files, batch encoder, frame provider for playback
-  Worklapse.Capture.Windows/  GDI screen capture, foreground window, idle time, lock detection
+  Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
   Worklapse.App/              Avalonia app: tray icon, status window, settings dialog, Day review
-tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history)
+tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites)
 docs/PROJECT.md               this file
+docs/HANDOFF.md               briefs for the next tasks, for a new session
 ```
 
 ### How recording works
 
 1. `Recorder` (Core) ticks every interval on a background task. It skips the tick when paused or locked,
    records an idle capture when there's been no input for the idle limit, and otherwise:
-2. asks `IForegroundWindowProbe` for the focused window (app, title, bounds) and `IScreenSource` for each
-   monitor chosen by the capture mode;
+2. asks `IForegroundWindowProbe` for the focused window (app, title, bounds, and for a browser the site) and
+   `IScreenSource` for each monitor chosen by the capture mode;
 3. reuses the previous frame for a monitor whose pixels didn't change (hash), otherwise appends the
    capture to `StagedVideoSink` (in active-application mode, everything outside the window is blacked out first);
 4. writes the capture and frame references in one SQLite transaction.
 5. When a segment has 90 frames (or recording pauses), `BatchEncoder` encodes it to AV1 on its own thread,
    rewrites the frame offsets to point into the `.ivf` file, marks the segment encoded and deletes the staging file.
+   Frames whose captures were deleted while it was staged are left out (a frame no `frames` row refers to by then
+   counts as deleted, so every appended frame must get its `frames` row in the same transaction).
+
+### How sites are read (Windows)
+
+`Win32ForegroundWindowProbe` hands browser windows (chrome.exe, msedge.exe, firefox.exe) to `BrowserSiteReader`,
+which talks to the browser through the UI Automation COM API (declared in `UiAutomationInterop.cs`; no WPF) on
+an MTA thread of its own. A capture waits at most 300 ms; if the answer isn't there, or an earlier read is still
+stuck in a hung browser, the capture has no site. Per window it finds the address bar once (Chromium: class
+`OmniboxViewViews`; Firefox: id `urlbar-input`) and remembers it, so later reads are one or two property reads.
+If the address bar gives no site (it has the focus, so it may hold typing; or Firefox shows search terms on a
+search results page), it reads the URL of the page on screen instead (the visible Document element's value).
+`SiteDomain.FromAddressBar` (Core, platform-neutral) turns the text into a host name: lower case, readable
+internationalized names, no port, no leading `www.`; browser pages, files, extensions and searches give none.
+Private windows give none: Firefox and Edge say so in the window title ("Private Browsing", "[InPrivate]");
+Chrome only in its top view's UI Automation name ("(Incognito)"), read once per window. These are English
+labels; a browser in another language needs its words added.
+
+### How deleting removes video
+
+The purpose is that deleted content is gone from the data folder, not disk space (see Decisions).
+
+`HistoryStore.DeleteMarked` deletes the captures (their `frames` rows cascade) and the apps left without
+captures (unless marked productive), and, in the same transaction, queues the segments the captures used in
+`reclaim_queue`. It reports whether any of those segments is still staged; if so the app calls
+`Recorder.CloseSegmentsSoon`, and the recorder closes its open segments at the next tick (≤ 10 s), before
+capturing, so they're encoded without the deleted frames instead of keeping them in staging for up to 15 minutes.
+`BatchEncoder` works through the queue one segment per job, between encodes, when Day review asks
+(`RequestReclaim`, through the app's current `StagedVideoSink`) and when it starts (deletes made before a crash
+or quit). The recorder opens its storage, and so the encoder, on every tick even while paused or locked, so
+this doesn't wait for recording to resume. `SpaceReclaimer` then:
+
+- leaves staged segments alone (their encode drops the unreferenced frames);
+- deletes a segment no frame of which is referenced any more, with its file;
+- rebuilds a segment with any frames unreferenced: decodes the
+  frames still referenced (and the ones before them, which they depend on) into a new *staged* segment next to it
+  (`<name>-r1.ivf`), then in one transaction inserts it, moves every `frames` row over and deletes the old rows; then
+  deletes the old file and encodes the new segment like any other. Decoding to staging first keeps the decoder
+  and encoder from being open together. Frame indexes keep their values, so segments can have gaps in them
+  (`FrameProvider` maps index → position).
+
+Segments are never changed in place. Files are only deleted through `dead_segment_files`: a file's path is
+written there in the same transaction that lets go of it (or before a new one is written), and removed once the
+file is gone, so a crash at any point leaves nothing orphaned and no referenced frame lost; the next pass
+finishes the job. The recorder only adds references to the segment it is writing (staged), which is why frames
+found unreferenced stay that way. Day review may hold references to a segment that was just rebuilt:
+`FrameProvider` still serves them while it has the old file open, and otherwise throws
+`FrameUnavailableException`, on which the window reloads the day (once per missing frame) and asks again.
+
+The database: every connection sets `PRAGMA secure_delete`, so deleted rows (window titles, app names) are
+zeroed rather than left in free pages; when a pass has nothing left to do, the encoder truncates the write-ahead
+log (`wal_checkpoint(TRUNCATE)`), which otherwise keeps the pages as they were. The recorder looks apps up on
+every capture instead of caching ids, since a delete can remove an app row. Whatever keeps deleted video on
+disk after a pass (a segment that couldn't be rebuilt, retried at the next start; a file another program has
+open, retried every minute) is in `BatchEncoder.DeletedContentLeft` and shown in the status window until it's gone.
 
 ### How playback works
 
@@ -102,14 +176,17 @@ Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse
 `%APPDATA%\Worklapse\settings.json` (Linux: `~/.config/Worklapse`). The data folder holds
 `worklapse.db` and `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open).
 
-SQLite schema (version 3, migrations in `WorklapseDatabase`):
+SQLite schema (version 5, migrations in `WorklapseDatabase`):
 
-- `apps` (exe name, path, `productive` flag)
+- `apps` (exe name, path, `productive` flag; classified by exe name; deleted with their last capture unless productive)
+- `sites` (domain, `productive` flag; deleted with their last capture unless productive)
 - `monitors` (device name and geometry)
-- `captures` (UTC ms + local offset, active/idle, app, window title and bounds, `pending_delete`)
+- `captures` (UTC ms + local offset, active/idle, app, site, window title and bounds, `pending_delete`)
 - `segments` (monitor, relative path, size, quantizer, `state` 0 = staged / 1 = encoded)
-- `segment_frames` (segment, frame index, file offset and length, key flag)
-- `frames` (capture × monitor → segment frame; unchanged monitors point at an earlier frame)
+- `segment_frames` (segment, frame index, file offset and length, key flag; indexes can have gaps after deletes)
+- `frames` (capture × monitor → segment frame; unchanged monitors point at an earlier frame; indexed by segment frame)
+- `reclaim_queue` (segments that may hold unreferenced frames, with a generation counter)
+- `dead_segment_files` (segment paths whose files are to be deleted; see How deleting removes video)
 
 ---
 
@@ -134,22 +211,35 @@ recordings). Captures are idle (no frames) while nobody uses the keyboard or mou
 test runs set `"IdleMinutes": 120` in that settings file.
 
 The UI can be driven for screenshots with Windows UI Automation from PowerShell (find a button by name,
-invoke it, copy the window's rectangle from the screen); icon-only buttons carry `AutomationProperties.Name`
-for this and for screen readers.
+invoke it, render the window with `PrintWindow`); icon-only buttons carry `AutomationProperties.Name`
+for this and for screen readers. Lessons from 2026-10-17: the developer may be using the machine, so never
+take the focus or send keys; only the selected tab's controls are in the tree, so check which control you type
+into (a script once typed into the History folder box and pointed a test run at the real data); and check the
+test `settings.json` still points at the copy after each step.
 
 ---
 
-## Status (2026-10-16, updated after the Day review memory fix)
+## Status (2026-10-17, updated after productive apps and sites)
 
 Working on Windows:
 
 - Recording of all four capture modes, idle and lock detection, unchanged-frame reuse, batch AV1 encoding,
   crash recovery of staged segments.
 - Status window and tray menu (pause/resume, Day review, settings, quit); Settings dialog (capture mode,
-  monitors, interval, idle, lock, quality, history folder).
+  monitors, interval, idle, lock, quality, history folder; an empty folder is refused, Default fills in the
+  standard one).
+- Productive apps and websites (2026-10-17, not yet reviewed by the developer): sites read from Chrome, Edge
+  and Firefox; Settings → Programs lists every app and site with its recorded time (filter, sort, checkbox,
+  applied with Apply/OK); right-click in Day review on the frame (its site and app) or the timeline (each app and
+  site in the selection, up to 12, with its time there); the site shows in Day review's status bar.
 - Day review: timeline of the recorded hours, all or one monitor, zoom/pan, ← / → frame stepping,
   Shift+arrows and drag to select, playback at four speeds, selection/whole-day summary (length, active,
   productive, other, idle, not recorded, marked), mark for deletion / restore / delete permanently, F5 refresh.
+- Deleted captures' video is removed from disk in the background (2026-10-16/17, not yet reviewed by the
+  developer): whole segments deleted, partly deleted ones rebuilt, staged ones (including the one being
+  recorded, closed at the next tick) encoded without the deleted frames, also while paused; titles and app
+  names zeroed in the database; failures shown in the status window; crash-safe, and Day review reloads when a
+  frame it shows has moved.
 - Breeze-style theme across all windows.
 - An unreadable `settings.json` (bad JSON, unknown value) no longer crashes at startup: a window shows the
   file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
@@ -157,12 +247,26 @@ Working on Windows:
 
 Tested less or not at all: active-application mode over a longer session, selected monitors, plugging
 displays in and out, rotated displays (GDI should handle them, untested), Store-app window detection,
-drag selection and keyboard stepping by a person (only toolbar buttons were exercised automatically).
+drag selection and keyboard stepping by a person (only toolbar buttons were exercised automatically), the
+Day review right-click menu (built and compiled, not clicked: it needs a real right-click), sites in Chrome and
+Edge as the foreground app of a real recording (read correctly from test windows, which couldn't be brought to
+the front while the developer was using the machine).
 
 Known gaps and caveats:
 
-- Nothing can be marked productive yet, so all active time shows as "Other".
-- Deleting permanently removes the captures but not their video; segments still need to be rebuilt to free space.
+- Sites: private windows are recognised by English labels only; Chrome and Edge don't expose the page while
+  minimized, so a search-terms or typing fallback can't apply there (their address bar shows the URL anyway);
+  other browsers (Brave, Opera, Vivaldi) aren't read; the first read of a Firefox can exceed the 300 ms limit.
+  Window titles are recorded for private windows as before (only the site is left out).
+- Encoding failures (`BatchEncoder.EncodingFailed`) aren't shown or logged anywhere yet; the segment stays
+  staged (with any deleted frames still in its staging file) and is retried at the next start. Failures to
+  remove deleted video are shown in the status window.
+- Deleted content that can still be found: deleted files aren't overwritten (recoverable with forensic tools
+  from the unlocked drive; overwriting isn't reliable on SSDs, and BitLocker covers the drive at rest); deletes
+  made before schema 4 (2026-10-16) may have left titles in the database's free pages (a `VACUUM` would clear
+  them); a frame kept right after a deleted range can carry small stale fragments of the deleted screens (the
+  small-text effect in Decisions); and a monitor that still shows the same picture in a kept capture keeps
+  its frame, since that capture shows it.
 - Small text can lag behind in the video (see Decisions).
 - Avalonia and .NET are the bulk of the remaining footprint while recording (~88 MB in all with software
   rendering, measured shortly after start); see the recorder/UI split below.
@@ -191,13 +295,23 @@ Still open, if the peak matters:
 
 ### 1. Make it usable day to day
 
-1. **Productive apps & sites.** Settings page (or Day review context menu) to mark apps productive;
-   the `apps.productive` column already exists. Websites need browser-domain detection: TimeSnapper tracked
-   domains as "programs" (its `PROGRAM` table has `PROGTYPE` 1 = website). Options: read the address bar via
-   UI Automation, or start with window-title matching.
-2. **Reclaim disk space after deletes.** Re-encode segments whose frames are no longer all referenced,
-   keeping the frames still in use (including frames that later unchanged captures point to), and update
-   `segment_frames` / `frames`. The batch encoder thread is the natural place to run it.
+Items 1 and 2 were handed off in `docs/HANDOFF.md` (2026-10-16); both are built (2026-10-17), awaiting review.
+
+1. **Productive apps & sites — built 2026-10-17** (see Decisions, How sites are read). Checked end to end on a
+   copy of real data plus a fresh recording with browsing: marking `google.ca` and `firefox.exe` on the Programs
+   page changed Day review's totals for the new day (0 s → 6 m productive: google.ca and Firefox pages without a
+   site; github.com, google.com, mail.google.com stayed Other) and for an old day (0 s → 2 m: old Firefox captures
+   have no site), matching an independent SQL count. Still to try by hand: the right-click menu. Possible later:
+   more browsers (Brave, Vivaldi and Opera are Chromium and would likely read the same way). TimeSnapper tracked
+   domains as "programs" (`PROGRAM.PROGTYPE` 1 = website), relevant for the import.
+2. **Remove deleted video from disk — built 2026-10-16/17** (see How deleting removes video). The purpose is
+   that deleted content is gone, not space. Day review after a delete was checked through the UI before the
+   rebuild and by decoding after it, not yet by stepping through it in the window afterwards (the test window
+   was closed mid-run). Four gaps for that purpose, agreed with the developer 2026-10-17, are closed: the
+   segment being recorded is closed and encoded at the next tick after a delete touches it; the encoder runs
+   while recording is paused or locked; deleted rows are zeroed in the database and its log truncated; and
+   what couldn't be removed is shown in the status window. The status-window line was checked by build and
+   tests only, not looked at on screen. What remains is listed under Known gaps.
 3. **TimeSnapper import.** Copy the old database first. The Firebird 1.5 file opens only with
    TimeSnapper's own 32-bit `fbembed.dll` and its bundled old FirebirdSql driver: load them from a
    32-bit process (32-bit PowerShell works; modern FirebirdClient fails with "user name and password are not
