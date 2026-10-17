@@ -401,16 +401,18 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     {
         var selected = (SelectionStart, SelectionEnd) is (int s, int e) ? (Captures[s].Id, Captures[e].Id) : ((long, long)?)null;
         Day = _history.LoadDay(Day.Day);
-        RebuildDerived();
 
+        // The selection and playhead are indexes into the old list, which a delete makes longer than the new
+        // one: map them to the reloaded day (by capture) before anything is rebuilt from them.
+        Current = -1;
         int Find(long id) => Captures.ToList().FindIndex(c => c.Id == id);
         if (selected is { } sel && Find(sel.Item1) is >= 0 and var a && Find(sel.Item2) is >= 0 and var b)
             SetSelection(a, b);
         else
             SetSelection(null, null);
+        RebuildDerived();
 
         var index = keepCaptureId is { } id ? Find(id) : -1;
-        Current = -1;
         MoveTo(index >= 0 ? index : Math.Min(Captures.Count - 1, Math.Max(0, Current)));
         if (Current < 0)
         {
