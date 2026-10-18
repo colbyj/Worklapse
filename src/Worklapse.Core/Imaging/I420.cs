@@ -109,5 +109,27 @@ public static class I420
         }
     }
 
+    /// <summary>A copy of the part of a frame inside <paramref name="rect"/>, which starts on even coordinates.</summary>
+    public static byte[] Crop(ReadOnlySpan<byte> i420, int width, int height, PixelRect rect)
+    {
+        if (rect.X % 2 != 0 || rect.Y % 2 != 0 || rect.X < 0 || rect.Y < 0 || rect.IsEmpty || rect.Right > width || rect.Bottom > height)
+            throw new ArgumentOutOfRangeException(nameof(rect), rect, "The part must lie inside the frame and start on even coordinates.");
+
+        var crop = new byte[Size(rect.Width, rect.Height)];
+        for (var y = 0; y < rect.Height; y++)
+            i420.Slice((rect.Y + y) * width + rect.X, rect.Width).CopyTo(crop.AsSpan(y * rect.Width));
+
+        int sourceWidth = ChromaWidth(width), sourceHeight = ChromaHeight(height);
+        int cropWidth = ChromaWidth(rect.Width), cropHeight = ChromaHeight(rect.Height);
+        for (var plane = 0; plane < 2; plane++)
+        {
+            var source = i420[(width * height + plane * sourceWidth * sourceHeight)..];
+            var target = crop.AsSpan(rect.Width * rect.Height + plane * cropWidth * cropHeight);
+            for (var y = 0; y < cropHeight; y++)
+                source.Slice((rect.Y / 2 + y) * sourceWidth + rect.X / 2, cropWidth).CopyTo(target[(y * cropWidth)..]);
+        }
+        return crop;
+    }
+
     private static byte Clamp(int value) => (byte)(value < 0 ? 0 : value > 255 ? 255 : value);
 }

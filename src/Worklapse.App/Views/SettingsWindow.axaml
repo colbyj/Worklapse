@@ -6,7 +6,7 @@
         x:DataType="vm:SettingsViewModel"
         Title="Settings — Worklapse"
         Icon="avares://Worklapse/Assets/worklapse.ico"
-        Width="620" Height="600" MinWidth="520" MinHeight="420"
+        Width="620" Height="720" MinWidth="520" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
   <Window.Styles>
@@ -109,29 +109,26 @@
         <Border Classes="group">
           <StackPanel>
             <TextBlock Classes="groupHeader" Text="Recording" />
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
               <TextBlock Classes="label" Text="Store captures as:" VerticalAlignment="Top" Margin="0,6,10,0" />
               <!-- What each choice costs, from the measurements in docs/PROJECT.md (Benchmarks). -->
-              <StackPanel Grid.Column="1" Spacing="10">
+              <StackPanel Grid.Column="1" Spacing="6">
                 <RadioButton GroupName="format" IsChecked="{Binding IsVideo}" AutomationProperties.Name="Video (AV1)">
                   <StackPanel>
                     <TextBlock Text="Video (AV1)" />
-                    <TextBlock Classes="hint"
-                               Text="Smallest on disk: about 75–100 MB for an 8-hour day on four monitors. But small text can show an older value for a while, and encoding takes about 300 MB more memory while each 15 minutes of video is encoded." />
+                    <TextBlock Classes="hint" Text="Smallest on disk, but small text can lag, and RAM spikes while encoding" />
                   </StackPanel>
                 </RadioButton>
                 <RadioButton GroupName="format" IsChecked="{Binding IsJpeg}" AutomationProperties.Name="JPEG images">
                   <StackPanel>
                     <TextBlock Text="JPEG images" />
-                    <TextBlock Classes="hint"
-                               Text="A picture of each change, exact for its moment, that other programs can open. Least CPU, and less memory than video. But many times the disk space of video, and text gets blurry at low quality." />
+                    <TextBlock Classes="hint" Text="Least CPU, less RAM than AV1, but much more disk and blurrier text" />
                   </StackPanel>
                 </RadioButton>
                 <RadioButton GroupName="format" IsChecked="{Binding IsWebP}" AutomationProperties.Name="WebP images">
                   <StackPanel>
                     <TextBlock Text="WebP images" />
-                    <TextBlock Classes="hint"
-                               Text="Like JPEG, with clearer text for the same disk space. But still many times the disk space of video, and each change takes about as much CPU as encoding video." />
+                    <TextBlock Classes="hint" Text="Clearer text for the same disk space, uses less RAM than AV1, but as much CPU" />
                   </StackPanel>
                 </RadioButton>
               </StackPanel>
@@ -163,9 +160,27 @@
                         IsDirectionReversed="True" AutomationProperties.Name="WebP quality" />
               </DockPanel>
 
-              <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" Text="Applies to captures recorded from now on." />
-              <TextBlock Grid.Row="3" Grid.Column="1" Classes="warning" IsVisible="{Binding QualityWarning}"
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="warning" IsVisible="{Binding QualityWarning}"
                          Text="At this setting small text can come out garbled or out of date." />
+
+              <!-- The most detailed part of the primary monitor, as it would be stored, at 1:1. -->
+              <TextBlock Grid.Row="3" Classes="label" Text="Preview:" VerticalAlignment="Top" Margin="0,4,10,0" IsVisible="{Binding HasPreview}" />
+              <StackPanel Grid.Row="3" Grid.Column="1" Spacing="4" IsVisible="{Binding HasPreview}">
+                <Border x:Name="PreviewBox" Height="220" ClipToBounds="True" CornerRadius="4" BorderThickness="1"
+                        BorderBrush="{DynamicResource BreezeFrameBrush}" Background="{DynamicResource BreezeViewBrush}">
+                  <Panel>
+                    <Image Source="{Binding Preview.Image}" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                    <Border IsVisible="{Binding Preview.IsBusy}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                            Padding="6,2" CornerRadius="3" Background="{DynamicResource BreezeHeaderBrush}">
+                      <TextBlock Classes="hint" Text="Updating…" />
+                    </Border>
+                  </Panel>
+                </Border>
+                <TextBlock Classes="secondary" Text="{Binding Preview.SizeText}"
+                           IsVisible="{Binding Preview.SizeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+
+              <TextBlock Grid.Row="4" Grid.Column="1" Classes="hint" Text="Applies to captures recorded from now on." />
             </Grid>
           </StackPanel>
         </Border>

@@ -1,13 +1,30 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Worklapse.App.ViewModels;
 
 namespace Worklapse.App.Views;
 
 public partial class SettingsWindow : Window
 {
-    public SettingsWindow() => InitializeComponent();
+    public SettingsWindow()
+    {
+        InitializeComponent();
+        // The preview fills its box at 1:1, so it starts once the box has its size.
+        Opened += (_, _) => Dispatcher.UIThread.Post(StartPreview, DispatcherPriority.Loaded);
+        Closed += (_, _) => (DataContext as SettingsViewModel)?.Preview?.Dispose();
+    }
+
+    private void StartPreview()
+    {
+        if (ViewModel.Preview is not { } preview)
+            return;
+        var (format, quality) = ViewModel.ChosenStorage;
+        var size = PreviewBox.Bounds.Size; // includes its 1 px border
+        preview.Start(RenderScaling, (int)((size.Width - 2) * RenderScaling), (int)((size.Height - 2) * RenderScaling), format, quality,
+            ViewModel.ChosenInterval);
+    }
 
     private SettingsViewModel ViewModel => (SettingsViewModel)DataContext!;
 

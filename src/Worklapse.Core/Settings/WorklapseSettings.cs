@@ -40,7 +40,7 @@ public sealed record WorklapseSettings
     public int JpegQuality { get; init; } = 15;
 
     /// <summary>WebP quality, 0–100. Higher is sharper and larger. Text read more clearly at 10 than JPEG's at 15.</summary>
-    public int WebPQuality { get; init; } = 25;
+    public int WebPQuality { get; init; } = 20;
 
     public string DataFolder { get; init; } = DefaultDataFolder;
 

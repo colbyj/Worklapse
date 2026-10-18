@@ -17,7 +17,7 @@ namespace Worklapse.Video;
 public sealed class BatchEncoder : IDisposable
 {
     /// <summary>Threads per encoder. Few, so a batch doesn't compete much with what the user is doing.</summary>
-    private const int EncoderThreads = 2;
+    internal const int EncoderThreads = 2;
 
     /// <summary>How soon to try again when a file to delete was open in another program.</summary>
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(1);

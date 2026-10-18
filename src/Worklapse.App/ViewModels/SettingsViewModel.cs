@@ -23,9 +23,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _loading;
     private IReadOnlyList<string> _unpluggedSelected = []; // selected monitors not attached now: kept as they are
 
-    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors)
+    /// <param name="sampler">Captures the primary monitor for the recording preview, which takes it over; null for none.</param>
+    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, PrimaryScreenSampler? sampler = null)
     {
         _store = store;
+        // Captured before the dialog shows, so it isn't in the picture.
+        if (sampler?.Capture() is { } screen)
+            Preview = new RecordingPreviewViewModel(sampler, screen);
+        else
+            sampler?.Dispose();
         var number = 1;
         foreach (var monitor in monitors.OrderByDescending(m => m.IsPrimary).ThenBy(m => m.Bounds.X))
         {
@@ -50,6 +56,18 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>The Programs page; its marks are kept in the history in the data folder.</summary>
     public ProgramsViewModel Programs { get; }
+
+    /// <summary>The chosen format and quality applied to the screen; null when the screen couldn't be captured.</summary>
+    public RecordingPreviewViewModel? Preview { get; }
+
+    public bool HasPreview => Preview is not null;
+
+    /// <summary>The format and quality chosen in the dialog, applied or not.</summary>
+    public (FrameFormat Format, int Quality) ChosenStorage =>
+        IsJpeg ? (FrameFormat.Jpeg, (int)JpegQuality) : IsWebP ? (FrameFormat.WebP, (int)WebPQuality) : (FrameFormat.Video, (int)Quality);
+
+    /// <summary>The capture interval chosen in the dialog, applied or not.</summary>
+    public TimeSpan ChosenInterval => TimeSpan.FromSeconds(Math.Clamp((int)(IntervalSeconds ?? 10), 2, 300));
 
     [ObservableProperty] private bool _isActiveApplication;
     [ObservableProperty] private bool _isPrimaryMonitor;
@@ -124,7 +142,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         IntervalSeconds = (int)(IntervalSeconds ?? 10),
         IdleMinutes = (int)(IdleMinutes ?? 5),
         PauseWhenLocked = PauseWhenLocked,
-        Format = IsJpeg ? FrameFormat.Jpeg : IsWebP ? FrameFormat.WebP : FrameFormat.Video,
+        Format = ChosenStorage.Format,
         Quality = (int)Quality,
         JpegQuality = (int)JpegQuality,
         WebPQuality = (int)WebPQuality,
@@ -163,6 +181,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         if (e.PropertyName != nameof(IsDirty))
             MarkDirty();
+        if (e.PropertyName is nameof(IsVideo) or nameof(IsJpeg) or nameof(IsWebP) or nameof(Quality) or nameof(JpegQuality) or nameof(WebPQuality)
+            or nameof(IntervalSeconds))
+            Preview?.Request(ChosenStorage.Format, ChosenStorage.Quality, ChosenInterval);
     }
 
     private void MarkDirty()

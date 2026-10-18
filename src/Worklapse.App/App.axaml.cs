@@ -183,12 +183,8 @@ public partial class App : Application
         _reviewWindow.Closed += (_, _) =>
         {
             _reviewWindow = null;
-            // Reviewing leaves a large heap behind (the window, frame buffers) that the GC would otherwise
-            // keep committed for a long time, since recording allocates too little to trigger collections.
-            // Once the window is torn down, collect and give the memory back to the OS.
-            Dispatcher.UIThread.Post(
-                () => GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true),
-                DispatcherPriority.Background);
+            // Reviewing leaves a large heap behind (the window, frame buffers).
+            ReleaseMemory();
         };
         _reviewWindow.Show();
     }
@@ -196,10 +192,22 @@ public partial class App : Application
     private async Task ShowSettingsAsync()
     {
         var monitors = _platform!.Screen.GetMonitors();
-        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors) };
+        // The recording preview captures the primary monitor with a source of its own.
+        var sampler = OperatingSystem.IsWindows() ? new PrimaryScreenSampler(new GdiScreenSource()) : null;
+        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler) };
         ShowStatusWindow();
         await dialog.ShowDialog(_statusWindow!);
+        // The recording preview held a few screens of pixels.
+        ReleaseMemory();
     }
+
+    /// <summary>
+    /// Collects once a window is torn down and gives the memory back to the OS. Otherwise the GC keeps what the window
+    /// left behind committed for a long time, since recording allocates too little to trigger collections.
+    /// </summary>
+    private static void ReleaseMemory() => Dispatcher.UIThread.Post(
+        () => GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true),
+        DispatcherPriority.Background);
 
     private async Task QuitAsync(IClassicDesktopStyleApplicationLifetime desktop)
     {
