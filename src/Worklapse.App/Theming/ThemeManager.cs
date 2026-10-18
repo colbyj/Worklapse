@@ -9,7 +9,8 @@ namespace Worklapse.App.Theming;
 
 /// <summary>
 /// Matches the UI's colours to the OS and keeps them matched: Windows 11's palette with the system accent on
-/// Windows, the active colour scheme on KDE, and Breeze (light or dark, with the desktop's accent) elsewhere.
+/// Windows, the active colour scheme on KDE, Adwaita on GNOME, and Breeze (light or dark, with the desktop's accent)
+/// elsewhere.
 /// Colours are written into the brushes defined in Styles/BreezeResources.axaml and <see cref="AppBrushes"/>,
 /// so views refer to those brushes and never to colours.
 /// </summary>
@@ -83,15 +84,20 @@ public static class ThemeManager
             return UiPalette.Windows11(dark, WindowsAccent.FillShade(dark, values?.AccentColor1 ?? NoAccent));
         if (IsKde && KdeColors.Load(KdeColors.KdeGlobalsPath) is { } scheme)
             return UiPalette.FromKde(scheme);
+        var accent = values?.AccentColor1 is { } a && a != NoAccent ? a : (Color?)null;
+        if (IsDesktop("GNOME"))
+            return UiPalette.Adwaita(dark, accent);
         // Other desktops, and KDE before a colour scheme has ever been applied (Breeze is then in effect).
-        var accent = values?.AccentColor1;
-        return UiPalette.Breeze(dark, accent is { } a && a != NoAccent ? a : null);
+        return UiPalette.Breeze(dark, accent);
     }
 
-    private static bool IsKde =>
+    private static bool IsKde => IsDesktop("KDE");
+
+    /// <summary>Whether XDG_CURRENT_DESKTOP names this desktop (it's a list, e.g. "ubuntu:GNOME").</summary>
+    private static bool IsDesktop(string name) =>
         OperatingSystem.IsLinux()
         && Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") is { } desktop
-        && desktop.Split(':').Contains("KDE", StringComparer.OrdinalIgnoreCase);
+        && desktop.Split(':').Contains(name, StringComparer.OrdinalIgnoreCase);
 
     private static void Update() => Apply(ForOs(_app?.PlatformSettings?.GetColorValues()));
 

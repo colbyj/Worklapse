@@ -56,7 +56,8 @@ public sealed record UiPalette
     /// <summary>
     /// Windows 11's own colours (its Fluent design tokens, with frames a little stronger so controls stay visible).
     /// <paramref name="accent"/> is the shade Windows fills controls with (<see cref="WindowsAccent.FillShade"/>).
-    /// Like Windows 11, dark cards have no visible frame and the selected tab no accent line.
+    /// Like Windows 11's own apps, the menu and tool bars share the window colour (hairlines separate them), dark
+    /// cards have no visible frame, and the selected tab has no accent line.
     /// </summary>
     public static UiPalette Windows11(bool dark, Color accent)
     {
@@ -64,7 +65,7 @@ public sealed record UiPalette
             ? new UiPalette
             {
                 IsDark = true,
-                Window = Rgb(0x202020), Header = Rgb(0x282828), View = Rgb(0x2B2B2B),
+                Window = Rgb(0x202020), Header = Rgb(0x202020), View = Rgb(0x2B2B2B),
                 Text = Rgb(0xFFFFFF), SecondaryText = Rgb(0xC8C8C8), DisabledText = Rgb(0x6E6E6E),
                 Frame = Rgb(0x464646), Separator = Rgb(0x383838), GroupFrame = Rgb(0x2B2B2B),
                 Accent = accent, OnAccent = Rgb(0x000000), Negative = Rgb(0xFF99A4), ToolTip = Rgb(0x2C2C2C), TabMark = Colors.Transparent,
@@ -77,7 +78,7 @@ public sealed record UiPalette
             : new UiPalette
             {
                 IsDark = false,
-                Window = Rgb(0xF3F3F3), Header = Rgb(0xEBEBEB), View = Rgb(0xFDFDFD),
+                Window = Rgb(0xF3F3F3), Header = Rgb(0xF3F3F3), View = Rgb(0xFDFDFD),
                 Text = Rgb(0x1B1B1B), SecondaryText = Rgb(0x5E5E5E), DisabledText = Rgb(0xA0A0A0),
                 Frame = Rgb(0xD1D1D1), Separator = Rgb(0xE3E3E3), GroupFrame = Rgb(0xD1D1D1),
                 Accent = accent, OnAccent = Rgb(0xFFFFFF), Negative = Rgb(0xC42B1C), ToolTip = Rgb(0xF9F9F9), TabMark = Colors.Transparent,
@@ -134,6 +135,48 @@ public sealed record UiPalette
     {
         var colors = dark ? KdeColors.BreezeDark : KdeColors.BreezeLight;
         return FromKde(accent is { } a ? colors with { Accent = a } : colors);
+    }
+
+    /// <summary>
+    /// GNOME's Adwaita (libadwaita 1.6's named colours), with the desktop's accent (GNOME's default blue without one).
+    /// Adwaita's translucent colours are flattened onto the window colour; its frameless buttons get a faint frame,
+    /// as the app's controls are drawn framed everywhere.
+    /// </summary>
+    public static UiPalette Adwaita(bool dark, Color? accent = null)
+    {
+        var a = accent ?? Rgb(0x3584E4);
+        var window = dark ? Rgb(0x222226) : Rgb(0xFAFAFB);
+        var text = dark ? Rgb(0xFFFFFF) : Rgb(0x323233);
+        var ink = dark ? Colors.White : Rgb(0x000006);
+        var button = Mix(window, ink, dark ? 0.1 : 0.08);
+        return new UiPalette
+        {
+            IsDark = dark,
+            Window = window,
+            Header = dark ? Rgb(0x2E2E32) : Rgb(0xFFFFFF),
+            View = dark ? Rgb(0x1D1D20) : Rgb(0xFFFFFF),
+            Text = text,
+            SecondaryText = Mix(window, text, 0.55),
+            DisabledText = Mix(window, text, 0.45),
+            Frame = Mix(window, ink, 0.15),
+            Separator = Mix(window, ink, dark ? 0.1 : 0.08),
+            GroupFrame = Mix(window, ink, dark ? 0.1 : 0.08),
+            Accent = a,
+            OnAccent = Colors.White,
+            Negative = dark ? Rgb(0xFF7B63) : Rgb(0xE01B24),
+            ToolTip = dark ? Rgb(0x36363A) : Rgb(0xFFFFFF),
+            TabMark = Colors.Transparent,
+            ButtonTop = button,
+            ButtonBottom = button,
+            ButtonFrameTop = Mix(window, ink, 0.12),
+            ButtonFrameBottom = Mix(window, ink, 0.18),
+            DefaultButtonTop = a,
+            DefaultButtonBottom = a,
+            DefaultButtonFrame = Mix(a, Colors.Black, 0.12),
+            DefaultButtonText = Colors.White,
+            ScrollTrack = Mix(window, ink, 0.04),
+            ScrollThumb = Mix(window, ink, 0.3),
+        };
     }
 
     /// <summary><paramref name="amount"/> of the way from <paramref name="from"/> to <paramref name="to"/>.</summary>
