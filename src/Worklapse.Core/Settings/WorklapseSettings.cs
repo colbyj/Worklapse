@@ -10,6 +10,24 @@ public enum CaptureMode
     AllMonitors,
 }
 
+/// <summary>Which desktop's look the windows take.</summary>
+public enum ThemeStyle
+{
+    /// <summary>The desktop the app runs on (Windows; KDE's colour scheme; Adwaita on GTK desktops; Breeze elsewhere).</summary>
+    Automatic,
+    Windows,
+    Kde,
+    Gtk,
+}
+
+public enum ThemeMode
+{
+    /// <summary>Light or dark as the desktop is set.</summary>
+    Automatic,
+    Light,
+    Dark,
+}
+
 public sealed record WorklapseSettings
 {
     public static string DefaultDataFolder { get; } =
@@ -58,6 +76,14 @@ public sealed record WorklapseSettings
     /// </summary>
     public bool ReviewFocusOnApplication { get; init; }
 
+    /// <summary>
+    /// The look of the windows: the desktop's own by default, or another desktop's (which also lets each be tried on
+    /// one machine).
+    /// </summary>
+    public ThemeStyle ThemeStyle { get; init; }
+
+    public ThemeMode ThemeMode { get; init; }
+
     /// <summary>How new frames are stored: the format, and that format's quality setting.</summary>
     public (FrameFormat Format, int Quality) FrameStorage() => Format switch
     {
@@ -69,6 +95,8 @@ public sealed record WorklapseSettings
     public WorklapseSettings Normalized() => this with
     {
         Format = Enum.IsDefined(Format) ? Format : FrameFormat.Video, // a number in a hand-edited file
+        ThemeStyle = Enum.IsDefined(ThemeStyle) ? ThemeStyle : ThemeStyle.Automatic,
+        ThemeMode = Enum.IsDefined(ThemeMode) ? ThemeMode : ThemeMode.Automatic,
         SelectedMonitors = SelectedMonitors ?? [], // "null" in a hand-edited file
         IntervalSeconds = Math.Clamp(IntervalSeconds, 2, 300),
         IdleMinutes = Math.Clamp(IdleMinutes, 1, 120),

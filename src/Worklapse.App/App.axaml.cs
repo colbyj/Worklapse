@@ -80,6 +80,8 @@ public partial class App : Application
     private void Start(IClassicDesktopStyleApplicationLifetime desktop, SettingsStore settingsStore)
     {
         _settings = settingsStore;
+        ThemeManager.Use(_settings.Current);
+        _settings.Changed += (_, settings) => Dispatcher.UIThread.Post(() => ThemeManager.Use(settings));
         _platform = CreatePlatform();
         _recorder = new Recorder(_settings, _platform, CreateSink);
 

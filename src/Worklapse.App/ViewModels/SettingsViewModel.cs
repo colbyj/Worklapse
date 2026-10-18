@@ -77,6 +77,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private decimal? _idleMinutes;
     [ObservableProperty] private bool _pauseWhenLocked;
 
+    // The Application page: indexes into its lists, in the order of ThemeStyle and ThemeMode.
+    [ObservableProperty] private int _themeStyleIndex;
+    [ObservableProperty] private int _themeModeIndex;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QualityWarning))]
     private bool _isVideo;
@@ -147,6 +151,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         JpegQuality = (int)JpegQuality,
         WebPQuality = (int)WebPQuality,
         DataFolder = DataFolder.Trim(),
+        ThemeStyle = (ThemeStyle)ThemeStyleIndex,
+        ThemeMode = (ThemeMode)ThemeModeIndex,
     };
 
     private void Load(WorklapseSettings settings)
@@ -171,6 +177,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         JpegQuality = settings.JpegQuality;
         WebPQuality = settings.WebPQuality;
         DataFolder = settings.DataFolder;
+        ThemeStyleIndex = (int)settings.ThemeStyle;
+        ThemeModeIndex = (int)settings.ThemeMode;
         _loading = false;
         // Defaults don't touch the Programs page (its marks are history, not settings); its changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)

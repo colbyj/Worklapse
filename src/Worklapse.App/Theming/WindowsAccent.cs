@@ -6,9 +6,9 @@ namespace Worklapse.App.Theming;
 
 /// <summary>
 /// The shade of the accent Windows 11 fills controls with: AccentDark1 on light, AccentLight2 on dark. Windows
-/// keeps its whole accent palette in the registry; Avalonia reports only the base accent.
+/// keeps its whole accent palette in the registry; Avalonia reports only the base accent. Elsewhere (the Windows look
+/// chosen on Linux) the shade is derived from the accent.
 /// </summary>
-[SupportedOSPlatform("windows")]
 public static class WindowsAccent
 {
     // AccentPalette: eight 4-byte colours (R, G, B, unused): Light3, Light2, Light1, Accent, Dark1, Dark2, Dark3, and
@@ -22,10 +22,11 @@ public static class WindowsAccent
     /// steps when the registry has no palette.
     /// </summary>
     public static Color FillShade(bool dark, Color accent) =>
-        ReadPalette() is { } palette
+        (OperatingSystem.IsWindows() ? ReadPalette() : null) is { } palette
             ? palette[dark ? Light2 : Dark1]
             : ShiftLightness(accent, dark ? 70 / 255d : -28.5 / 255d);
 
+    [SupportedOSPlatform("windows")]
     private static Color[]? ReadPalette()
     {
         using var key = Registry.CurrentUser.OpenSubKey(AccentKey);

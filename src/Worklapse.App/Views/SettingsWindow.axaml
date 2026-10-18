@@ -251,6 +251,32 @@
           </Border>
         </DockPanel>
       </TabItem>
+
+      <TabItem Header="Application">
+        <StackPanel Margin="10" Spacing="8">
+          <Border Classes="group">
+            <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Appearance" />
+              <!-- In the order of ThemeStyle and ThemeMode. -->
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Classes="label" Text="Style:" />
+                <ComboBox Grid.Column="1" SelectedIndex="{Binding ThemeStyleIndex}" MinWidth="180" AutomationProperties.Name="Style">
+                  <ComboBoxItem Content="Match the desktop" />
+                  <ComboBoxItem Content="Windows" />
+                  <ComboBoxItem Content="KDE" />
+                  <ComboBoxItem Content="GTK" />
+                </ComboBox>
+                <TextBlock Grid.Row="1" Classes="label" Text="Colours:" />
+                <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding ThemeModeIndex}" MinWidth="180" AutomationProperties.Name="Colours">
+                  <ComboBoxItem Content="Match the desktop" />
+                  <ComboBoxItem Content="Light" />
+                  <ComboBoxItem Content="Dark" />
+                </ComboBox>
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </TabItem>
     </TabControl>
   </DockPanel>
 </Window>

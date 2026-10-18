@@ -4,24 +4,27 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Worklapse.Core.Settings;
 
 namespace Worklapse.App.Theming;
 
 /// <summary>
 /// Matches the UI's colours to the OS and keeps them matched: Windows 11's palette with the system accent on
 /// Windows, the active colour scheme on KDE, Adwaita on GNOME and the other GTK desktops, and Breeze (light or dark,
-/// with the desktop's accent) elsewhere.
+/// with the desktop's accent) elsewhere; or another desktop's look, light or dark, as chosen in the settings.
 /// Colours are written into the brushes defined in Styles/BreezeResources.axaml and <see cref="AppBrushes"/>,
 /// so views refer to those brushes and never to colours.
 /// </summary>
 public static class ThemeManager
 {
-    /// <summary>What Avalonia reports as the accent when the desktop doesn't name one (Windows' default blue).</summary>
-    private static readonly Color NoAccent = Color.FromRgb(0, 120, 215);
+    /// <summary>Windows' default blue, which Avalonia also reports as the accent when a desktop doesn't name one.</summary>
+    private static readonly Color WindowsDefaultAccent = Color.FromRgb(0, 120, 215);
 
     private static Application? _app;
     private static FileSystemWatcher? _kdeWatcher;
     private static DispatcherTimer? _kdeDebounce;
+    private static ThemeStyle _style;
+    private static ThemeMode _mode;
 
     public static UiPalette Current { get; private set; } = UiPalette.Breeze(dark: false);
 
@@ -76,21 +79,53 @@ public static class ThemeManager
         Changed?.Invoke();
     }
 
-    /// <summary>The palette for this OS and its current settings.</summary>
-    public static UiPalette ForOs(PlatformColorValues? values)
+    /// <summary>Uses the look chosen in the settings (the desktop's own by default).</summary>
+    public static void Use(WorklapseSettings settings)
     {
-        var dark = values?.ThemeVariant == PlatformThemeVariant.Dark;
-        if (OperatingSystem.IsWindows())
-            return UiPalette.Windows11(dark, WindowsAccent.FillShade(dark, values?.AccentColor1 ?? NoAccent));
-        if (IsKde && KdeColors.Load(KdeColors.KdeGlobalsPath) is { } scheme)
-            return UiPalette.FromKde(scheme);
-        var accent = values?.AccentColor1 is { } a && a != NoAccent ? a : (Color?)null;
-        if (GtkDesktops.Any(IsDesktop))
-            return UiPalette.Adwaita(dark, accent);
-        // Qt desktops (LXQt), anything unrecognised, and KDE before a colour scheme has ever been applied (Breeze is
-        // then in effect).
-        return UiPalette.Breeze(dark, accent);
+        if (settings.ThemeStyle == _style && settings.ThemeMode == _mode)
+            return;
+        _style = settings.ThemeStyle;
+        _mode = settings.ThemeMode;
+        Update();
     }
+
+    /// <summary>
+    /// The palette for a chosen look, given the OS's current colour settings. The desktop's accent is used in every
+    /// style; light or dark comes from the desktop unless chosen.
+    /// </summary>
+    public static UiPalette For(PlatformColorValues? values, ThemeStyle style, ThemeMode mode)
+    {
+        var dark = mode switch
+        {
+            ThemeMode.Light => false,
+            ThemeMode.Dark => true,
+            _ => values?.ThemeVariant == PlatformThemeVariant.Dark,
+        };
+        // Windows always reports its accent; elsewhere this value means the desktop has none.
+        var accent = values?.AccentColor1 is { } a && (OperatingSystem.IsWindows() || a != WindowsDefaultAccent) ? a : (Color?)null;
+
+        switch (style == ThemeStyle.Automatic ? DesktopStyle : style)
+        {
+            case ThemeStyle.Windows:
+                return UiPalette.Windows11(dark, WindowsAccent.FillShade(dark, accent ?? WindowsDefaultAccent));
+            case ThemeStyle.Gtk:
+                return UiPalette.Adwaita(dark, accent);
+            default:
+                // KDE's own colour scheme, unless light or dark was chosen and the scheme is the other. Without one
+                // (KDE before a scheme has ever been applied, Qt desktops such as LXQt, anything unrecognised) Breeze.
+                if (IsKde && KdeColors.Load(KdeColors.KdeGlobalsPath) is { } scheme
+                    && UiPalette.FromKde(scheme) is var palette && (mode == ThemeMode.Automatic || palette.IsDark == dark))
+                    return palette;
+                return UiPalette.Breeze(dark, accent);
+        }
+    }
+
+    /// <summary>The look of the desktop the app runs on.</summary>
+    private static ThemeStyle DesktopStyle =>
+        OperatingSystem.IsWindows() ? ThemeStyle.Windows
+        : IsKde ? ThemeStyle.Kde
+        : GtkDesktops.Any(IsDesktop) ? ThemeStyle.Gtk
+        : ThemeStyle.Kde;
 
     private static bool IsKde => IsDesktop("KDE");
 
@@ -103,7 +138,7 @@ public static class ThemeManager
         && Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") is { } desktop
         && desktop.Split(':').Contains(name, StringComparer.OrdinalIgnoreCase);
 
-    private static void Update() => Apply(ForOs(_app?.PlatformSettings?.GetColorValues()));
+    private static void Update() => Apply(For(_app?.PlatformSettings?.GetColorValues(), _style, _mode));
 
     /// <summary>
     /// Plasma rewrites kdeglobals when the colour scheme or accent changes; a change between two light (or two
