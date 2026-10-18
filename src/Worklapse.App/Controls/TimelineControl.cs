@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Worklapse.App.Theming;
 
 namespace Worklapse.App.Controls;
 
@@ -26,17 +27,16 @@ public sealed class TimelineControl : Control
     private const double LabelHeight = 16;
     private const double DragThreshold = 3;
 
-    private static readonly IBrush TrackBrush = new SolidColorBrush(Color.Parse("#FCFCFC"));
-    private static readonly IPen TrackBorder = new Pen(new SolidColorBrush(Color.Parse("#BDC0C3")));
-    private static readonly IPen HourLine = new Pen(new SolidColorBrush(Color.Parse("#E6E8EA")));
-    private static readonly IBrush OtherBrush = new SolidColorBrush(Color.Parse("#F39C1F"));
-    private static readonly IBrush IdleBrush = new SolidColorBrush(Color.Parse("#BDC3C7"));
-    private static readonly IBrush MarkedFill = new SolidColorBrush(Color.FromArgb(56, 218, 68, 83));
-    private static readonly IPen MarkedBorder = new Pen(new SolidColorBrush(Color.Parse("#DA4453")), 1, DashStyle.Dash);
-    private static readonly IBrush SelectionFill = new SolidColorBrush(Color.FromArgb(46, 61, 174, 233));
-    private static readonly IPen SelectionEdge = new Pen(new SolidColorBrush(Color.Parse("#3DAEE9")), 2);
-    private static readonly IPen PlayheadPen = new Pen(new SolidColorBrush(Color.Parse("#DA4453")), 2);
-    private static readonly IBrush LabelBrush = new SolidColorBrush(Color.Parse("#6E757C"));
+    // The brushes are recoloured in place when the OS theme changes (see OnAttachedToVisualTree).
+    private static readonly IBrush TrackBrush = AppBrushes.TimelineTrack;
+    private static readonly IPen TrackBorder = new Pen(AppBrushes.TimelineFrame);
+    private static readonly IPen HourLine = new Pen(AppBrushes.TimelineHourLine);
+    private static readonly IBrush MarkedFill = AppBrushes.MarkedFill;
+    private static readonly IPen MarkedBorder = new Pen(AppBrushes.Marked, 1, DashStyle.Dash);
+    private static readonly IBrush SelectionFill = AppBrushes.SelectionFill;
+    private static readonly IPen SelectionEdge = new Pen(AppBrushes.SelectionEdge, 2);
+    private static readonly IPen PlayheadPen = new Pen(AppBrushes.Marked, 2);
+    private static readonly IBrush LabelBrush = AppBrushes.TimelineLabel;
     private static readonly Typeface LabelFace = new(FontFamily.Default);
 
     private Point? _pressAt;
@@ -48,8 +48,6 @@ public sealed class TimelineControl : Control
         Cursor = new Cursor(StandardCursorType.Cross);
         ClipToBounds = true;
     }
-
-    public IBrush ProductiveBrush { get; set; } = new SolidColorBrush(Color.Parse("#2980B9"));
 
     public IReadOnlyList<TimelineSpan> Spans { get; private set; } = [];
     public double ViewStart { get; private set; } = 8 * 3600;
@@ -76,6 +74,18 @@ public sealed class TimelineControl : Control
         Selection = selection;
         Playhead = playhead;
         InvalidateVisual();
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        ThemeManager.Changed += InvalidateVisual;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        ThemeManager.Changed -= InvalidateVisual;
     }
 
     public override void Render(DrawingContext context)
@@ -109,9 +119,9 @@ public sealed class TimelineControl : Control
                 : new Rect(x0, track.Top + 4, x1 - x0, TrackHeight - 9);
             var brush = span.Kind switch
             {
-                TimelineKind.Productive => ProductiveBrush,
-                TimelineKind.Other => OtherBrush,
-                _ => IdleBrush,
+                TimelineKind.Productive => AppBrushes.Productive,
+                TimelineKind.Other => AppBrushes.Other,
+                _ => AppBrushes.Idle,
             };
             using (context.PushOpacity(span.Marked ? 0.3 : 1))
                 context.FillRectangle(brush, rect);

@@ -17,7 +17,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 |---|---|---|
 | Platforms | Windows first, then Kubuntu 26.04 (KDE Plasma, Wayland). GNOME, XFCE, Mint/X11 later. | The developer dual-boots; Linux is the long-term home. |
 | UI toolkit | .NET 10 + Avalonia 12 | Familiar stack, runs on both. |
-| Look | **KDE Breeze-style with a little Windows flavour**: Breeze Light palette and control styling, system font (Segoe UI / Noto Sans), 4 px corners, Fluent System Icons. A dense desktop-app layout (menu bar, tool bar, status bar), not a web-app look. | Asked for explicitly; an earlier pass with cards and big padding looked like a web app. |
+| Look | **KDE Breeze-style with a little Windows flavour**: Breeze control styling, system font (9 pt Segoe UI / 10 pt Noto Sans), 4 px corners, Fluent System Icons, desktop control sizes (Fluent compact density plus own templates for scroll bars, tabs, check boxes, spinners). Colours follow the OS, live: Windows 11 light/dark with the system accent; on KDE the active colour scheme from kdeglobals; elsewhere Breeze light/dark with the portal accent. Timeline meaning colours stay fixed (dark variants). A dense desktop-app layout (menu bar, tool bar, status bar), not a web-app look. | Asked for explicitly; an earlier pass with cards and big padding looked like a web app, and a later one still looked touch-sized (2026-10-18). |
 | What to capture | Choice of active application, primary monitor, selected monitors, or all monitors. The developer uses all monitors. | Matches TimeSnapper's options; all monitors became practical once video compression was in. |
 | Idle | Stop capturing after N minutes without input (default 5) and while the screen is locked. When the limit is hit, the captures since the last input are re-marked as idle. | Idle time should be time without input, not time after the threshold. |
 | Video format | AV1 (libaom), one stream per monitor, 90-frame segments (15 min at 10 s), constant quantizer, default 40, adjustable 20–55 in Settings (warning from 48). | Measured: roughly 2.5× smaller than per-frame WebP or JPEG at the same readability. |
@@ -315,7 +315,7 @@ Working on Windows:
   recorded, closed at the next tick) encoded without the deleted frames, also while paused; titles and app
   names zeroed in the database; failures shown in the status window; crash-safe, and Day review reloads when a
   frame it shows has moved.
-- Breeze-style theme across all windows.
+- Breeze-style theme across all windows, at desktop density, coloured to match the OS (Windows 11 light/dark + accent, KDE colour scheme, Breeze elsewhere), switching live (2026-10-18, not yet reviewed by the developer; Windows high contrast is not handled yet).
 - An unreadable `settings.json` (bad JSON, unknown value) no longer crashes at startup: a window shows the
   file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
   to `settings.json.broken-<date>`.

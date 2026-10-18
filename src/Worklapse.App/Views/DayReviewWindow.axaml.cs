@@ -38,7 +38,6 @@ public partial class DayReviewWindow : Window
         if (viewModel is null)
             return; // designer
 
-        Timeline.ProductiveBrush = DayReviewViewModel.ProductiveBrush;
         Timeline.Clicked += viewModel.Seek;
         Timeline.Dragged += viewModel.DragSelect;
         Frames.ViewChanged += UpdateView;

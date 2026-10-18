@@ -1,6 +1,7 @@
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Worklapse.App.Theming;
 using Worklapse.Core.Recording;
 using Worklapse.Core.Settings;
 
@@ -8,10 +9,6 @@ namespace Worklapse.App.ViewModels;
 
 public sealed partial class StatusViewModel : ObservableObject
 {
-    private static readonly IBrush RecordingBrush = new SolidColorBrush(Color.Parse("#DA4453"));
-    private static readonly IBrush InactiveBrush = new SolidColorBrush(Color.Parse("#A0A4A8"));
-    private static readonly IBrush ErrorBrush = new SolidColorBrush(Color.Parse("#DA4453"));
-
     private readonly Recorder _recorder;
     private readonly SettingsStore _settings;
     private readonly Func<Task> _openSettings;
@@ -32,7 +29,7 @@ public sealed partial class StatusViewModel : ObservableObject
     [ObservableProperty] private string _stateText = "";
     [ObservableProperty] private string _modeText = "";
     [ObservableProperty] private string _detailText = "";
-    [ObservableProperty] private IBrush _dotBrush = InactiveBrush;
+    [ObservableProperty] private IBrush _dotBrush = AppBrushes.Inactive;
     [ObservableProperty] private string _pauseText = "Pause";
     [ObservableProperty] private bool _hasError;
 
@@ -53,14 +50,14 @@ public sealed partial class StatusViewModel : ObservableObject
 
         (StateText, DotBrush, DetailText) = status.State switch
         {
-            RecorderState.Starting => ("Starting", InactiveBrush, "Waiting for the first capture"),
-            RecorderState.Recording => ("Recording", RecordingBrush, LastCapture(status)),
-            RecorderState.Paused => ("Paused", InactiveBrush, LastCapture(status)),
-            RecorderState.Idle => ("Idle", InactiveBrush, $"No input for {settings.IdleMinutes}+ minutes"),
-            RecorderState.Locked => ("Screen locked", InactiveBrush, LastCapture(status)),
-            RecorderState.Excluded => ("Excluded", InactiveBrush, LastCapture(status)),
-            RecorderState.Error => ("Not recording", ErrorBrush, status.Error ?? "Unknown error"),
-            _ => (status.State.ToString(), InactiveBrush, ""),
+            RecorderState.Starting => ("Starting", AppBrushes.Inactive, "Waiting for the first capture"),
+            RecorderState.Recording => ("Recording", AppBrushes.Recording, LastCapture(status)),
+            RecorderState.Paused => ("Paused", AppBrushes.Inactive, LastCapture(status)),
+            RecorderState.Idle => ("Idle", AppBrushes.Inactive, $"No input for {settings.IdleMinutes}+ minutes"),
+            RecorderState.Locked => ("Screen locked", AppBrushes.Inactive, LastCapture(status)),
+            RecorderState.Excluded => ("Excluded", AppBrushes.Inactive, LastCapture(status)),
+            RecorderState.Error => ("Not recording", AppBrushes.Error, status.Error ?? "Unknown error"),
+            _ => (status.State.ToString(), AppBrushes.Inactive, ""),
         };
     }
 

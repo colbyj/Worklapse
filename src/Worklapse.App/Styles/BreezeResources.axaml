@@ -1,163 +1,168 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!--
-    KDE Breeze Light colours and metrics, mapped onto the resource keys that Avalonia's Fluent control
-    templates read. The Fluent templates supply structure; these values make them look like Breeze:
-    light faces, a hairline frame that turns blue on hover, blue focus and selection, small radii.
-    Windows flavour: the system font (Segoe UI on Windows, Noto Sans on KDE) and 4 px corners.
+    Breeze-style colours and metrics, mapped onto the resource keys that Avalonia's Fluent control templates read.
+    The Fluent templates supply structure; these values make them look like Breeze: light faces, a hairline frame
+    that turns to the accent on hover, accent focus and selection, small radii. Windows flavour: the system font
+    (Segoe UI on Windows, Noto Sans on KDE) and 4 px corners.
   -->
 
-  <!-- Palette -->
-  <Color x:Key="BreezeWindowColor">#EFF0F1</Color>
-  <Color x:Key="BreezeHeaderColor">#E3E5E7</Color>
-  <Color x:Key="BreezeViewColor">#FCFCFC</Color>
-  <Color x:Key="BreezeTextColor">#232629</Color>
-  <Color x:Key="BreezeSecondaryTextColor">#6E757C</Color>
-  <Color x:Key="BreezeDisabledTextColor">#A0A4A8</Color>
-  <Color x:Key="BreezeFrameColor">#BDC0C3</Color>
-  <Color x:Key="BreezeSeparatorColor">#CDD0D3</Color>
-  <Color x:Key="BreezeAccentColor">#3DAEE9</Color>
-  <Color x:Key="BreezeAccentHoverColor">#93CEE9</Color>
-  <Color x:Key="BreezeAccentTintColor">#D8EEFA</Color>
-  <Color x:Key="BreezeAccentPressedColor">#BCE2F6</Color>
-  <Color x:Key="BreezeNegativeColor">#DA4453</Color>
-  <Color x:Key="BreezePositiveColor">#27AE60</Color>
+  <!--
+    Palette. Theming/ThemeManager recolours these brushes (and the gradients below) to match the OS, in place,
+    so the aliases below, which resolve once, follow too. The colours here are only what the designer shows.
+  -->
+  <SolidColorBrush x:Key="UiWindowBrush" Color="#EFF0F1" />
+  <SolidColorBrush x:Key="UiHeaderBrush" Color="#DEE0E2" />
+  <SolidColorBrush x:Key="UiViewBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="UiTextBrush" Color="#232629" />
+  <SolidColorBrush x:Key="UiSecondaryTextBrush" Color="#707D8A" />
+  <SolidColorBrush x:Key="UiDisabledTextBrush" Color="#A0A4A8" />
+  <SolidColorBrush x:Key="UiFrameBrush" Color="#BDC0C3" />
+  <SolidColorBrush x:Key="UiSeparatorBrush" Color="#CDD0D3" />
+  <SolidColorBrush x:Key="UiGroupFrameBrush" Color="#BDC0C3" />
+  <SolidColorBrush x:Key="UiTabMarkBrush" Color="#3DAEE9" />
+  <SolidColorBrush x:Key="UiAccentBrush" Color="#3DAEE9" />
+  <SolidColorBrush x:Key="UiAccentHoverBrush" Color="#93CEE9" />
+  <SolidColorBrush x:Key="UiAccentTintBrush" Color="#D8EEFA" />
+  <SolidColorBrush x:Key="UiAccentPressedBrush" Color="#BCE2F6" />
+  <SolidColorBrush x:Key="UiAccentStrongBrush" Color="#2B9AD3" />
+  <SolidColorBrush x:Key="UiOnAccentBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="UiNegativeBrush" Color="#DA4453" />
+  <SolidColorBrush x:Key="UiToolTipBrush" Color="#F7F7F7" />
+  <SolidColorBrush x:Key="UiScrollTrackBrush" Color="#E9EAEB" />
+  <SolidColorBrush x:Key="UiScrollThumbBrush" Color="#B4B7BA" />
+  <SolidColorBrush x:Key="UiDefaultButtonFrameBrush" Color="#3DAEE9" />
+  <SolidColorBrush x:Key="UiDefaultButtonTextBrush" Color="#232629" />
+  <StaticResource x:Key="ScrollViewerScrollBarsSeparatorBackground" ResourceKey="UiScrollTrackBrush" />
 
-  <SolidColorBrush x:Key="BreezeWindowBrush" Color="{StaticResource BreezeWindowColor}" />
-  <SolidColorBrush x:Key="BreezeHeaderBrush" Color="{StaticResource BreezeHeaderColor}" />
-  <SolidColorBrush x:Key="BreezeViewBrush" Color="{StaticResource BreezeViewColor}" />
-  <SolidColorBrush x:Key="BreezeTextBrush" Color="{StaticResource BreezeTextColor}" />
-  <SolidColorBrush x:Key="BreezeSecondaryTextBrush" Color="{StaticResource BreezeSecondaryTextColor}" />
-  <SolidColorBrush x:Key="BreezeDisabledTextBrush" Color="{StaticResource BreezeDisabledTextColor}" />
-  <SolidColorBrush x:Key="BreezeFrameBrush" Color="{StaticResource BreezeFrameColor}" />
-  <SolidColorBrush x:Key="BreezeSeparatorBrush" Color="{StaticResource BreezeSeparatorColor}" />
-  <SolidColorBrush x:Key="BreezeAccentBrush" Color="{StaticResource BreezeAccentColor}" />
-  <SolidColorBrush x:Key="BreezeAccentHoverBrush" Color="{StaticResource BreezeAccentHoverColor}" />
-  <SolidColorBrush x:Key="BreezeAccentTintBrush" Color="{StaticResource BreezeAccentTintColor}" />
-  <SolidColorBrush x:Key="BreezeAccentPressedBrush" Color="{StaticResource BreezeAccentPressedColor}" />
-  <SolidColorBrush x:Key="BreezeNegativeBrush" Color="{StaticResource BreezeNegativeColor}" />
-
-  <!-- Metrics -->
+  <!--
+    Metrics. FluentTheme runs in its Compact density (24 px fields, lists and menus); these tighten it further
+    towards desktop sizes. The font is 9 pt (12 px), Windows' UI size; App.Initialize raises it to KDE's 10 pt
+    elsewhere.
+  -->
   <CornerRadius x:Key="ControlCornerRadius">4</CornerRadius>
-  <CornerRadius x:Key="OverlayCornerRadius">6</CornerRadius>
-  <x:Double x:Key="ControlContentThemeFontSize">13</x:Double>
+  <CornerRadius x:Key="OverlayCornerRadius">4</CornerRadius>
+  <x:Double x:Key="ControlContentThemeFontSize">12</x:Double>
   <Thickness x:Key="ButtonBorderThemeThickness">1</Thickness>
+  <Thickness x:Key="ButtonPadding">10,3</Thickness>
   <Thickness x:Key="TextControlBorderThemeThickness">1</Thickness>
   <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
+  <Thickness x:Key="TextControlThemePadding">6,3</Thickness>
   <Thickness x:Key="ComboBoxBorderThemeThickness">1</Thickness>
+  <Thickness x:Key="ComboBoxPadding">8,1,0,2</Thickness>
+  <Thickness x:Key="ComboBoxItemThemePadding">8,3,8,4</Thickness>
+  <x:Double x:Key="CheckBoxMinHeight">22</x:Double>
+  <x:Double x:Key="RadioButtonMinHeight">22</x:Double>
 
-  <!-- Buttons -->
-  <StaticResource x:Key="ButtonBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="ButtonBackgroundDisabled" ResourceKey="BreezeWindowBrush" />
-  <StaticResource x:Key="ButtonForeground" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="ButtonForegroundDisabled" ResourceKey="BreezeDisabledTextBrush" />
-  <StaticResource x:Key="ButtonBorderBrush" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="ButtonBorderBrushDisabled" ResourceKey="BreezeSeparatorBrush" />
+  <!-- Buttons: a face that darkens slightly towards the bottom edge, so they read as raised. -->
+  <LinearGradientBrush x:Key="ButtonBackground" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#FDFDFD" />
+    <GradientStop Offset="1" Color="#F0F1F2" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="ButtonBorderBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#C4C7CA" />
+    <GradientStop Offset="1" Color="#A9ADB1" />
+  </LinearGradientBrush>
+  <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="ButtonBackground" />
+  <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="ButtonBackgroundDisabled" ResourceKey="UiWindowBrush" />
+  <StaticResource x:Key="ButtonForeground" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="ButtonForegroundDisabled" ResourceKey="UiDisabledTextBrush" />
+  <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="ButtonBorderBrushDisabled" ResourceKey="UiSeparatorBrush" />
 
-  <StaticResource x:Key="RepeatButtonBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="RepeatButtonBackgroundPointerOver" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="RepeatButtonBackgroundPressed" ResourceKey="BreezeAccentPressedBrush" />
-  <StaticResource x:Key="RepeatButtonBorderBrush" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="RepeatButtonBorderBrushPointerOver" ResourceKey="BreezeAccentBrush" />
+  <StaticResource x:Key="RepeatButtonBackground" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="RepeatButtonBackgroundPointerOver" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="RepeatButtonBackgroundPressed" ResourceKey="UiAccentPressedBrush" />
+  <StaticResource x:Key="RepeatButtonBorderBrush" ResourceKey="UiFrameBrush" />
+  <StaticResource x:Key="RepeatButtonBorderBrushPointerOver" ResourceKey="UiAccentBrush" />
 
-  <SolidColorBrush x:Key="AccentButtonBackground" Color="#3DAEE9" />
-  <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#5BBBEC" />
-  <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#2B9AD3" />
-  <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFF" />
-  <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFF" />
-  <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFF" />
-  <SolidColorBrush x:Key="AccentButtonBorderBrush" Color="#2B9AD3" />
-  <SolidColorBrush x:Key="AccentButtonBorderBrushPointerOver" Color="#2B9AD3" />
-  <SolidColorBrush x:Key="AccentButtonBorderBrushPressed" Color="#1F86BD" />
+  <!-- The default button (class "accent"): on KDE Breeze's accent-tinted face in an accent frame with ordinary text,
+       on Windows a solid accent face with white (or, on dark, black) text. -->
+  <LinearGradientBrush x:Key="AccentButtonBackground" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#E6F4FC" />
+    <GradientStop Offset="1" Color="#D2EAF8" />
+  </LinearGradientBrush>
+  <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="AccentButtonBackground" />
+  <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="AccentButtonBackground" />
+  <StaticResource x:Key="AccentButtonForeground" ResourceKey="UiDefaultButtonTextBrush" />
+  <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="UiDefaultButtonTextBrush" />
+  <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="UiDefaultButtonTextBrush" />
+  <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="UiDefaultButtonFrameBrush" />
+  <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="UiAccentStrongBrush" />
+  <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="UiAccentStrongBrush" />
+  <StaticResource x:Key="AccentButtonBackgroundDisabled" ResourceKey="UiWindowBrush" />
+  <StaticResource x:Key="AccentButtonForegroundDisabled" ResourceKey="UiDisabledTextBrush" />
+  <StaticResource x:Key="AccentButtonBorderBrushDisabled" ResourceKey="UiSeparatorBrush" />
 
   <!-- Text fields, number boxes -->
-  <StaticResource x:Key="TextControlBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="TextControlBorderBrush" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="BreezeAccentHoverBrush" />
-  <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="TextControlForeground" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TextControlForegroundPointerOver" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TextControlForegroundFocused" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TextControlSelectionHighlightColor" ResourceKey="BreezeAccentBrush" />
+  <StaticResource x:Key="TextControlBackground" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="TextControlBorderBrush" ResourceKey="UiFrameBrush" />
+  <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="UiAccentHoverBrush" />
+  <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="TextControlForeground" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="TextControlForegroundPointerOver" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="TextControlForegroundFocused" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="TextControlSelectionHighlightColor" ResourceKey="UiAccentBrush" />
 
   <!-- Drop-down lists -->
-  <StaticResource x:Key="ComboBoxBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="ComboBoxBackgroundFocused" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="ComboBoxBorderBrushFocused" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="ComboBoxDropDownBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="ComboBoxDropDownBorderBrush" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="ComboBoxItemBackgroundPointerOver" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="BreezeAccentPressedBrush" />
-  <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="BreezeAccentPressedBrush" />
-
-  <!-- Check boxes and radio buttons -->
-  <StaticResource x:Key="CheckBoxCheckBackgroundFillUnchecked" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="CheckBoxCheckBackgroundStrokeUnchecked" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="CheckBoxCheckBackgroundStrokeChecked" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseFill" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseStroke" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseStrokePointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseCheckedFillPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="RadioButtonOuterEllipseCheckedStrokePointerOver" ResourceKey="BreezeAccentBrush" />
+  <StaticResource x:Key="ComboBoxBackground" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="ComboBoxBackgroundFocused" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="UiFrameBrush" />
+  <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="ComboBoxBorderBrushFocused" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="ComboBoxDropDownBackground" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="ComboBoxDropDownBorderBrush" ResourceKey="UiFrameBrush" />
+  <StaticResource x:Key="ComboBoxItemBackgroundPointerOver" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="UiAccentPressedBrush" />
+  <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="UiAccentPressedBrush" />
 
   <!-- Slider -->
-  <StaticResource x:Key="SliderTrackValueFill" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="SliderTrackValueFillPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="SliderThumbBackground" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="SliderThumbBackgroundPointerOver" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="SliderTrackFill" ResourceKey="BreezeFrameBrush" />
+  <StaticResource x:Key="SliderTrackValueFill" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="SliderTrackValueFillPointerOver" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="SliderThumbBackground" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="SliderThumbBackgroundPointerOver" ResourceKey="UiAccentBrush" />
+  <StaticResource x:Key="SliderTrackFill" ResourceKey="UiFrameBrush" />
+  <x:Double x:Key="SliderHorizontalHeight">22</x:Double>
+  <GridLength x:Key="SliderPreContentMargin">4</GridLength>
+  <GridLength x:Key="SliderPostContentMargin">4</GridLength>
+  <x:Double x:Key="SliderHorizontalThumbWidth">14</x:Double>
+  <x:Double x:Key="SliderHorizontalThumbHeight">14</x:Double>
+  <CornerRadius x:Key="SliderThumbCornerRadius">7</CornerRadius>
 
   <!-- Menus, flyouts, tooltips -->
-  <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="MenuFlyoutPresenterBorderBrush" ResourceKey="BreezeFrameBrush" />
-  <StaticResource x:Key="MenuFlyoutItemBackgroundPointerOver" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="MenuFlyoutItemBackgroundPressed" ResourceKey="BreezeAccentPressedBrush" />
-  <StaticResource x:Key="FlyoutPresenterBackground" ResourceKey="BreezeViewBrush" />
-  <StaticResource x:Key="FlyoutBorderThemeBrush" ResourceKey="BreezeFrameBrush" />
-  <SolidColorBrush x:Key="ToolTipBackground" Color="#F7F7F7" />
-  <StaticResource x:Key="ToolTipForeground" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="ToolTipBorderBrush" ResourceKey="BreezeFrameBrush" />
-
-  <!-- Tabs: compact, in the window's font size, the selected one underlined in the accent colour -->
-  <x:Double x:Key="TabItemHeaderFontSize">13</x:Double>
-  <x:Double x:Key="TabItemMinHeight">32</x:Double>
-  <x:Double x:Key="TabItemHeaderMinHeight">32</x:Double>
-  <StaticResource x:Key="TabItemHeaderSelectedPipeFill" ResourceKey="BreezeAccentBrush" />
-  <StaticResource x:Key="TabItemHeaderForegroundUnselected" ResourceKey="BreezeSecondaryTextBrush" />
-  <StaticResource x:Key="TabItemHeaderForegroundUnselectedPointerOver" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TabItemHeaderForegroundUnselectedPressed" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TabItemHeaderForegroundSelected" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TabItemHeaderForegroundSelectedPointerOver" ResourceKey="BreezeTextBrush" />
-  <StaticResource x:Key="TabItemHeaderForegroundSelectedPressed" ResourceKey="BreezeTextBrush" />
+  <x:Double x:Key="MenuBarHeight">26</x:Double>
+  <Thickness x:Key="MenuBarItemPadding">8,2</Thickness>
+  <Thickness x:Key="MenuFlyoutItemThemePaddingNarrow">8,4,12,4</Thickness>
+  <Thickness x:Key="MenuIconPresenterMargin">0,0,8,0</Thickness>
+  <Thickness x:Key="MenuFlyoutSeparatorThemePadding">8,2,8,2</Thickness>
+  <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="MenuFlyoutPresenterBorderBrush" ResourceKey="UiFrameBrush" />
+  <StaticResource x:Key="MenuFlyoutItemBackgroundPointerOver" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="MenuFlyoutItemBackgroundPressed" ResourceKey="UiAccentPressedBrush" />
+  <StaticResource x:Key="FlyoutPresenterBackground" ResourceKey="UiViewBrush" />
+  <StaticResource x:Key="FlyoutBorderThemeBrush" ResourceKey="UiFrameBrush" />
+  <StaticResource x:Key="ToolTipBackground" ResourceKey="UiToolTipBrush" />
+  <StaticResource x:Key="ToolTipForeground" ResourceKey="UiTextBrush" />
+  <StaticResource x:Key="ToolTipBorderBrush" ResourceKey="UiFrameBrush" />
 
   <!-- Lists: rows highlighted in the light accent tint, as in Breeze views -->
-  <Thickness x:Key="ListBoxItemPadding">8,3</Thickness>
-  <StaticResource x:Key="SystemControlHighlightListLowBrush" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="SystemControlHighlightListMediumBrush" ResourceKey="BreezeAccentPressedBrush" />
-  <StaticResource x:Key="SystemControlHighlightListAccentLowBrush" ResourceKey="BreezeAccentTintBrush" />
-  <StaticResource x:Key="SystemControlHighlightListAccentMediumBrush" ResourceKey="BreezeAccentPressedBrush" />
-  <StaticResource x:Key="SystemControlHighlightListAccentHighBrush" ResourceKey="BreezeAccentPressedBrush" />
+  <Thickness x:Key="ListBoxItemPadding">6,2</Thickness>
+  <StaticResource x:Key="SystemControlHighlightListLowBrush" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="SystemControlHighlightListMediumBrush" ResourceKey="UiAccentPressedBrush" />
+  <StaticResource x:Key="SystemControlHighlightListAccentLowBrush" ResourceKey="UiAccentTintBrush" />
+  <StaticResource x:Key="SystemControlHighlightListAccentMediumBrush" ResourceKey="UiAccentPressedBrush" />
+  <StaticResource x:Key="SystemControlHighlightListAccentHighBrush" ResourceKey="UiAccentPressedBrush" />
 
   <!-- Keyboard focus: Breeze's blue outline -->
-  <StaticResource x:Key="SystemControlFocusVisualPrimaryBrush" ResourceKey="BreezeAccentBrush" />
+  <StaticResource x:Key="SystemControlFocusVisualPrimaryBrush" ResourceKey="UiAccentBrush" />
   <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="Transparent" />
 </ResourceDictionary>

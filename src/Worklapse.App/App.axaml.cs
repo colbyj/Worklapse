@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Worklapse.App.Theming;
 using Worklapse.App.ViewModels;
 using Worklapse.App.Views;
 using Worklapse.Capture.Windows;
@@ -28,7 +29,14 @@ public partial class App : Application
     private NativeMenuItem? _pauseItem;
     private bool _quitting;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        // The desktop's own UI font size: 9 pt Segoe UI on Windows (the resources' 12 px), 10 pt Noto Sans on KDE.
+        if (!OperatingSystem.IsWindows())
+            Resources["ControlContentThemeFontSize"] = 13.0;
+        ThemeManager.Start(this);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

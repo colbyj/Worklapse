@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Worklapse.App.Controls;
+using Worklapse.App.Theming;
 using Worklapse.Core.History;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
@@ -43,12 +44,6 @@ public sealed partial class MarkedRange : ObservableObject
 /// </summary>
 public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 {
-    public static readonly IBrush ProductiveBrush = new SolidColorBrush(Color.Parse("#2980B9"));
-    public static readonly IBrush OtherBrush = new SolidColorBrush(Color.Parse("#F39C1F"));
-    public static readonly IBrush IdleBrush = new SolidColorBrush(Color.Parse("#BDC3C7"));
-    public static readonly IBrush MarkedBrush = new SolidColorBrush(Color.Parse("#DA4453"));
-    public static readonly IBrush NotRecordedBrush = new SolidColorBrush(Color.Parse("#A0A4A8"));
-
     private static readonly int[] SpeedSteps = [1, 3, 12, 36];
 
     private readonly HistoryStore _history;
@@ -111,7 +106,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _dayText = "";
     [ObservableProperty] private string _frameTime = "";
     [ObservableProperty] private string _frameState = "";
-    [ObservableProperty] private IBrush _frameStateBrush = NotRecordedBrush;
+    [ObservableProperty] private IBrush _frameStateBrush = AppBrushes.NotRecorded;
     [ObservableProperty] private string _frameApp = "";
     [ObservableProperty] private string _summaryTitle = "";
     [ObservableProperty] private string _summaryRange = "";
@@ -566,10 +561,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         }
         var c = Captures[Current];
         FrameTime = c.Time.ToLocalTime().ToString("T", CultureInfo.CurrentCulture);
-        (FrameState, FrameStateBrush) = c.PendingDelete ? ("Marked for deletion", MarkedBrush)
-            : !c.IsActive ? ("Idle", IdleBrush)
-            : c.Productive ? ("Productive", ProductiveBrush)
-            : ("Other", OtherBrush);
+        (FrameState, FrameStateBrush) = c.PendingDelete ? ("Marked for deletion", AppBrushes.Marked)
+            : !c.IsActive ? ("Idle", AppBrushes.Idle)
+            : c.Productive ? ("Productive", AppBrushes.Productive)
+            : ("Other", AppBrushes.Other);
         FrameApp = !c.IsActive ? "No keyboard or mouse input"
             : string.Join(" — ", new[] { c.AppName, c.Site, c.WindowTitle }.Where(s => !string.IsNullOrEmpty(s)));
     }
@@ -592,13 +587,13 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         var productiveShare = summary.Active.Ticks == 0 ? 0 : (int)Math.Round(100.0 * summary.Productive.Ticks / summary.Active.Ticks);
         Stats.Add(new StatItem("Length", Duration(summary.Length), "", null));
         Stats.Add(new StatItem("Active", Duration(summary.Active), $"({activeShare}%)", null));
-        Stats.Add(new StatItem("Productive", Duration(summary.Productive), $"({productiveShare}% of active)", ProductiveBrush));
-        Stats.Add(new StatItem("Other", Duration(summary.Other), "", OtherBrush));
-        Stats.Add(new StatItem("Idle", Duration(summary.Idle), "", IdleBrush));
+        Stats.Add(new StatItem("Productive", Duration(summary.Productive), $"({productiveShare}% of active)", AppBrushes.Productive));
+        Stats.Add(new StatItem("Other", Duration(summary.Other), "", AppBrushes.Other));
+        Stats.Add(new StatItem("Idle", Duration(summary.Idle), "", AppBrushes.Idle));
         if (summary.NotRecorded >= TimeSpan.FromMinutes(1))
             Stats.Add(new StatItem("Not recorded", Duration(summary.NotRecorded), "", null));
         if (summary.Marked > TimeSpan.Zero)
-            Stats.Add(new StatItem("Marked", Duration(summary.Marked), "(not counted)", MarkedBrush));
+            Stats.Add(new StatItem("Marked", Duration(summary.Marked), "(not counted)", AppBrushes.Marked));
     }
 
     // --- helpers ------------------------------------------------------------------------------

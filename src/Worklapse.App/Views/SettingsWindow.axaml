@@ -6,7 +6,7 @@
         x:DataType="vm:SettingsViewModel"
         Title="Settings — Worklapse"
         Icon="avares://Worklapse/Assets/worklapse.ico"
-        Width="620" Height="720" MinWidth="520" MinHeight="420"
+        Width="680" Height="720" MinWidth="520" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
   <Window.Styles>
@@ -16,20 +16,27 @@
       <Setter Property="Margin" Value="0,0,10,0" />
     </Style>
     <!-- Column headers of the Programs list: flat, click to sort. -->
+    <!-- Column headers of the Programs list: flat with dividers between them, click to sort. -->
     <Style Selector="Button.columnHeader">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,1,0" />
       <Setter Property="CornerRadius" Value="0" />
-      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="6,3" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.columnHeader /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="none" />
     </Style>
     <Style Selector="Button.columnHeader:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource BreezeAccentTintBrush}" />
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
     </Style>
-    <!-- Dense rows: Fluent's check box template is 32 px tall around a 20 px box, which made each row ~38 px;
-         the rows' check boxes overlap the row padding by 6 px above and below instead (see their Margin). -->
+    <!-- Dense rows: the check boxes overlap the row padding by 3 px above and below (see their Margin), so a row is
+         as tall as its text. -->
     <Style Selector="ListBox.programs ListBoxItem">
       <Setter Property="MinHeight" Value="0" />
     </Style>
@@ -37,16 +44,10 @@
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="MinWidth" Value="0" />
     </Style>
-    <Style Selector="TabControl">
-      <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="TabControl /template/ ItemsPresenter#PART_ItemsPresenter">
-      <Setter Property="Margin" Value="10,4,10,0" />
-    </Style>
   </Window.Styles>
 
   <DockPanel>
-    <Border DockPanel.Dock="Bottom" Classes="buttonBar">
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar" BorderThickness="0" Padding="10,8,10,9">
       <DockPanel>
         <Button DockPanel.Dock="Left" Content="Defaults" Click="OnDefaults" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
@@ -57,17 +58,17 @@
       </DockPanel>
     </Border>
 
-    <TabControl>
+    <TabControl Margin="10,10,10,0">
       <TabItem Header="General">
-    <ScrollViewer BorderBrush="{DynamicResource BreezeSeparatorBrush}" BorderThickness="0,1,0,0">
-      <StackPanel Margin="14,12" Spacing="10">
+    <ScrollViewer>
+      <StackPanel Margin="10" Spacing="8">
 
         <Border Classes="group">
           <StackPanel>
             <TextBlock Classes="groupHeader" Text="Capture" />
             <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
               <TextBlock Classes="label" Text="Capture:" VerticalAlignment="Top" Margin="0,6,10,0" />
-              <StackPanel Grid.Column="1" Spacing="2">
+              <StackPanel Grid.Column="1">
                 <RadioButton GroupName="mode" Content="Active application only" IsChecked="{Binding IsActiveApplication}" />
                 <RadioButton GroupName="mode" Content="Primary monitor" IsChecked="{Binding IsPrimaryMonitor}" />
                 <RadioButton GroupName="mode" Content="Selected monitors:" IsChecked="{Binding IsSelectedMonitors}" />
@@ -83,7 +84,7 @@
 
               <TextBlock Grid.Row="1" Classes="label" Text="Interval:" />
               <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <NumericUpDown Value="{Binding IntervalSeconds}" Minimum="2" Maximum="300" Increment="1" FormatString="0" Width="110" />
+                <NumericUpDown Value="{Binding IntervalSeconds}" Minimum="2" Maximum="300" Increment="1" FormatString="0" Width="72" />
                 <TextBlock Text="seconds" VerticalAlignment="Center" />
               </StackPanel>
             </Grid>
@@ -96,7 +97,7 @@
             <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
               <TextBlock Classes="label" Text="Stop capturing after:" />
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <NumericUpDown Value="{Binding IdleMinutes}" Minimum="1" Maximum="120" Increment="1" FormatString="0" Width="110" />
+                <NumericUpDown Value="{Binding IdleMinutes}" Minimum="1" Maximum="120" Increment="1" FormatString="0" Width="72" />
                 <TextBlock Text="minutes without keyboard or mouse input" VerticalAlignment="Center" />
               </StackPanel>
               <CheckBox Grid.Row="1" Grid.Column="1" Content="Stop capturing while the screen is locked" IsChecked="{Binding PauseWhenLocked}" />
@@ -112,7 +113,7 @@
             <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
               <TextBlock Classes="label" Text="Store captures as:" VerticalAlignment="Top" Margin="0,6,10,0" />
               <!-- What each choice costs, from the measurements in docs/PROJECT.md (Benchmarks). -->
-              <StackPanel Grid.Column="1" Spacing="6">
+              <StackPanel Grid.Column="1" Spacing="4">
                 <RadioButton GroupName="format" IsChecked="{Binding IsVideo}" AutomationProperties.Name="Video (AV1)">
                   <StackPanel>
                     <TextBlock Text="Video (AV1)" />
@@ -167,11 +168,11 @@
               <TextBlock Grid.Row="3" Classes="label" Text="Preview:" VerticalAlignment="Top" Margin="0,4,10,0" IsVisible="{Binding HasPreview}" />
               <StackPanel Grid.Row="3" Grid.Column="1" Spacing="4" IsVisible="{Binding HasPreview}">
                 <Border x:Name="PreviewBox" Height="220" ClipToBounds="True" CornerRadius="4" BorderThickness="1"
-                        BorderBrush="{DynamicResource BreezeFrameBrush}" Background="{DynamicResource BreezeViewBrush}">
+                        BorderBrush="{DynamicResource UiFrameBrush}" Background="{DynamicResource UiViewBrush}">
                   <Panel>
                     <Image Source="{Binding Preview.Image}" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
                     <Border IsVisible="{Binding Preview.IsBusy}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
-                            Padding="6,2" CornerRadius="3" Background="{DynamicResource BreezeHeaderBrush}">
+                            Padding="6,2" CornerRadius="3" Background="{DynamicResource UiHeaderBrush}">
                       <TextBlock Classes="hint" Text="Updating…" />
                     </Border>
                   </Panel>
@@ -213,19 +214,19 @@
       </TabItem>
 
       <TabItem Header="Programs">
-        <DockPanel Margin="14,12" DataContext="{Binding Programs}" x:DataType="vm:ProgramsViewModel">
+        <DockPanel Margin="10" DataContext="{Binding Programs}" x:DataType="vm:ProgramsViewModel">
           <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
             <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
           </DockPanel>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
                      Text="A website decides for the pages recorded on it; a browser marked productive counts only for its pages without a known site (private windows, browser pages, captures from before sites were recorded). Productive applies to all history; Excluded stops recording while it has the focus." />
-          <Border BorderBrush="{DynamicResource BreezeFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource BreezeViewBrush}" ClipToBounds="True">
+          <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
             <DockPanel>
-              <Border DockPanel.Dock="Top" Background="{DynamicResource BreezeHeaderBrush}" BorderBrush="{DynamicResource BreezeSeparatorBrush}" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="110,100,*,90,100" Margin="0,0,16,0">
-                  <Button Classes="columnHeader" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
-                  <Button Grid.Column="1" Classes="columnHeader" Content="{Binding ExcludedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Excluded}" />
+              <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="110,100,*,90,100" Margin="0,0,14,0">
+                  <Button Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
+                  <Button Grid.Column="1" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ExcludedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Excluded}" />
                   <Button Grid.Column="2" Classes="columnHeader" Content="{Binding NameHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Name}" />
                   <Button Grid.Column="3" Classes="columnHeader" Content="{Binding KindHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Kind}" />
                   <Button Grid.Column="4" Classes="columnHeader" Content="{Binding RecordedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Recorded}" HorizontalContentAlignment="Right" />
@@ -234,11 +235,11 @@
               <ListBox Classes="programs" ItemsSource="{Binding Rows}" Background="Transparent" BorderThickness="0">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:ProgramRow">
-                    <Grid ColumnDefinitions="102,100,*,90,92">
+                    <Grid ColumnDefinitions="104,100,*,90,94">
                       <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}"
-                                HorizontalAlignment="Left" Margin="2,-6,0,-6" Padding="0" />
+                                HorizontalAlignment="Center" Margin="-6,-3,0,-3" Padding="0" />
                       <CheckBox Grid.Column="1" IsChecked="{Binding Excluded}" AutomationProperties.Name="{Binding Name, StringFormat='Excluded: {0}'}"
-                                HorizontalAlignment="Left" Margin="10,-6,0,-6" Padding="0" />
+                                HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />
                       <TextBlock Grid.Column="2" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                       <TextBlock Grid.Column="3" Text="{Binding KindText}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
                       <TextBlock Grid.Column="4" Text="{Binding RecordedText}" VerticalAlignment="Center" HorizontalAlignment="Right" />

@@ -1,0 +1,430 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Desktop templates for the controls whose Fluent templates are touch-shaped beyond what resources can change:
+    scroll bars (Fluent's are thin overlays that only appear on hover), tabs (Fluent's are text with an underline),
+    check boxes and radio buttons (20 px marks fixed inside Fluent's templates), and number box spinners (Fluent
+    puts two large buttons side by side).
+  -->
+
+  <!-- Scroll bars: an always-visible track with a thumb inside it and small arrow buttons at the ends. -->
+  <x:Double x:Key="UiScrollBarSize">14</x:Double>
+
+  <ControlTheme x:Key="BreezeScrollBarLineButton" TargetType="RepeatButton">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="2">
+          <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{DynamicResource UiAccentPressedBrush}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="BreezeScrollBarPageButton" TargetType="RepeatButton">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="Transparent" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="BreezeScrollBarThumb" TargetType="Thumb">
+    <Setter Property="Background" Value="{DynamicResource UiScrollThumbBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="3" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource UiAccentHoverBrush}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type ScrollBar}" TargetType="ScrollBar">
+    <Setter Property="Background" Value="{DynamicResource UiScrollTrackBrush}" />
+    <Setter Property="MinWidth" Value="{DynamicResource UiScrollBarSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource UiScrollBarSize}" />
+
+    <Style Selector="^:vertical">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="1,0,0,0">
+            <Grid RowDefinitions="Auto,*,Auto">
+              <RepeatButton Name="PART_LineUpButton" Theme="{StaticResource BreezeScrollBarLineButton}"
+                            Height="{DynamicResource UiScrollBarSize}" AutomationProperties.Name="Line up">
+                <PathIcon Width="7" Height="4" Data="M0,4 L3.5,0 L7,4 Z" />
+              </RepeatButton>
+              <Track Grid.Row="1"
+                     Minimum="{TemplateBinding Minimum}"
+                     Maximum="{TemplateBinding Maximum}"
+                     Value="{TemplateBinding Value, Mode=TwoWay}"
+                     DeferThumbDrag="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
+                     ViewportSize="{TemplateBinding ViewportSize}"
+                     Orientation="{TemplateBinding Orientation}"
+                     IsDirectionReversed="True">
+                <Track.DecreaseButton>
+                  <RepeatButton Name="PART_PageUpButton" Classes="largeIncrease" Theme="{StaticResource BreezeScrollBarPageButton}"
+                                AutomationProperties.Name="Page up" />
+                </Track.DecreaseButton>
+                <Track.IncreaseButton>
+                  <RepeatButton Name="PART_PageDownButton" Classes="largeIncrease" Theme="{StaticResource BreezeScrollBarPageButton}"
+                                AutomationProperties.Name="Page down" />
+                </Track.IncreaseButton>
+                <Thumb Theme="{StaticResource BreezeScrollBarThumb}" Margin="3,0,3,0" MinHeight="20" AutomationProperties.Name="Position" />
+              </Track>
+              <RepeatButton Name="PART_LineDownButton" Grid.Row="2" Theme="{StaticResource BreezeScrollBarLineButton}"
+                            Height="{DynamicResource UiScrollBarSize}" AutomationProperties.Name="Line down">
+                <PathIcon Width="7" Height="4" Data="M0,0 L3.5,4 L7,0 Z" />
+              </RepeatButton>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+
+    <Style Selector="^:horizontal">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <RepeatButton Name="PART_LineUpButton" Theme="{StaticResource BreezeScrollBarLineButton}"
+                            Width="{DynamicResource UiScrollBarSize}" AutomationProperties.Name="Column left">
+                <PathIcon Width="4" Height="7" Data="M4,0 L0,3.5 L4,7 Z" />
+              </RepeatButton>
+              <Track Grid.Column="1"
+                     Minimum="{TemplateBinding Minimum}"
+                     Maximum="{TemplateBinding Maximum}"
+                     Value="{TemplateBinding Value, Mode=TwoWay}"
+                     DeferThumbDrag="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
+                     ViewportSize="{TemplateBinding ViewportSize}"
+                     Orientation="{TemplateBinding Orientation}">
+                <Track.DecreaseButton>
+                  <RepeatButton Name="PART_PageUpButton" Classes="largeIncrease" Theme="{StaticResource BreezeScrollBarPageButton}"
+                                AutomationProperties.Name="Page left" />
+                </Track.DecreaseButton>
+                <Track.IncreaseButton>
+                  <RepeatButton Name="PART_PageDownButton" Classes="largeIncrease" Theme="{StaticResource BreezeScrollBarPageButton}"
+                                AutomationProperties.Name="Page right" />
+                </Track.IncreaseButton>
+                <Thumb Theme="{StaticResource BreezeScrollBarThumb}" Margin="0,3,0,3" MinWidth="20" AutomationProperties.Name="Position" />
+              </Track>
+              <RepeatButton Name="PART_LineDownButton" Grid.Column="2" Theme="{StaticResource BreezeScrollBarLineButton}"
+                            Width="{DynamicResource UiScrollBarSize}" AutomationProperties.Name="Column right">
+                <PathIcon Width="4" Height="7" Data="M0,0 L4,3.5 L0,7 Z" />
+              </RepeatButton>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+  </ControlTheme>
+
+  <!--
+    Tabs: a framed page with the tabs standing on it; the selected tab is framed too, has the page's colour and
+    covers the page's top edge below it (it overlaps by 1 px and is drawn above the page), with Breeze's accent line
+    along its top (UiTabMarkBrush; transparent on Windows, which has none). Only the top placement is styled, the
+    one the app uses.
+  -->
+  <ControlTheme x:Key="{x:Type TabControl}" TargetType="TabControl">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="{DynamicResource UiWindowBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource UiFrameBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="0,4,4,4" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <DockPanel>
+          <ItemsPresenter Name="PART_ItemsPresenter" DockPanel.Dock="Top" ZIndex="1" ItemsPanel="{TemplateBinding ItemsPanel}" />
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}">
+            <Panel ClipToBounds="True">
+              <ContentPresenter Name="PART_SelectedContentHost2"
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                IsVisible="False" />
+              <ContentPresenter Name="PART_SelectedContentHost"
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </Panel>
+          </Border>
+        </DockPanel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type TabItem}" TargetType="TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1,1,1,0" />
+    <Setter Property="CornerRadius" Value="4,4,0,0" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="MinHeight" Value="26" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_LayoutRoot"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}">
+          <Panel>
+            <Border Name="PART_SelectedPipe" Height="2" VerticalAlignment="Top" CornerRadius="3,3,0,0"
+                    Background="{DynamicResource UiTabMarkBrush}" IsVisible="False" />
+            <ContentPresenter Name="PART_ContentPresenter"
+                              Margin="{TemplateBinding Padding}"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Content="{TemplateBinding Header}"
+                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              RecognizesAccessKey="True" />
+          </Panel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource UiHeaderBrush}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource UiWindowBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource UiFrameBrush}" />
+      <Setter Property="Margin" Value="0,0,0,-1" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="^:selected /template/ Border#PART_SelectedPipe">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Check boxes and radio buttons: 16 px marks (Fluent's are 20 px, set inside its templates). -->
+  <ControlTheme x:Key="{x:Type CheckBox}" TargetType="CheckBox">
+    <Setter Property="Padding" Value="6,0,0,0" />
+    <Setter Property="MinHeight" Value="{DynamicResource CheckBoxMinHeight}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="16,*" Background="{TemplateBinding Background}">
+          <!-- The mark centres on the first line of text when the label wraps. -->
+          <Panel Height="{DynamicResource CheckBoxMinHeight}" VerticalAlignment="Top">
+            <Border Name="Box" Width="16" Height="16" CornerRadius="3" BorderThickness="1"
+                    Background="{DynamicResource UiViewBrush}" BorderBrush="{DynamicResource UiFrameBrush}" />
+            <Path Name="Mark" Width="12" Height="10" Stretch="None" Stroke="{DynamicResource UiOnAccentBrush}" StrokeThickness="2"
+                  StrokeLineCap="Round" StrokeJoin="Round" Data="M 1.5,5.5 L 4.5,8.5 L 10.5,1.5" IsVisible="False"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Border Name="Dash" Width="8" Height="2" CornerRadius="1" Background="{DynamicResource UiOnAccentBrush}" IsVisible="False"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Panel>
+          <ContentPresenter Name="PART_ContentPresenter" Grid.Column="1"
+                            Margin="{TemplateBinding Padding}"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                            TextWrapping="Wrap"
+                            RecognizesAccessKey="True" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Border#Box">
+      <Setter Property="BorderBrush" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+    <Style Selector="^:pressed /template/ Border#Box">
+      <Setter Property="Background" Value="{DynamicResource UiAccentPressedBrush}" />
+    </Style>
+    <Style Selector="^:checked, ^:indeterminate">
+      <Style Selector="^ /template/ Border#Box">
+        <Setter Property="Background" Value="{DynamicResource UiAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource UiAccentBrush}" />
+      </Style>
+      <Style Selector="^:pointerover /template/ Border#Box">
+        <Setter Property="Background" Value="{DynamicResource UiAccentStrongBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource UiAccentStrongBrush}" />
+      </Style>
+    </Style>
+    <Style Selector="^:checked /template/ Path#Mark">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:indeterminate /template/ Border#Dash">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+      <Style Selector="^ /template/ Border#Box">
+        <Setter Property="Background" Value="{DynamicResource UiWindowBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
+      </Style>
+      <Style Selector="^:checked /template/ Border#Box, ^:indeterminate /template/ Border#Box">
+        <Setter Property="Background" Value="{DynamicResource UiDisabledTextBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource UiDisabledTextBrush}" />
+      </Style>
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type RadioButton}" TargetType="RadioButton">
+    <Setter Property="Padding" Value="6,0,0,0" />
+    <Setter Property="MinHeight" Value="{DynamicResource RadioButtonMinHeight}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="16,*" Background="{TemplateBinding Background}">
+          <Panel Height="{DynamicResource RadioButtonMinHeight}" VerticalAlignment="Top">
+            <Ellipse Name="Ring" Width="16" Height="16" StrokeThickness="1"
+                     Fill="{DynamicResource UiViewBrush}" Stroke="{DynamicResource UiFrameBrush}" />
+            <Ellipse Name="Dot" Width="6" Height="6" Fill="{DynamicResource UiOnAccentBrush}" IsVisible="False" />
+          </Panel>
+          <ContentPresenter Name="PART_ContentPresenter" Grid.Column="1"
+                            Margin="{TemplateBinding Padding}"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                            RecognizesAccessKey="True" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Ellipse#Ring">
+      <Setter Property="Stroke" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+    <Style Selector="^:pressed /template/ Ellipse#Ring">
+      <Setter Property="Fill" Value="{DynamicResource UiAccentPressedBrush}" />
+    </Style>
+    <Style Selector="^:checked">
+      <Style Selector="^ /template/ Ellipse#Ring">
+        <Setter Property="Fill" Value="{DynamicResource UiAccentBrush}" />
+        <Setter Property="Stroke" Value="{DynamicResource UiAccentBrush}" />
+      </Style>
+      <Style Selector="^:pointerover /template/ Ellipse#Ring">
+        <Setter Property="Fill" Value="{DynamicResource UiAccentStrongBrush}" />
+        <Setter Property="Stroke" Value="{DynamicResource UiAccentStrongBrush}" />
+      </Style>
+      <Style Selector="^ /template/ Ellipse#Dot">
+        <Setter Property="IsVisible" Value="True" />
+      </Style>
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+      <Style Selector="^ /template/ Ellipse#Ring">
+        <Setter Property="Fill" Value="{DynamicResource UiWindowBrush}" />
+        <Setter Property="Stroke" Value="{DynamicResource UiSeparatorBrush}" />
+      </Style>
+      <Style Selector="^:checked /template/ Ellipse#Ring">
+        <Setter Property="Fill" Value="{DynamicResource UiDisabledTextBrush}" />
+        <Setter Property="Stroke" Value="{DynamicResource UiDisabledTextBrush}" />
+      </Style>
+    </Style>
+  </ControlTheme>
+
+  <!-- Number box spinners: two small arrow buttons stacked at the right edge, as on the desktop. -->
+  <ControlTheme x:Key="BreezeSpinnerButton" TargetType="RepeatButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+          <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{DynamicResource UiAccentPressedBrush}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type ButtonSpinner}" TargetType="ButtonSpinner">
+    <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+    <Setter Property="Padding" Value="6,0" />
+    <Setter Property="Background" Value="{DynamicResource TextControlBackground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource TextControlBorderThemeThickness}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+    <Setter Property="MinHeight" Value="{DynamicResource TextControlThemeMinHeight}" />
+    <Setter Property="MinWidth" Value="{DynamicResource TextControlThemeMinWidth}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Focusable" Value="True" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <DataValidationErrors>
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  MinHeight="{TemplateBinding MinHeight}">
+            <DockPanel>
+              <Border Name="PART_SpinnerPanel" DockPanel.Dock="Right" Width="17"
+                      BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="1,0,0,0"
+                      IsVisible="{TemplateBinding ShowButtonSpinner}">
+                <Grid RowDefinitions="*,*">
+                  <RepeatButton Name="PART_IncreaseButton" Theme="{StaticResource BreezeSpinnerButton}"
+                                IsTabStop="{TemplateBinding IsTabStop}" CornerRadius="0,3,0,0">
+                    <PathIcon Width="7" Height="4" Data="M0,4 L3.5,0 L7,4 Z" />
+                  </RepeatButton>
+                  <RepeatButton Name="PART_DecreaseButton" Grid.Row="1" Theme="{StaticResource BreezeSpinnerButton}"
+                                IsTabStop="{TemplateBinding IsTabStop}" CornerRadius="0,0,3,0">
+                    <PathIcon Width="7" Height="4" Data="M0,0 L3.5,4 L7,0 Z" />
+                  </RepeatButton>
+                </Grid>
+              </Border>
+              <ContentPresenter Name="PART_ContentPresenter"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                Content="{TemplateBinding Content}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Padding="{TemplateBinding Padding}" />
+            </DockPanel>
+          </Border>
+        </DataValidationErrors>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:left /template/ Border#PART_SpinnerPanel">
+      <Setter Property="DockPanel.Dock" Value="Left" />
+      <Setter Property="BorderThickness" Value="0,0,1,0" />
+    </Style>
+    <Style Selector="^:error">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemErrorTextColor}" />
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

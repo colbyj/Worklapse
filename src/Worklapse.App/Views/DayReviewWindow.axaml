@@ -13,14 +13,10 @@
     <Style Selector="ic|SymbolIcon">
       <Setter Property="FontSize" Value="16" />
     </Style>
-    <Style Selector="ComboBox">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
     <Style Selector="TextBlock.toolLabel">
       <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="4,0,6,0" />
-      <Setter Property="Foreground" Value="{DynamicResource BreezeSecondaryTextBrush}" />
+      <Setter Property="Margin" Value="4,0,4,0" />
+      <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
     </Style>
   </Window.Styles>
 
@@ -163,7 +159,7 @@
                 <DockPanel IsVisible="{Binding HasMarked}">
                   <Button DockPanel.Dock="Left" Command="{Binding ConfirmDeletesCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                      <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource BreezeNegativeBrush}" />
+                      <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource UiNegativeBrush}" />
                       <TextBlock Text="Delete Permanently" />
                     </StackPanel>
                   </Button>
@@ -179,14 +175,14 @@
     </Border>
 
     <!-- Timeline -->
-    <Border DockPanel.Dock="Top" Background="{DynamicResource BreezeWindowBrush}" BorderBrush="{DynamicResource BreezeSeparatorBrush}" BorderThickness="0,0,0,1" Padding="8,6,8,0">
+    <Border DockPanel.Dock="Top" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1" Padding="8,6,8,0">
       <controls:TimelineControl x:Name="Timeline" />
     </Border>
 
     <!-- Status bar: the current frame, then the selection or whole-day summary. -->
     <Border DockPanel.Dock="Bottom" Classes="statusBar">
       <StackPanel>
-        <DockPanel Margin="10,0" Height="26">
+        <DockPanel Margin="8,0" Height="22">
           <TextBlock x:Name="ViewText" DockPanel.Dock="Right" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
             <TextBlock Text="{Binding FrameTime}" Classes="strong" />
@@ -195,8 +191,8 @@
             <TextBlock Text="{Binding FrameApp}" Classes="secondary" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="900" />
           </StackPanel>
         </DockPanel>
-        <Border BorderBrush="{DynamicResource BreezeSeparatorBrush}" BorderThickness="0,1,0,0">
-          <WrapPanel Margin="10,0" MinHeight="26" Orientation="Horizontal">
+        <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0">
+          <WrapPanel Margin="8,0" MinHeight="22" Orientation="Horizontal">
             <TextBlock Text="{Binding SummaryTitle}" Classes="strong" VerticalAlignment="Center" />
             <TextBlock Text="{Binding SummaryRange}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
             <ItemsControl ItemsSource="{Binding Stats}" VerticalAlignment="Center">
@@ -207,7 +203,8 @@
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:StatItem">
-                  <StackPanel Orientation="Horizontal" Spacing="5" Margin="16,5,0,5">
+                  <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,4">
+                    <Border Classes="statusDivider" Margin="8,0,3,0" />
                     <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Swatch}" IsVisible="{Binding Swatch, Converter={x:Static ObjectConverters.IsNotNull}}" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding Label}" />
                     <TextBlock Text="{Binding Value}" Classes="strong" />
