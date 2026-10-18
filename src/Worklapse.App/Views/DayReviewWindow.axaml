@@ -53,6 +53,8 @@
         <MenuItem Header="_Fit to Window" Click="OnFit">
           <MenuItem.Icon><ic:SymbolIcon Symbol="ScaleFit" /></MenuItem.Icon>
         </MenuItem>
+        <Separator />
+        <MenuItem Header="Focus on _Application" ToggleType="CheckBox" IsChecked="{Binding FocusOnApplication, Mode=TwoWay}" />
       </MenuItem>
       <MenuItem Header="_Go">
         <MenuItem Header="_Previous Frame" Command="{Binding PreviousFrameCommand}" InputGesture="Left" />
@@ -112,6 +114,13 @@
             <TextBlock Text="Fit" />
           </StackPanel>
         </Button>
+        <ToggleButton Classes="tool" IsChecked="{Binding FocusOnApplication, Mode=TwoWay}" AutomationProperties.Name="Focus on application"
+                      ToolTip.Tip="Show only the window that had focus, centred, without the monitors around it">
+          <StackPanel>
+            <ic:SymbolIcon Symbol="WindowLocationTarget" />
+            <TextBlock Text="Focus on App" />
+          </StackPanel>
+        </ToggleButton>
 
         <Border Classes="separator" />
 
@@ -212,6 +221,11 @@
       </StackPanel>
     </Border>
 
-    <controls:FrameView x:Name="Frames" />
+    <!-- The picture, with scroll bars while it's larger than the view. -->
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+      <controls:FrameView x:Name="Frames" />
+      <ScrollBar x:Name="VerticalBar" Grid.Column="1" Orientation="Vertical" AllowAutoHide="False" Visibility="Auto" />
+      <ScrollBar x:Name="HorizontalBar" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" Visibility="Auto" />
+    </Grid>
   </DockPanel>
 </Window>

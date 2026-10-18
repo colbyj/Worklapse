@@ -46,8 +46,9 @@
     <Setter Property="Margin" Value="2,0" />
   </Style>
 
-  <!-- Tool buttons: flat until hovered, then Breeze's light blue face with a blue frame. -->
-  <Style Selector="Button.tool">
+  <!-- Tool buttons (and toggles): flat until hovered, then Breeze's light blue face with a blue frame; a toggle
+       that is on keeps the pressed look. -->
+  <Style Selector=":is(Button).tool">
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Height" Value="30" />
     <Setter Property="Padding" Value="7,0" />
@@ -55,19 +56,24 @@
     <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
-  <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector=":is(Button).tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource BreezeAccentTintBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BreezeAccentHoverBrush}" />
   </Style>
-  <Style Selector="Button.tool:pressed /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="ToggleButton.tool:checked /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BreezeAccentPressedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BreezeAccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource BreezeTextBrush}" />
+  </Style>
+  <Style Selector=":is(Button).tool:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource BreezeAccentPressedBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BreezeAccentBrush}" />
   </Style>
-  <Style Selector="Button.tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector=":is(Button).tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderBrush" Value="Transparent" />
   </Style>
-  <Style Selector="Button.tool StackPanel">
+  <Style Selector=":is(Button).tool StackPanel">
     <Setter Property="Orientation" Value="Horizontal" />
     <Setter Property="Spacing" Value="6" />
   </Style>

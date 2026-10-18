@@ -11,6 +11,7 @@ using Worklapse.App.ViewModels;
 using Worklapse.Core.History;
 using Worklapse.Core.Storage;
 using Worklapse.Video;
+using PixelRect = Worklapse.Core.Platform.PixelRect;
 
 namespace Worklapse.App.Views;
 
@@ -21,6 +22,8 @@ public partial class DayReviewWindow : Window
     private readonly Dictionary<long, WriteableBitmap> _bitmaps = [];
     private int _requestVersion;
     private PlannedFrame? _plan;
+    private (IReadOnlyList<FrameTile> Tiles, PixelRect? Focus) _shown = ([], null);
+    private bool _updatingBars;
     private FrameRef? _reloadedFor;
     private bool _closed;
 
@@ -38,7 +41,9 @@ public partial class DayReviewWindow : Window
         Timeline.ProductiveBrush = DayReviewViewModel.ProductiveBrush;
         Timeline.Clicked += viewModel.Seek;
         Timeline.Dragged += viewModel.DragSelect;
-        Frames.ZoomChanged += UpdateViewText;
+        Frames.ViewChanged += UpdateView;
+        HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
+        VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
 
         // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, what
         // the selection contains (or the frame's, without a selection).
@@ -57,7 +62,7 @@ public partial class DayReviewWindow : Window
 
         UpdateTimeline();
         RequestFrames();
-        UpdateViewText();
+        UpdateView();
     }
 
     protected override void OnClosed(EventArgs e)
@@ -73,6 +78,7 @@ public partial class DayReviewWindow : Window
 
         // The bitmaps hold a full-size copy of each monitor; don't leave them to the finalizer.
         _plan = null;
+        _shown = ([], null);
         Frames.SetContent([], null);
         foreach (var bitmap in _bitmaps.Values)
             bitmap.Dispose();
@@ -135,8 +141,12 @@ public partial class DayReviewWindow : Window
         Timeline.SetMarkers(_viewModel.SelectionSeconds, _viewModel.PlayheadSeconds);
     }
 
-    /// <summary>What to show for the current capture: which frame per monitor, and any overlay.</summary>
-    private sealed record PlannedFrame(int Version, IReadOnlyList<(MonitorRecord Monitor, FrameRef? Frame, string? Label)> Tiles, string? Overlay);
+    /// <summary>
+    /// What to show for the current capture: which frame per monitor, any overlay, and the window to focus on
+    /// (null: the whole arrangement).
+    /// </summary>
+    private sealed record PlannedFrame(int Version, IReadOnlyList<(MonitorRecord Monitor, FrameRef? Frame, string? Label)> Tiles,
+        string? Overlay, PixelRect? Focus);
 
     private void RequestFrames()
     {
@@ -149,6 +159,7 @@ public partial class DayReviewWindow : Window
         if (index < 0 || index >= captures.Count || monitors.Count == 0)
         {
             _plan = null;
+            _shown = ([], null);
             Frames.SetContent([], captures.Count == 0 ? "No recordings this day" : null);
             return;
         }
@@ -165,13 +176,34 @@ public partial class DayReviewWindow : Window
                 frame = LastFrameBefore(index, monitor.Id);
             tiles.Add((monitor, frame, frame is null ? "Not recorded" : null));
         }
-        UpdateViewText();
+
+        // The focused window, where it was recorded. Recording only the active application blacks out the rest of
+        // its monitor and leaves the others out, so this shows just what was recorded.
+        PixelRect? focus = null;
+        if (_viewModel.FocusOnApplication && WindowAt(index) is { } window
+            && tiles.Any(t => t.Item2 is not null && !t.Item1.Bounds.Intersect(window).IsEmpty))
+            focus = window;
 
         var version = ++_requestVersion;
-        _plan = new PlannedFrame(version, tiles, overlay);
+        _plan = new PlannedFrame(version, tiles, overlay, focus);
         _renderer.Request(new FrameRequest(version, tiles.Where(t => t.Item2 is not null).Select(t => (t.Item1.Id, t.Item2!.Value)).ToList()));
-        // Until the new frames are decoded, keep showing the current pictures with the new labels.
-        ApplyPlan(null);
+        // Until the new frames are decoded, keep showing the current pictures (as placed for them) with the new
+        // overlay. The new placement applied to the old pictures would show the wrong part of them.
+        Frames.SetContent(_shown.Tiles, overlay, _shown.Focus);
+        UpdateView();
+    }
+
+    /// <summary>
+    /// The window that had focus at a capture. Idle captures show the screen as last captured, so for them, the
+    /// window of the last active capture before.
+    /// </summary>
+    private PixelRect? WindowAt(int index)
+    {
+        var captures = _viewModel.Captures;
+        for (var i = index; i >= 0; i--)
+            if (captures[i].IsActive)
+                return captures[i].Window;
+        return null;
     }
 
     private static FrameRef? FrameOf(CaptureRecord capture, long monitorId)
@@ -222,17 +254,22 @@ public partial class DayReviewWindow : Window
     {
         if (_plan is null)
             return;
-        var tiles = _plan.Tiles.Select(t => new FrameTile(
-            t.Monitor.Bounds,
-            t.Frame is not null && _bitmaps.TryGetValue(t.Monitor.Id, out var bitmap) ? bitmap : null,
-            t.Label)).ToList();
+        // Focused on a window, monitors with nothing recorded are left out: the window's part on them is empty.
+        var tiles = _plan.Tiles
+            .Where(t => _plan.Focus is null || t.Frame is not null)
+            .Select(t => new FrameTile(
+                t.Monitor.Bounds,
+                t.Frame is not null && _bitmaps.TryGetValue(t.Monitor.Id, out var bitmap) ? bitmap : null,
+                t.Label))
+            .ToList();
         var overlay = error is not null ? "Couldn't read this frame: " + error.Message : _plan.Overlay;
-        Frames.SetContent(tiles, overlay);
-        UpdateViewText();
+        Frames.SetContent(tiles, overlay, _plan.Focus);
+        _shown = (tiles, _plan.Focus);
+        UpdateView();
 
-        // Each bitmap is a full-size copy of a monitor; drop those of monitors not shown now (unplugged, or
-        // another monitor chosen).
-        foreach (var id in _bitmaps.Keys.Where(id => _plan.Tiles.All(t => t.Monitor.Id != id)).ToList())
+        // Each bitmap is a full-size copy of a monitor; drop those of monitors not shown now (unplugged, another
+        // monitor chosen, or not recorded at this capture).
+        foreach (var id in _bitmaps.Keys.Where(id => _plan.Tiles.All(t => t.Monitor.Id != id || t.Frame is null)).ToList())
         {
             _bitmaps.Remove(id, out var unused);
             unused!.Dispose();
@@ -252,19 +289,47 @@ public partial class DayReviewWindow : Window
         frame.CopyBgra(buffer.Address, buffer.RowBytes);
     }
 
-    private void UpdateViewText()
+    /// <summary>Shows the magnification, and the scroll bars while the picture is larger than the view.</summary>
+    /// <remarks>
+    /// A bar shows itself while its maximum is above zero. Showing one only makes the view smaller, so this settles: a
+    /// bar shown stays needed.
+    /// </remarks>
+    private void UpdateView()
     {
         // 100% = the recording's actual pixels.
         var percent = $"{Frames.Magnification * 100:0}%";
         ZoomText.Text = percent;
         var monitor = _viewModel?.SelectedMonitor?.Label ?? "All monitors";
-        ViewText.Text = $"{monitor} · {percent}{(Frames.Zoom == 1 ? " (fit)" : "")}";
+        var focus = _viewModel?.FocusOnApplication == true ? " · Focused on application" : "";
+        ViewText.Text = $"{monitor}{focus} · {percent}{(Frames.IsFitted ? " (fit)" : "")}";
+
+        var max = Frames.MaxOffset;
+        var offset = Frames.Offset;
+        _updatingBars = true;
+        try
+        {
+            UpdateBar(HorizontalBar, max.X, offset.X, Frames.Bounds.Width);
+            UpdateBar(VerticalBar, max.Y, offset.Y, Frames.Bounds.Height);
+        }
+        finally
+        {
+            _updatingBars = false;
+        }
+
+        static void UpdateBar(Avalonia.Controls.Primitives.ScrollBar bar, double max, double value, double viewport)
+        {
+            bar.Maximum = max;
+            bar.Value = value;
+            bar.ViewportSize = viewport;
+            bar.LargeChange = viewport * 0.9;
+            bar.SmallChange = 40;
+        }
     }
 
-    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    private void OnBarScrolled()
     {
-        base.OnSizeChanged(e);
-        UpdateViewText();
+        if (!_updatingBars)
+            Frames.ScrollTo(new Vector(HorizontalBar.Value, VerticalBar.Value));
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => Frames.ZoomBy(1.5);

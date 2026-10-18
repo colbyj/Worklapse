@@ -52,6 +52,12 @@ public sealed record WorklapseSettings
     /// </summary>
     public bool UseGpuRendering { get; init; }
 
+    /// <summary>
+    /// Day review shows only the window that had focus at each capture (where it was recorded), centred, instead of
+    /// the monitors as they were arranged. Changed from Day review, which remembers it here.
+    /// </summary>
+    public bool ReviewFocusOnApplication { get; init; }
+
     /// <summary>How new frames are stored: the format, and that format's quality setting.</summary>
     public (FrameFormat Format, int Quality) FrameStorage() => Format switch
     {

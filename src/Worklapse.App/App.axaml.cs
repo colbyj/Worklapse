@@ -173,7 +173,7 @@ public partial class App : Application
         var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder));
         // The recorder's batch encoder (open even while paused or locked) removes the deleted video and images from
         // disk. Frames in the segments still being recorded go once those are closed and encoded.
-        var viewModel = new DayReviewViewModel(history, TimeSpan.FromSeconds(settings.IntervalSeconds), result =>
+        var viewModel = new DayReviewViewModel(history, _settings, TimeSpan.FromSeconds(settings.IntervalSeconds), result =>
         {
             _sink?.Encoder.RequestReclaim();
             if (result.StagedSegmentsAffected)

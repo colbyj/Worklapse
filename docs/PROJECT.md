@@ -330,6 +330,14 @@ Working on Windows:
   identity. Checked with tests (recorder with a fake desktop, the guess) and in Day review on a copy of the
   2026-10-17 recording (screenshots at 10:51, 11:30, 14:00 and a capture recorded with the new build; Monitor
   list; picking a monitor across the replug).
+- Day review panning and Focus on App (2026-10-18, not yet reviewed by the developer): scroll bars while the
+  picture is larger than the view, drag with the left or middle button; a zoom keeps its magnification as frames
+  change size (Fit stays fitted). Focus on App (tool bar, View menu; remembered as `ReviewFocusOnApplication` in
+  `settings.json`) shows only the focused window's rectangle (`captures.window_*`) on the monitors recorded, centred:
+  for active-application recordings that is just what was recorded; idle captures use the last active one's window;
+  a capture without a window, or whose window misses every recorded monitor, shows all monitors. Checked off-screen
+  (Avalonia headless, synthetic two-monitor day: all monitors, app-only, idle; zoom, middle drag, scroll bars), not
+  by hand.
 
 Tested less or not at all: active-application mode over a longer session, selected monitors (only the matching,
 by tests; not the Settings dialog), an actual replug with the new build, rotated displays (GDI should handle them, untested), Store-app window detection,

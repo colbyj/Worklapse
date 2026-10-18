@@ -12,17 +12,20 @@ namespace Worklapse.App.Controls;
 public sealed record FrameTile(PixelRect Bounds, IImage? Image, string? Label);
 
 /// <summary>
-/// Shows recorded monitors laid out as they were arranged, fitted to the view. Scroll to zoom at the
-/// pointer, drag to pan while zoomed in.
+/// Shows recorded monitors laid out as they were arranged, or only a part of the desktop (the focus, e.g. the
+/// active window), fitted to the view. Scroll to zoom at the pointer; drag with the left or middle button to
+/// pan while the picture is larger than the view. A zoom set by the user keeps its magnification when the
+/// content changes size, so stepping between frames doesn't change the size of what's on screen.
 /// </summary>
 public sealed class FrameView : Control
 {
-    public const double MaxZoom = 16;
+    /// <summary>Largest magnification: 16 view pixels per recorded pixel.</summary>
+    public const double MaxMagnification = 16;
     private const double ContentMargin = 6;
 
     private static readonly IBrush Background = new SolidColorBrush(Color.Parse("#202020"));
     private static readonly IBrush EmptyTile = new SolidColorBrush(Color.Parse("#2C2C2C"));
-    private static readonly IPen TileBorder = new Pen(new SolidColorBrush(Color.Parse("#3A3A3A")));
+    private static readonly IBrush TileBorder = new SolidColorBrush(Color.Parse("#3A3A3A"));
     private static readonly IBrush OverlayBand = new SolidColorBrush(Color.FromArgb(190, 32, 32, 32));
     private static readonly IBrush OverlayText = Brushes.White;
     private static readonly IBrush TileText = new SolidColorBrush(Color.Parse("#8D8D8D"));
@@ -30,73 +33,132 @@ public sealed class FrameView : Control
 
     private IReadOnlyList<FrameTile> _tiles = [];
     private string? _overlay;
+    private PixelRect _content;       // the desktop area shown: the tiles, or the focus within them
+    private double? _magnification;   // null: fitted to the view
+    private Vector _offset;           // scroll position, in view pixels from the top left of the extent
     private Point? _panFrom;
-    private Vector _panAtPress;
+    private Vector _offsetAtPress;
 
     public FrameView()
     {
         ClipToBounds = true;
         Focusable = false;
-        RenderOptions.SetBitmapInterpolationMode(this, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
     }
 
-    /// <summary>1 = fitted to the view.</summary>
-    public double Zoom { get; private set; } = 1;
+    public bool IsFitted => _magnification is null;
 
     /// <summary>View pixels per recorded screen pixel: 1 shows the recording at its actual size.</summary>
-    public double Magnification => _tiles.Count == 0 ? Zoom : Layout().Scale * Zoom;
+    public double Magnification => _magnification ?? FitScale();
 
-    /// <summary>Offset of the zoomed content, in view pixels.</summary>
-    public Vector Pan { get; private set; }
+    /// <summary>The size of the whole picture at the current magnification, margins included.</summary>
+    public Size Extent => _content.IsEmpty
+        ? default
+        : new Size(_content.Width * Magnification + 2 * ContentMargin, _content.Height * Magnification + 2 * ContentMargin);
 
-    public event Action? ZoomChanged;
+    /// <summary>The part of the extent scrolled past, in view pixels; zero along an axis where the picture fits.</summary>
+    public Vector Offset => ClampOffset(_offset);
 
-    public void SetContent(IReadOnlyList<FrameTile> tiles, string? overlay)
+    /// <summary>
+    /// The largest <see cref="Offset"/>: how far the picture is larger than the view. Zero when fitted, and for less than a
+    /// pixel (rounding).
+    /// </summary>
+    public Vector MaxOffset
     {
-        var layoutChanged = tiles.Count != _tiles.Count || tiles.Where((t, i) => t.Bounds != _tiles[i].Bounds).Any();
+        get
+        {
+            if (IsFitted)
+                return default;
+            var extent = Extent;
+            return new Vector(Overflow(extent.Width, Bounds.Width), Overflow(extent.Height, Bounds.Height));
+
+            static double Overflow(double extent, double view) => extent - view >= 1 ? extent - view : 0;
+        }
+    }
+
+    /// <summary>Raised when the magnification, the scroll position or the size of the picture changes.</summary>
+    public event Action? ViewChanged;
+
+    /// <param name="focus">
+    /// The desktop area to show instead of all the tiles (only its part on the tiles is shown); null for all.
+    /// </param>
+    public void SetContent(IReadOnlyList<FrameTile> tiles, string? overlay, PixelRect? focus = null)
+    {
+        var content = ContentOf(tiles, focus);
+        if (content != _content)
+        {
+            // Zoomed in: keep the same part of the picture (proportionally) in the middle of the view.
+            var keep = _magnification is not null && !_content.IsEmpty && !content.IsEmpty;
+            var middle = keep ? ToDesktop(new Point(Bounds.Width / 2, Bounds.Height / 2)) : default;
+            var relative = new Point((middle.X - _content.X) / _content.Width, (middle.Y - _content.Y) / _content.Height);
+            _content = content;
+            if (keep)
+                ScrollToPlace(new Point(content.X + relative.X * content.Width, content.Y + relative.Y * content.Height),
+                    new Point(Bounds.Width / 2, Bounds.Height / 2));
+            else
+                _offset = default;
+            ViewChanged?.Invoke();
+        }
         _tiles = tiles;
         _overlay = overlay;
-        if (layoutChanged)
-            Fit();
         InvalidateVisual();
     }
 
     public void Fit()
     {
-        Zoom = 1;
-        Pan = default;
+        _magnification = null;
+        _offset = default;
         InvalidateVisual();
-        ZoomChanged?.Invoke();
+        ViewChanged?.Invoke();
     }
 
-    public void ZoomBy(double factor) => ZoomAt(Zoom * factor, new Point(Bounds.Width / 2, Bounds.Height / 2));
+    public void ZoomBy(double factor) => ZoomAt(Magnification * factor, new Point(Bounds.Width / 2, Bounds.Height / 2));
+
+    /// <summary>Scrolls to <paramref name="offset"/> (see <see cref="Offset"/>), within the picture.</summary>
+    public void ScrollTo(Vector offset)
+    {
+        offset = ClampOffset(offset);
+        if (offset == Offset)
+            return;
+        _offset = offset;
+        InvalidateVisual();
+        ViewChanged?.Invoke();
+    }
 
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Background, new Rect(Bounds.Size));
-        if (_tiles.Count == 0)
-            return;
 
-        var (origin, scale) = Layout();
-        using (context.PushTransform(Matrix.CreateScale(Zoom, Zoom) * Matrix.CreateTranslation(Pan)))
+        if (_tiles.Count > 0 && !_content.IsEmpty)
         {
-            foreach (var tile in _tiles)
+            var (origin, scale) = Placement();
+            var clip = new Rect(_content.X, _content.Y, _content.Width, _content.Height);
+            var border = new Pen(TileBorder, 1 / scale);
+            // Drawn in desktop pixels.
+            using (context.PushTransform(Matrix.CreateTranslation(-_content.X, -_content.Y) * Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(origin)))
+            using (context.PushClip(clip))
             {
-                var dest = new Rect(origin.X + tile.Bounds.X * scale, origin.Y + tile.Bounds.Y * scale, tile.Bounds.Width * scale, tile.Bounds.Height * scale);
-                if (tile.Image is { } image)
+                foreach (var tile in _tiles)
                 {
-                    context.DrawImage(image, new Rect(image.Size), dest);
-                }
-                else
-                {
-                    context.FillRectangle(EmptyTile, dest);
-                    if (tile.Label is { } label)
+                    var dest = new Rect(tile.Bounds.X, tile.Bounds.Y, tile.Bounds.Width, tile.Bounds.Height);
+                    if (!dest.Intersects(clip))
+                        continue;
+                    if (tile.Image is { } image)
                     {
-                        var text = new FormattedText(label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Face, 12 / Zoom, TileText);
-                        context.DrawText(text, dest.Center - new Point(text.Width / 2, text.Height / 2));
+                        context.DrawImage(image, new Rect(image.Size), dest);
                     }
+                    else
+                    {
+                        context.FillRectangle(EmptyTile, dest);
+                        if (tile.Label is { } label)
+                        {
+                            var text = new FormattedText(label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Face, 12 / scale, TileText);
+                            var middle = dest.Intersect(clip).Center;
+                            context.DrawText(text, middle - new Point(text.Width / 2, text.Height / 2));
+                        }
+                    }
+                    context.DrawRectangle(null, border, dest);
                 }
-                context.DrawRectangle(null, TileBorder, dest);
             }
         }
 
@@ -109,20 +171,28 @@ public sealed class FrameView : Control
         }
     }
 
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        _offset = ClampOffset(_offset);
+        ViewChanged?.Invoke();
+    }
+
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        ZoomAt(Zoom * (e.Delta.Y > 0 ? 1.25 : 0.8), e.GetPosition(this));
+        ZoomAt(Magnification * (e.Delta.Y > 0 ? 1.25 : 0.8), e.GetPosition(this));
         e.Handled = true;
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (Zoom <= 1 || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (MaxOffset == default || !(properties.IsLeftButtonPressed || properties.IsMiddleButtonPressed))
             return;
         _panFrom = e.GetPosition(this);
-        _panAtPress = Pan;
+        _offsetAtPress = Offset;
         Cursor = new Cursor(StandardCursorType.SizeAll);
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -133,8 +203,7 @@ public sealed class FrameView : Control
         base.OnPointerMoved(e);
         if (_panFrom is not { } from)
             return;
-        Pan = Clamp(Zoom, _panAtPress + (e.GetPosition(this) - from));
-        InvalidateVisual();
+        ScrollTo(_offsetAtPress - (e.GetPosition(this) - from));
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -159,36 +228,84 @@ public sealed class FrameView : Control
         pointer.Capture(null);
     }
 
-    private void ZoomAt(double zoom, Point at)
+    private void ZoomAt(double magnification, Point at)
     {
-        zoom = Math.Clamp(zoom, 1, MaxZoom);
+        if (_content.IsEmpty)
+            return;
+        var current = Magnification;
+        var fit = FitScale();
+        // Zooming out stops at the fitted size. A picture kept smaller than that (from a larger one before) can
+        // still be zoomed in.
+        if (magnification < current && magnification <= fit)
+        {
+            if (current > fit)
+                Fit();
+            return;
+        }
+        magnification = Math.Min(magnification, Math.Max(MaxMagnification, fit));
+        if (magnification == current)
+            return;
+
         // Keep the content under the pointer where it is.
-        var k = zoom / Zoom;
-        var pan = new Vector(at.X - (at.X - Pan.X) * k, at.Y - (at.Y - Pan.Y) * k);
-        Zoom = zoom;
-        Pan = zoom == 1 ? default : Clamp(zoom, pan);
+        var under = ToDesktop(at);
+        _magnification = magnification;
+        ScrollToPlace(under, at);
         InvalidateVisual();
-        ZoomChanged?.Invoke();
+        ViewChanged?.Invoke();
     }
 
-    /// <summary>Keeps zoomed content covering the view (no panning past its edges).</summary>
-    private Vector Clamp(double zoom, Vector pan) => new(
-        Math.Clamp(pan.X, (1 - zoom) * Bounds.Width, 0),
-        Math.Clamp(pan.Y, (1 - zoom) * Bounds.Height, 0));
-
-    /// <summary>Where desktop coordinate (0,0) lands at zoom 1, and view pixels per desktop pixel.</summary>
-    private (Point Origin, double Scale) Layout()
+    /// <summary>Scrolls so that desktop point <paramref name="desktop"/> is at <paramref name="view"/>, as near as the picture allows.</summary>
+    private void ScrollToPlace(Point desktop, Point view)
     {
-        var left = _tiles.Min(t => t.Bounds.X);
-        var top = _tiles.Min(t => t.Bounds.Y);
-        var right = _tiles.Max(t => t.Bounds.Right);
-        var bottom = _tiles.Max(t => t.Bounds.Bottom);
-        var width = Math.Max(1, right - left);
-        var height = Math.Max(1, bottom - top);
-        var scale = Math.Min((Bounds.Width - 2 * ContentMargin) / width, (Bounds.Height - 2 * ContentMargin) / height);
-        scale = Math.Max(scale, 0.001);
-        var offsetX = (Bounds.Width - width * scale) / 2 - left * scale;
-        var offsetY = (Bounds.Height - height * scale) / 2 - top * scale;
-        return (new Point(offsetX, offsetY), scale);
+        var scale = Magnification;
+        _offset = ClampOffset(new Vector(
+            ContentMargin + (desktop.X - _content.X) * scale - view.X,
+            ContentMargin + (desktop.Y - _content.Y) * scale - view.Y));
+    }
+
+    private Vector ClampOffset(Vector offset)
+    {
+        var max = MaxOffset;
+        return new Vector(Math.Clamp(offset.X, 0, max.X), Math.Clamp(offset.Y, 0, max.Y));
+    }
+
+    /// <summary>
+    /// Where the content's top left corner is in the view, and view pixels per desktop pixel. Along an axis where
+    /// the picture fits, it is centred; otherwise scrolled.
+    /// </summary>
+    private (Point Origin, double Scale) Placement()
+    {
+        var scale = Magnification;
+        var max = MaxOffset;
+        var offset = Offset;
+        var x = max.X > 0 ? ContentMargin - offset.X : (Bounds.Width - _content.Width * scale) / 2;
+        var y = max.Y > 0 ? ContentMargin - offset.Y : (Bounds.Height - _content.Height * scale) / 2;
+        return (new Point(x, y), scale);
+    }
+
+    private Point ToDesktop(Point view)
+    {
+        var (origin, scale) = Placement();
+        return new Point(_content.X + (view.X - origin.X) / scale, _content.Y + (view.Y - origin.Y) / scale);
+    }
+
+    /// <summary>View pixels per desktop pixel that fit the content in the view.</summary>
+    private double FitScale()
+    {
+        if (_content.IsEmpty)
+            return 1;
+        var scale = Math.Min((Bounds.Width - 2 * ContentMargin) / _content.Width, (Bounds.Height - 2 * ContentMargin) / _content.Height);
+        return Math.Max(scale, 0.001);
+    }
+
+    /// <summary>The area the tiles cover, cut to <paramref name="focus"/> unless that misses them all.</summary>
+    private static PixelRect ContentOf(IReadOnlyList<FrameTile> tiles, PixelRect? focus)
+    {
+        if (tiles.Count == 0)
+            return default;
+        var left = tiles.Min(t => t.Bounds.X);
+        var top = tiles.Min(t => t.Bounds.Y);
+        var all = new PixelRect(left, top, tiles.Max(t => t.Bounds.Right) - left, tiles.Max(t => t.Bounds.Bottom) - top);
+        return focus is { } area && !all.Intersect(area).IsEmpty ? all.Intersect(area) : all;
     }
 }

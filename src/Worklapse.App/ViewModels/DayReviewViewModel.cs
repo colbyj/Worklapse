@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Worklapse.App.Controls;
 using Worklapse.Core.History;
+using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
 
 namespace Worklapse.App.ViewModels;
@@ -51,6 +52,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private static readonly int[] SpeedSteps = [1, 3, 12, 36];
 
     private readonly HistoryStore _history;
+    private readonly SettingsStore _settings;
     private readonly Action<DeleteResult>? _capturesDeleted;
     private readonly TimeSpan _maxCaptureLength;
     private readonly DispatcherTimer _playTimer;
@@ -62,9 +64,11 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private bool _updatingChoices;
 
     /// <param name="capturesDeleted">Called after captures are deleted permanently, to remove their video from disk.</param>
-    public DayReviewViewModel(HistoryStore history, TimeSpan captureInterval, Action<DeleteResult>? capturesDeleted = null)
+    public DayReviewViewModel(HistoryStore history, SettingsStore settings, TimeSpan captureInterval, Action<DeleteResult>? capturesDeleted = null)
     {
         _history = history;
+        _settings = settings;
+        _focusOnApplication = settings.Current.ReviewFocusOnApplication;
         _capturesDeleted = capturesDeleted;
         _maxCaptureLength = captureInterval * 1.5;
         _playTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => PlayTick());
@@ -99,6 +103,9 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _speed;
     [ObservableProperty] private MonitorChoice? _selectedMonitor;
     [ObservableProperty] private bool _isPlaying;
+
+    /// <summary>Show only the window that had focus, not the monitors around it. Remembered in the settings.</summary>
+    [ObservableProperty] private bool _focusOnApplication;
 
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _dayText = "";
@@ -372,6 +379,12 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     }
 
     // --- monitor and speed choices ------------------------------------------------------------
+
+    partial void OnFocusOnApplicationChanged(bool value)
+    {
+        _settings.Save(_settings.Current with { ReviewFocusOnApplication = value });
+        FrameChanged?.Invoke();
+    }
 
     partial void OnSelectedMonitorChanged(MonitorChoice? value)
     {
