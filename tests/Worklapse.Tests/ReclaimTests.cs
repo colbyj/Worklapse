@@ -310,6 +310,7 @@ public class ReclaimTests
         {
             // Schema 3, as left by deletes made before space was reclaimed.
             db.Execute("""
+                DROP INDEX ix_segments_path; ALTER TABLE segments DROP COLUMN format;
                 ALTER TABLE captures DROP COLUMN layout_id; DROP TABLE layouts;
                 DROP INDEX ix_captures_site; ALTER TABLE captures DROP COLUMN site_id; DROP TABLE sites;
                 DROP TABLE reclaim_queue; DROP TABLE dead_segment_files; DROP INDEX ix_frames_segment; DROP INDEX ix_captures_app;
@@ -317,8 +318,13 @@ public class ReclaimTests
                 """);
             var store = new RecordingStore(db);
             var monitor = store.GetOrAddMonitor(Monitor);
-            partlyDeleted = store.InsertSegment(monitor, "video/a.ivf", Width, Height, 40, Nine);
-            var untouched = store.InsertSegment(monitor, "video/b.ivf", Width, Height, 40, Nine);
+            long Segment(string path)
+            {
+                using var insert = db.Command($"INSERT INTO segments (monitor_id, path, width, height, quality, created_ms, state) VALUES ({monitor}, '{path}', {Width}, {Height}, 40, 0, 1) RETURNING id;");
+                return (long)insert.ExecuteScalar()!;
+            }
+            partlyDeleted = Segment("video/a.ivf");
+            var untouched = Segment("video/b.ivf");
             long Capture(int seconds)
             {
                 using var insert = db.Command($"INSERT INTO captures (ts_ms, utc_offset_min, kind) VALUES ({Nine.AddSeconds(seconds).ToUnixTimeMilliseconds()}, 0, 0) RETURNING id;");
@@ -336,7 +342,7 @@ public class ReclaimTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using var version = db.Command("PRAGMA user_version;");
-            Assert.Equal(6L, version.ExecuteScalar());
+            Assert.Equal(7L, version.ExecuteScalar());
             using var queued = db.Command("SELECT group_concat(segment_id) FROM reclaim_queue;");
             Assert.Equal(partlyDeleted.ToString(), queued.ExecuteScalar());
         }
@@ -560,7 +566,7 @@ public class ReclaimTests
         public Recorder Recorder { get; private set; } = null!;
 
         /// <summary>The recorder's current sink (it makes a new one after an error).</summary>
-        public StagedVideoSink? Sink { get; private set; }
+        public FrameSink? Sink { get; private set; }
 
         public static RecorderRun Start(string dataFolder, bool paused = false)
         {
@@ -568,7 +574,7 @@ public class ReclaimTests
             var settings = new SettingsStore(Path.Combine(dataFolder, "settings.json"));
             settings.Save(new WorklapseSettings { DataFolder = dataFolder, CaptureMode = CaptureMode.AllMonitors, IdleMinutes = 120 });
             var platform = new PlatformServices(run._screen, new FakeForeground(), new FakeIdle(), new FakeSession());
-            run.Recorder = new Recorder(settings, platform, store => run.Sink = new StagedVideoSink(store, () => 30), run._clock);
+            run.Recorder = new Recorder(settings, platform, store => run.Sink = new FrameSink(store, () => (FrameFormat.Video, 30)), run._clock);
             if (paused)
             {
                 run.Recorder.IsPaused = true;
@@ -633,13 +639,13 @@ public class ReclaimTests
             Db = WorklapseDatabase.Open(Folder.Path);
             Store = new RecordingStore(Db);
             MonitorId = Store.GetOrAddMonitor(Monitor);
-            Sink = new StagedVideoSink(Store, () => 30);
+            Sink = new FrameSink(Store, () => (FrameFormat.Video, 30));
         }
 
         public TempFolder Folder { get; } = new();
         public WorklapseDatabase Db { get; }
         public RecordingStore Store { get; }
-        public StagedVideoSink Sink { get; }
+        public FrameSink Sink { get; }
         public long MonitorId { get; }
 
         /// <summary>The captures not deleted, with the frame each was recorded with and the image it shows.</summary>

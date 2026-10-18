@@ -2,6 +2,14 @@
   "name": "worklapse-native",
   "version": "0.1.0",
   "dependencies": [
-    "aom"
+    "aom",
+    "libjpeg-turbo",
+    {
+      "name": "libwebp",
+      "default-features": false,
+      "features": [
+        "simd"
+      ]
+    }
   ]
 }

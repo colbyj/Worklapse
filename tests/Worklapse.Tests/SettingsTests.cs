@@ -1,4 +1,5 @@
 using Worklapse.Core.Settings;
+using Worklapse.Core.Storage;
 
 namespace Worklapse.Tests;
 
@@ -7,6 +8,7 @@ public class SettingsTests
     [Theory]
     [InlineData("""{"DataFolder": "C:\Users\me"}""")] // unescaped backslashes
     [InlineData("""{"CaptureMode": "EverythingPlease"}""")]
+    [InlineData("""{"Format": "Gif"}""")]
     [InlineData("""{"IntervalSeconds": "ten"}""")]
     [InlineData("")]
     [InlineData("null")]
@@ -67,5 +69,36 @@ public class SettingsTests
         Assert.Empty(settings.SelectedMonitors);
         Assert.Equal(WorklapseSettings.DefaultDataFolder, settings.DataFolder);
         Assert.Equal(120, settings.IdleMinutes);
+    }
+
+    [Fact]
+    public void VideoIsRecordedUnlessAnImageFormatIsChosen()
+    {
+        using var folder = new TempFolder();
+        var path = Path.Combine(folder.Path, "settings.json");
+        File.WriteAllText(path, """{"Quality": 44}""");
+        var store = new SettingsStore(path);
+        Assert.Equal((FrameFormat.Video, 44), store.Current.FrameStorage());
+
+        // Each format keeps its own quality.
+        store.Save(store.Current with { Format = FrameFormat.WebP, WebPQuality = 10 });
+        Assert.Contains("\"Format\": \"WebP\"", File.ReadAllText(path));
+        Assert.Equal((FrameFormat.WebP, 10), new SettingsStore(path).Current.FrameStorage());
+        store.Save(store.Current with { Format = FrameFormat.Jpeg });
+        Assert.Equal((FrameFormat.Jpeg, 15), new SettingsStore(path).Current.FrameStorage());
+    }
+
+    [Fact]
+    public void ImageQualityAndFormatOutOfRangeInAHandEditedFileAreBroughtBack()
+    {
+        using var folder = new TempFolder();
+        var path = Path.Combine(folder.Path, "settings.json");
+        File.WriteAllText(path, """{"Format": 7, "JpegQuality": 0, "WebPQuality": 250}""");
+
+        var settings = new SettingsStore(path).Current;
+
+        Assert.Equal(FrameFormat.Video, settings.Format);
+        Assert.Equal(1, settings.JpegQuality);
+        Assert.Equal(100, settings.WebPQuality);
     }
 }

@@ -107,18 +107,47 @@
 
         <Border Classes="group">
           <StackPanel>
-            <TextBlock Classes="groupHeader" Text="Video" />
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-              <TextBlock Classes="label" Text="Compression:" />
-              <DockPanel Grid.Column="1">
+            <TextBlock Classes="groupHeader" Text="Recording" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+              <TextBlock Classes="label" Text="Store captures as:" VerticalAlignment="Top" Margin="0,6,10,0" />
+              <StackPanel Grid.Column="1" Spacing="2">
+                <RadioButton GroupName="format" Content="Video (AV1)" IsChecked="{Binding IsVideo}" />
+                <RadioButton GroupName="format" Content="JPEG images" IsChecked="{Binding IsJpeg}" />
+                <RadioButton GroupName="format" Content="WebP images" IsChecked="{Binding IsWebP}" />
+              </StackPanel>
+
+              <!-- One slider per format. Image quality runs the other way round from the video quantizer, so each
+                   is sharper on the left. -->
+              <TextBlock Grid.Row="1" Classes="label" Text="Compression:" IsVisible="{Binding IsVideo}" />
+              <DockPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding IsVideo}">
                 <TextBlock DockPanel.Dock="Right" Text="{Binding QualityText}" FontWeight="SemiBold" MinWidth="24" TextAlignment="Right" VerticalAlignment="Center" />
                 <TextBlock DockPanel.Dock="Right" Classes="hint" Text="Smaller" VerticalAlignment="Center" Margin="6,0" />
                 <TextBlock DockPanel.Dock="Left" Classes="hint" Text="Sharper" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <Slider Value="{Binding Quality}" Minimum="20" Maximum="55" TickFrequency="1" IsSnapToTickEnabled="True" />
+                <Slider Value="{Binding Quality}" Minimum="20" Maximum="55" TickFrequency="1" IsSnapToTickEnabled="True"
+                        AutomationProperties.Name="Video compression" />
               </DockPanel>
-              <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" Text="Applies to video recorded from now on." />
-              <TextBlock Grid.Row="2" Grid.Column="1" Classes="warning" IsVisible="{Binding QualityWarning}"
+              <TextBlock Grid.Row="1" Classes="label" Text="Quality:" IsVisible="{Binding IsJpeg}" />
+              <DockPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding IsJpeg}">
+                <TextBlock DockPanel.Dock="Right" Text="{Binding JpegQualityText}" FontWeight="SemiBold" MinWidth="24" TextAlignment="Right" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Right" Classes="hint" Text="Smaller" VerticalAlignment="Center" Margin="6,0" />
+                <TextBlock DockPanel.Dock="Left" Classes="hint" Text="Sharper" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <Slider Value="{Binding JpegQuality}" Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                        IsDirectionReversed="True" AutomationProperties.Name="JPEG quality" />
+              </DockPanel>
+              <TextBlock Grid.Row="1" Classes="label" Text="Quality:" IsVisible="{Binding IsWebP}" />
+              <DockPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding IsWebP}">
+                <TextBlock DockPanel.Dock="Right" Text="{Binding WebPQualityText}" FontWeight="SemiBold" MinWidth="24" TextAlignment="Right" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Right" Classes="hint" Text="Smaller" VerticalAlignment="Center" Margin="6,0" />
+                <TextBlock DockPanel.Dock="Left" Classes="hint" Text="Sharper" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <Slider Value="{Binding WebPQuality}" Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                        IsDirectionReversed="True" AutomationProperties.Name="WebP quality" />
+              </DockPanel>
+
+              <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" Text="Applies to captures recorded from now on." />
+              <TextBlock Grid.Row="3" Grid.Column="1" Classes="warning" IsVisible="{Binding QualityWarning}"
                          Text="At this setting small text can come out garbled or out of date." />
+              <TextBlock Grid.Row="3" Grid.Column="1" Classes="hint" TextWrapping="Wrap" IsVisible="{Binding IsImages}"
+                         Text="Each changed capture is kept as an image file of its own, which other programs can open. Takes far more disk space than video." />
             </Grid>
           </StackPanel>
         </Border>
@@ -137,7 +166,7 @@
               <TextBlock Grid.Row="1" Grid.Column="1" Classes="warning" IsVisible="{Binding !HasDataFolder}"
                          Text="Choose a history folder (Browse…), or Default for the standard one." />
               <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint"
-                         Text="Video and the activity log are kept here. Changing it doesn't move existing history." />
+                         Text="Recordings and the activity log are kept here. Changing it doesn't move existing history." />
             </Grid>
           </StackPanel>
         </Border>

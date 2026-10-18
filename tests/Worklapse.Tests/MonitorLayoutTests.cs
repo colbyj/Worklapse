@@ -177,7 +177,7 @@ public class MonitorLayoutTests
         private readonly FakeIdle _idle = new();
 
         public Recorder Recorder { get; private set; } = null!;
-        public StagedVideoSink? Sink { get; private set; }
+        public FrameSink? Sink { get; private set; }
 
         public static RecorderRun Start(string dataFolder, CaptureMode mode = CaptureMode.AllMonitors)
         {
@@ -185,7 +185,7 @@ public class MonitorLayoutTests
             var settings = new SettingsStore(Path.Combine(dataFolder, "settings.json"));
             settings.Save(new WorklapseSettings { DataFolder = dataFolder, CaptureMode = mode, IdleMinutes = 120 });
             var platform = new PlatformServices(run._screen, new FakeForeground(), run._idle, new FakeSession());
-            run.Recorder = new Recorder(settings, platform, store => run.Sink = new StagedVideoSink(store, () => 30), run._clock);
+            run.Recorder = new Recorder(settings, platform, store => run.Sink = new FrameSink(store, () => (FrameFormat.Video, 30)), run._clock);
             return run;
         }
 

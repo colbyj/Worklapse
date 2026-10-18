@@ -21,7 +21,7 @@ public partial class App : Application
     private SettingsStore? _settings;
     private PlatformServices? _platform;
     private Recorder? _recorder;
-    private volatile StagedVideoSink? _videoSink; // the recorder's current one, created on its thread
+    private volatile FrameSink? _sink; // the recorder's current one, created on its thread
     private StatusViewModel? _status;
     private StatusWindow? _statusWindow;
     private DayReviewWindow? _reviewWindow;
@@ -99,23 +99,23 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// The recorder's video sink, made on the recorder's thread (again after an error or a change of data
-    /// folder). Its batch encoder also removes deleted captures' video; the status window says when it can't.
+    /// The recorder's sink, made on the recorder's thread (again after an error or a change of data folder). Its
+    /// batch encoder also removes deleted captures' video and images; the status window says when it can't.
     /// </summary>
-    private StagedVideoSink CreateSink(RecordingStore store)
+    private FrameSink CreateSink(RecordingStore store)
     {
         var settings = _settings!;
-        var sink = new StagedVideoSink(store, () => settings.Current.Quality);
+        var sink = new FrameSink(store, () => settings.Current.FrameStorage());
         var encoder = sink.Encoder;
         // Reads the encoder's current state rather than taking it from the event, so subscribing after the
         // encoder has started (it begins working in its constructor) loses nothing.
         void Report() => Dispatcher.UIThread.Post(() =>
         {
-            if (_videoSink == sink)
+            if (_sink == sink)
                 _status!.DeletedContentLeft = encoder.DeletedContentLeft;
         });
         encoder.DeletedContentLeftChanged += (_, _) => Report();
-        _videoSink = sink;
+        _sink = sink;
         Report();
         return sink;
     }
@@ -171,11 +171,11 @@ public partial class App : Application
 
         var settings = _settings!.Current;
         var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder));
-        // The recorder's batch encoder (open even while paused or locked) removes the deleted video from disk.
-        // Frames in the segments still being recorded go once those are closed and encoded.
+        // The recorder's batch encoder (open even while paused or locked) removes the deleted video and images from
+        // disk. Frames in the segments still being recorded go once those are closed and encoded.
         var viewModel = new DayReviewViewModel(history, TimeSpan.FromSeconds(settings.IntervalSeconds), result =>
         {
-            _videoSink?.Encoder.RequestReclaim();
+            _sink?.Encoder.RequestReclaim();
             if (result.StagedSegmentsAffected)
                 _recorder!.CloseSegmentsSoon();
         });

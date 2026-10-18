@@ -13,11 +13,27 @@ public readonly record struct FrameRef(long SegmentId, int FrameIndex);
 
 public enum SegmentState
 {
-    /// <summary>Frames are in the segment's staging file; not yet encoded.</summary>
+    /// <summary>
+    /// Being recorded: the recorder may still add references to it. Video frames are in the segment's staging file,
+    /// not encoded yet; an image is in its file already, but may still be shown again for a monitor that hasn't changed.
+    /// </summary>
     Staged = 0,
 
-    /// <summary>Frames are AV1 in the segment's IVF file.</summary>
+    /// <summary>Finished: video frames are AV1 in the segment's IVF file; an image no longer gets new references.</summary>
     Encoded = 1,
+}
+
+/// <summary>How a segment's frames are stored (the number is what the database keeps).</summary>
+public enum FrameFormat
+{
+    /// <summary>AV1 video: up to a segment's worth of frames, in a staging file and then an IVF file.</summary>
+    Video = 0,
+
+    /// <summary>One frame, a JPEG image file.</summary>
+    Jpeg = 1,
+
+    /// <summary>One frame, a WebP image file.</summary>
+    WebP = 2,
 }
 
 /// <summary>Writes captures, segments and frame indexes. Used only from the recorder thread.</summary>
@@ -126,14 +142,15 @@ public sealed class RecordingStore(WorklapseDatabase db)
     }
 
     public long InsertSegment(long monitorId, string relativePath, int width, int height, int quality, DateTimeOffset created,
-        SegmentState state = SegmentState.Encoded)
+        SegmentState state = SegmentState.Encoded, FrameFormat format = FrameFormat.Video)
     {
         using var insert = db.Command("""
-            INSERT INTO segments (monitor_id, path, width, height, quality, created_ms, state)
-            VALUES ($monitor, $path, $w, $h, $q, $created, $state)
+            INSERT INTO segments (monitor_id, path, width, height, quality, created_ms, state, format)
+            VALUES ($monitor, $path, $w, $h, $q, $created, $state, $format)
             RETURNING id;
             """);
         insert.Parameters.AddWithValue("$state", (int)state);
+        insert.Parameters.AddWithValue("$format", (int)format);
         insert.Parameters.AddWithValue("$monitor", monitorId);
         insert.Parameters.AddWithValue("$path", relativePath);
         insert.Parameters.AddWithValue("$w", width);

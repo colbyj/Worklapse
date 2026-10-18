@@ -94,7 +94,7 @@ public class FrameProviderTests
             var start = new DateTimeOffset(2026, 10, 16, 9, 0, 0, TimeSpan.Zero);
 
             var encoded = new List<FrameRef>();
-            using (var sink = new StagedVideoSink(store, () => 30))
+            using (var sink = new FrameSink(store, () => (FrameFormat.Video, 30)))
             {
                 FrameRef Append(MonitorInfo monitor, long monitorId, int index)
                 {

@@ -5,8 +5,8 @@ namespace Worklapse.Core.History;
 
 /// <param name="Captures">How many captures were deleted.</param>
 /// <param name="StagedSegmentsAffected">
-/// Some of them used a segment not encoded yet, possibly the one being recorded: its deleted frames leave
-/// the disk once it is closed and encoded (<see cref="Recording.Recorder.CloseSegmentsSoon"/>).
+/// Some of them used a segment not encoded yet, possibly the one being recorded, or an image the recorder may still
+/// show again: their deleted frames leave the disk once it is closed and finished (<see cref="Recording.Recorder.CloseSegmentsSoon"/>).
 /// </param>
 public readonly record struct DeleteResult(int Captures, bool StagedSegmentsAffected);
 

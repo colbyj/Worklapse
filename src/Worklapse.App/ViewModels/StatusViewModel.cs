@@ -36,13 +36,13 @@ public sealed partial class StatusViewModel : ObservableObject
     [ObservableProperty] private string _pauseText = "Pause";
     [ObservableProperty] private bool _hasError;
 
-    /// <summary>Why video of deleted captures is still on disk, if it is; see BatchEncoder.DeletedContentLeft.</summary>
+    /// <summary>Why video or images of deleted captures are still on disk, if they are; see BatchEncoder.DeletedContentLeft.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DeletedContentText), nameof(HasDeletedContentLeft))]
     private string? _deletedContentLeft;
 
     public bool HasDeletedContentLeft => DeletedContentLeft is not null;
-    public string DeletedContentText => $"Some deleted video is still on disk: {DeletedContentLeft}.";
+    public string DeletedContentText => $"Some deleted recordings are still on disk: {DeletedContentLeft}.";
 
     public void Update(RecorderStatus status)
     {

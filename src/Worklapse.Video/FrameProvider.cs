@@ -14,9 +14,10 @@ public sealed class FrameUnavailableException(FrameRef frame)
 }
 
 /// <summary>
-/// Decodes recorded frames for playback, whether their segment is still staged or already encoded.
-/// Keeps one decoder per monitor positioned in the segment last used, so stepping forward decodes one
-/// frame, and a small byte-limited cache of recent frames so stepping back a little is usually free.
+/// Decodes recorded frames for playback, whether their segment is still staged or already encoded, video or image.
+/// Keeps one decoder per monitor positioned in the video segment last used, so stepping forward decodes one
+/// frame, and a small byte-limited cache of recent frames so stepping back a little is usually free. Images are
+/// read and decoded on their own; no decoder stays open for them.
 /// Not thread-safe: use it from one thread (playback decodes on a background thread).
 /// </summary>
 /// <remarks>
@@ -38,6 +39,7 @@ public sealed class FrameProvider : IDisposable
     private readonly LinkedList<(FrameRef Key, DecodedFrame Frame)> _cacheOrder = new();
     private readonly Dictionary<FrameRef, LinkedListNode<(FrameRef Key, DecodedFrame Frame)>> _cache = [];
     private long _cacheBytes;
+    private byte[] _imageFile = []; // the image file last read, reused
 
     public FrameProvider(string dataFolder, long cacheBudgetBytes = DefaultCacheBudgetBytes)
     {
@@ -81,7 +83,15 @@ public sealed class FrameProvider : IDisposable
 
     private DecodedFrame Decode(FrameRef frame)
     {
-        var cursor = Cursor(frame);
+        var cursor = OpenCursor(frame.SegmentId);
+        if (cursor is null)
+        {
+            var segment = SegmentRow.Load(_db, frame.SegmentId) ?? throw new FrameUnavailableException(frame);
+            if (segment.Format != FrameFormat.Video)
+                return DecodeImage(frame, segment);
+            cursor = Open(segment);
+        }
+
         var target = cursor.Find(frame);
         var restarted = cursor.MoveBefore(target);
 
@@ -100,6 +110,38 @@ public sealed class FrameProvider : IDisposable
         }
         MakeRoom(cursor.FrameBytes);
         return cursor.Copy(_pool);
+    }
+
+    /// <summary>An image segment's one frame, straight from its file.</summary>
+    private DecodedFrame DecodeImage(FrameRef frame, SegmentRow segment)
+    {
+        if (frame.FrameIndex != 0)
+            throw new FrameUnavailableException(frame);
+
+        int length;
+        using (var file = new FileStream(Path.Combine(_db.DataFolder, segment.Path), FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, bufferSize: 1))
+        {
+            length = checked((int)file.Length);
+            if (_imageFile.Length < length)
+                _imageFile = GC.AllocateUninitializedArray<byte>(length);
+            file.ReadExactly(_imageFile, 0, length);
+        }
+
+        var image = _imageFile.AsSpan(0, length);
+        var (_, width, height) = ImageCodec.Identify(image);
+        MakeRoom(I420.Size(width, height));
+        var decoded = _pool.Rent(width, height);
+        try
+        {
+            ImageCodec.DecodeI420(image, width, height, decoded.Writable);
+        }
+        catch
+        {
+            decoded.Release();
+            throw;
+        }
+        return decoded;
     }
 
     /// <summary>Closes the decoders not used for <paramref name="idleFor"/>, freeing their memory.</summary>
@@ -124,22 +166,28 @@ public sealed class FrameProvider : IDisposable
         _cache.Clear();
         _cacheBytes = 0;
         _pool.Clear();
+        _imageFile = [];
         _db.Dispose();
     }
 
-    private SegmentCursor Cursor(FrameRef frame)
+    /// <summary>The cursor already open on a video segment, if any.</summary>
+    private SegmentCursor? OpenCursor(long segmentId)
     {
         foreach (var open in _cursorsByMonitor.Values)
         {
-            if (open.SegmentId == frame.SegmentId)
+            if (open.SegmentId == segmentId)
             {
                 open.LastUsed = Environment.TickCount64;
                 return open;
             }
         }
+        return null;
+    }
 
+    private SegmentCursor Open(SegmentRow segment)
+    {
         // A monitor's frames are decoded by one decoder: opening another of its segments closes the last one.
-        var cursor = SegmentCursor.Open(_db, frame.SegmentId, DecoderThreads) ?? throw new FrameUnavailableException(frame);
+        var cursor = SegmentCursor.Open(_db, segment, DecoderThreads);
         if (_cursorsByMonitor.Remove(cursor.MonitorId, out var previous))
             previous.Dispose();
         _cursorsByMonitor[cursor.MonitorId] = cursor;
@@ -190,8 +238,23 @@ public sealed class FrameProvider : IDisposable
         _cacheBytes += frame.I420.Length;
     }
 
+    private sealed record SegmentRow(long Id, long MonitorId, string Path, SegmentState State, FrameFormat Format, int Width, int Height)
+    {
+        /// <summary>The segment; null if it doesn't exist (any more).</summary>
+        public static SegmentRow? Load(WorklapseDatabase db, long id)
+        {
+            using var command = db.Command("SELECT monitor_id, path, state, format, width, height FROM segments WHERE id = $id;");
+            command.Parameters.AddWithValue("$id", id);
+            using var reader = command.ExecuteReader();
+            return reader.Read()
+                ? new SegmentRow(id, reader.GetInt64(0), reader.GetString(1), (SegmentState)reader.GetInt32(2), (FrameFormat)reader.GetInt32(3),
+                    reader.GetInt32(4), reader.GetInt32(5))
+                : null;
+        }
+    }
+
     /// <summary>
-    /// A decoder positioned somewhere in one segment. Positions count the frames stored in the segment, in
+    /// A decoder positioned somewhere in one video segment. Positions count the frames stored in the segment, in
     /// order; frame indexes can have gaps where frames were left out after deletes.
     /// </summary>
     private sealed class SegmentCursor : IDisposable
@@ -224,20 +287,10 @@ public sealed class FrameProvider : IDisposable
         public long MonitorId { get; }
         public long LastUsed { get; set; }
 
-        /// <summary>Opens a segment; null if it doesn't exist (any more).</summary>
-        public static SegmentCursor? Open(WorklapseDatabase db, long segmentId, int threads)
+        public static SegmentCursor Open(WorklapseDatabase db, SegmentRow segment, int threads)
         {
-            SegmentCursor cursor;
-            using (var command = db.Command("SELECT path, state, width, height, monitor_id FROM segments WHERE id = $id;"))
-            {
-                command.Parameters.AddWithValue("$id", segmentId);
-                using var reader = command.ExecuteReader();
-                if (!reader.Read())
-                    return null;
-                var path = Path.Combine(db.DataFolder, reader.GetString(0));
-                cursor = new SegmentCursor(db, segmentId, reader.GetInt64(4), path, (SegmentState)reader.GetInt32(1),
-                    reader.GetInt32(2), reader.GetInt32(3), threads);
-            }
+            var cursor = new SegmentCursor(db, segment.Id, segment.MonitorId, Path.Combine(db.DataFolder, segment.Path), segment.State,
+                segment.Width, segment.Height, threads);
             cursor.LoadFrameIndex();
             return cursor;
         }

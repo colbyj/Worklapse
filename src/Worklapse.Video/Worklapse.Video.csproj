@@ -8,7 +8,7 @@
     <InternalsVisibleTo Include="Worklapse.Tests" />
   </ItemGroup>
 
-  <!-- Builds the native AV1 wrapper (worklapse_av1.dll) when needed and copies it to the output. -->
-  <Import Project="../../native/worklapse_av1.targets" />
+  <!-- Builds the native library (worklapse_native.dll: AV1, JPEG, WebP) when needed and copies it to the output. -->
+  <Import Project="../../native/worklapse_native.targets" />
 
 </Project>

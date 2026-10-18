@@ -6,7 +6,8 @@ namespace Worklapse.Video;
 /// <summary>
 /// Encodes finished staged segments to AV1 on a low-priority background thread, one at a time, so only
 /// one encoder's memory is in use and only while it works. Staged segments left over from an earlier run
-/// (a crash, or quitting before encoding finished) are queued when it starts.
+/// (a crash, or quitting before encoding finished) are queued when it starts. An image needs no encoding: it is
+/// marked finished (or deleted, if its capture was deleted while the recorder could still show it).
 /// <para>
 /// The same thread removes deleted captures' frames from disk (see <see cref="SpaceReclaimer"/>), one segment
 /// per job between encodes: on <see cref="RequestReclaim"/>, and when it starts, for deletes made before a
@@ -257,7 +258,8 @@ public sealed class BatchEncoder : IDisposable
     {
         string relative;
         int width, height, quality;
-        using (var segment = db.Command("SELECT path, width, height, quality, state FROM segments WHERE id = $id;"))
+        FrameFormat format;
+        using (var segment = db.Command("SELECT path, width, height, quality, state, format FROM segments WHERE id = $id;"))
         {
             segment.Parameters.AddWithValue("$id", segmentId);
             using var reader = segment.ExecuteReader();
@@ -265,8 +267,11 @@ public sealed class BatchEncoder : IDisposable
                 return false; // deleted meanwhile
             if (reader.GetInt32(4) != (int)SegmentState.Staged)
                 return false;
-            (relative, width, height, quality) = (reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3));
+            (relative, width, height, quality, format) =
+                (reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), (FrameFormat)reader.GetInt32(5));
         }
+        if (format != FrameFormat.Video)
+            return FinishImage(db, segmentId, relative);
 
         var frames = new List<(int Index, long Offset, int Length)>();
         using (var list = db.Command("SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;"))
@@ -375,6 +380,38 @@ public sealed class BatchEncoder : IDisposable
 
         // Readers open staging files with delete sharing, so this succeeds even while one is being read.
         File.Delete(stagingPath);
+        return true;
+    }
+
+    /// <summary>
+    /// Marks an image finished once the recorder has moved on from it (it no longer shows it again for an unchanged
+    /// monitor), so deletes can remove it from then on; or deletes it now if its captures were deleted meanwhile.
+    /// </summary>
+    private static bool FinishImage(WorklapseDatabase db, long segmentId, string relative)
+    {
+        // As for video: the queue entry is read before the references.
+        long? queued;
+        using (var generation = db.Command("SELECT generation FROM reclaim_queue WHERE segment_id = $id;"))
+        {
+            generation.Parameters.AddWithValue("$id", segmentId);
+            queued = generation.ExecuteScalar() as long?;
+        }
+        if (SpaceReclaimer.ReferencedFrames(db, segmentId).Count == 0)
+        {
+            SpaceReclaimer.Remove(db, segmentId, relative);
+            return false;
+        }
+
+        using var transaction = db.BeginTransaction();
+        using var done = db.Command("""
+            UPDATE segments SET state = $encoded WHERE id = $id;
+            DELETE FROM reclaim_queue WHERE segment_id = $id AND generation = $generation;
+            """);
+        done.Parameters.AddWithValue("$encoded", (int)SegmentState.Encoded);
+        done.Parameters.AddWithValue("$id", segmentId);
+        done.Parameters.AddWithValue("$generation", (object?)queued ?? DBNull.Value);
+        done.ExecuteNonQuery();
+        transaction.Commit();
         return true;
     }
 }

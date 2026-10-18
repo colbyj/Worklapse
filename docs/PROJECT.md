@@ -21,6 +21,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | What to capture | Choice of active application, primary monitor, selected monitors, or all monitors. The developer uses all monitors. | Matches TimeSnapper's options; all monitors became practical once video compression was in. |
 | Idle | Stop capturing after N minutes without input (default 5) and while the screen is locked. When the limit is hit, the captures since the last input are re-marked as idle. | Idle time should be time without input, not time after the threshold. |
 | Video format | AV1 (libaom), one stream per monitor, 90-frame segments (15 min at 10 s), constant quantizer, default 40, adjustable 20–55 in Settings (warning from 48). | Measured: roughly 2.5× smaller than per-frame WebP or JPEG at the same readability. |
+| Recording as images | **Optional, video stays the default.** Settings → Recording: Video (AV1), JPEG images or WebP images, each format with its own quality slider over its full range (JPEG 1–100, default 15, TimeSnapper's; WebP 0–100, default 25). A file per changed capture and monitor, `images/YYYY-MM-DD/HHmmss-m<monitor>.jpg/.webp`, which other programs can open. Agreed 2026-10-17. | Asked for, like TimeSnapper. WebP was checked by eye: text clearer at 10 than JPEG at 15 (developer). Images take far more disk (see Benchmarks) and WebP more CPU than JPEG, but each is exact for its moment (no stale small text), deleting is deleting files, and playback needs no decoder. |
 | Encoding | **Batch encoding.** Captures are converted to I420 (YUV 4:2:0, 1.5 bytes per pixel) at capture time and go into a staging file per segment (XOR against the previous capture, Brotli-compressed); full segments are encoded one at a time on a low-priority thread. Staged segments left over by a crash or quit are encoded on the next start. | Four live libaom encoders used about 850 MB (their frame-buffer pool is fixed; options barely help). |
 | Encoding modes | One mode only (no battery mode, no quick encode). | The developer's laptop is effectively always plugged in; simplest to build. |
 | Small-text accuracy | Accepted: at the default quantizer, small changes (a clock digit, a status label) can show the previous value for a while. The app/title log is exact regardless. A two-level fix exists (key frames q45, other frames q10) but costs 30–125 MB/hour during video playback, so it's not used. | Tracking relies on the log; the video is for context. |
@@ -64,6 +65,22 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
   terminal, IDE file list, Notepad++ lists and status bar) reads the same at 1:1 in the worst frames, with some
   extra ringing at edges; no stale or wrong text seen. Recording memory unchanged (three alternating runs each:
   90/81/81 MB vs 92/82/82 MB before).
+- Images (2026-10-17, one real capture of each monitor, single-threaded, libjpeg-turbo 3.2 / libwebp 1.6 method 4):
+
+  | Monitor | JPEG 15 | JPEG 30 | WebP 10 | WebP 25 | WebP 50 | AV1 key frame q40 |
+  |---|---|---|---|---|---|---|
+  | 3440×1440 (IDE, browser) | 204 KB, 22 ms | 316 KB | 165 KB, 393 ms | 215 KB, 380 ms | 296 KB | 457 KB, 3.7 s |
+  | 1920×1080 (busy) | 83 KB, 9 ms | 118 KB | 61 KB, 166 ms | 76 KB, 145 ms | 101 KB | 128 KB, 0.4 s |
+  | 2048×1280 (wallpaper) | 36 KB, 11 ms | 62 KB | 23 KB, 182 ms | 33 KB, 192 ms | 51 KB | 97 KB, 0.9 s |
+
+  Decoding: JPEG 4–16 ms, WebP 6–36 ms. AV1 inter frames are ~10–30 KB for all monitors together, so images are
+  roughly 10–20× the disk of video for the same screens; WebP costs about as much CPU per changed frame as AV1 (~0.2–0.4 s
+  for 3440×1440), JPEG about a twentieth of that.
+- Recording memory by format (2026-10-17, recorder without the UI, all four monitors, 3 minutes each, run twice
+  alternating, ~20 changed monitor captures per run): video 50 MB private (peak commit 58–60 MB), JPEG 15 25 MB
+  (38–41), WebP 25 25–26 MB (38–39). Images need no staging (video keeps each monitor's previous frame for its
+  deltas, ~17 MB here) and no encoder later (+300 MB for a while every 15 minutes). CPU over the 3 minutes: video
+  5.1–5.4 s (before its AV1 encode), JPEG 5.3–5.4 s, WebP 9.0–9.7 s.
 - Reading the site (2026-10-17, test windows): after the first read of a window, 0.2–1 ms (the address bar's
   element is remembered per window); the first read 10–30 ms, and up to ~250 ms for a Firefox whose
   accessibility tree isn't built yet (over the 300 ms limit that capture simply gets no site). Average over all
@@ -79,14 +96,17 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 
 ```
 native/
-  av1/worklapse_av1.c         C wrapper around libaom (encode I420, decode to I420 or BGRA, set options)
-  worklapse_av1.targets       MSBuild: builds native/win-x64/worklapse_av1.dll (libaom static, via VS vcpkg) when needed
+  src/av1.c                   C wrapper around libaom (encode I420, decode to I420 or BGRA, set options)
+  src/image.c                 JPEG (libjpeg-turbo) and WebP (libwebp): encode I420, decode to I420 or BGRA
+  src/color.c                 colour conversions (I420 is BT.709 full range; JPEG/WebP files BT.601)
+  worklapse_native.targets    MSBuild: builds native/win-x64/worklapse_native.dll (libraries static, via VS vcpkg) when needed
 src/
   Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading
-  Worklapse.Video/            AV1 interop, IVF files, staging files, batch encoder, frame provider for playback
+  Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
+                              frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
   Worklapse.App/              Avalonia app: tray icon, status window, settings dialog, Day review
-tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts)
+tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts, images)
 docs/PROJECT.md               this file
 docs/HANDOFF.md               briefs for the next tasks, for a new session
 ```
@@ -100,7 +120,8 @@ docs/HANDOFF.md               briefs for the next tasks, for a new session
    captures each monitor chosen by the capture mode;
 3. reuses a monitor's previous frame when the new capture's pixel hash equals that frame's (the recorder keeps the
    hash with the frame; comparing per device name went wrong after a replug), otherwise appends the
-   capture to `StagedVideoSink` (in active-application mode, everything outside the window is blacked out first);
+   capture to `FrameSink` (in active-application mode, everything outside the window is blacked out first), which
+   stages it for video or writes it as an image (see How images are stored);
 4. writes the capture, its layout and frame references in one SQLite transaction.
 5. When a segment has 90 frames (or recording pauses), `BatchEncoder` encodes it to AV1 on its own thread,
    rewrites the frame offsets to point into the `.ivf` file, marks the segment encoded and deletes the staging file.
@@ -145,9 +166,31 @@ Private windows give none: Firefox and Edge say so in the window title ("Private
 Chrome only in its top view's UI Automation name ("(Incognito)"), read once per window. These are English
 labels; a browser in another language needs its words added.
 
+### How images are stored
+
+With JPEG or WebP chosen, `FrameSink` encodes each changed capture straight away (`ImageCodec`, native `image.c`) and
+writes one file per monitor. Each image is a segment of its own (`segments.format` 1 = JPEG, 2 = WebP; one
+`segment_frames` row), so frame references, deleting and playback work as for video:
+
+- **Open while it may be shown again.** The recorder reuses a monitor's last frame when the screen hasn't changed, and
+  only ever adds references to segments it is still writing. So an image stays *staged* until that monitor's next
+  changed capture (or a pause, lock or unplug) closes it; the batch encoder then "encodes" it, which only marks it
+  finished, or deletes it if its captures were deleted meanwhile. Deletes therefore treat open images like the video
+  segment being recorded (`CloseSegmentsSoon`).
+- **Named once committed.** An image is written as `….webp.tmp` and renamed when the capture showing it is committed.
+  If the tick fails, the sink is disposed and deletes it; after a crash, the next sink renames the leftovers whose
+  capture was committed and deletes the rest (it looks in the folder of the newest image, the day before, and later).
+- **Colours.** Captures are BT.709 full range; JPEGs are written as BT.601 full range through BGRX rows (16 at a
+  time), WebP as BT.601 limited range converted plane to plane, so other programs show the right colours (tested
+  against the libraries' own decoding) without a full-size BGRA copy.
+- **A change of format** applies at each monitor's next changed capture: its open video segment or image is closed
+  then, so a day can mix video and images; Day review plays both.
+- `FrameProvider` reads and decodes an image file per request (no decoder stays open); its cache works the same.
+
 ### How deleting removes video
 
-The purpose is that deleted content is gone from the data folder, not disk space (see Decisions).
+The purpose is that deleted content is gone from the data folder, not disk space (see Decisions). An image is a
+segment with one frame: once nothing refers to it, the same path deletes its file (never a rebuild).
 
 `HistoryStore.DeleteMarked` deletes the captures (their `frames` rows cascade) and the apps left without
 captures (unless marked productive), and, in the same transaction, queues the segments the captures used in
@@ -155,7 +198,7 @@ captures (unless marked productive), and, in the same transaction, queues the se
 `Recorder.CloseSegmentsSoon`, and the recorder closes its open segments at the next tick (≤ 10 s), before
 capturing, so they're encoded without the deleted frames instead of keeping them in staging for up to 15 minutes.
 `BatchEncoder` works through the queue one segment per job, between encodes, when Day review asks
-(`RequestReclaim`, through the app's current `StagedVideoSink`) and when it starts (deletes made before a crash
+(`RequestReclaim`, through the app's current `FrameSink`) and when it starts (deletes made before a crash
 or quit). The recorder opens its storage, and so the encoder, on every tick even while paused or locked, so
 this doesn't wait for recording to resume. `SpaceReclaimer` then:
 
@@ -200,16 +243,18 @@ selection, summaries and the mark/restore/confirm deletion logic.
 
 Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse`); settings in
 `%APPDATA%\Worklapse\settings.json` (Linux: `~/.config/Worklapse`). The data folder holds
-`worklapse.db` and `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open).
+`worklapse.db`, `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open) and, when
+recording images, `images/YYYY-MM-DD/HHmmss-m<monitor>.jpg` or `.webp`.
 
-SQLite schema (version 6, migrations in `WorklapseDatabase`):
+SQLite schema (version 7, migrations in `WorklapseDatabase`):
 
 - `apps` (exe name, path, `productive` flag; classified by exe name; deleted with their last capture unless productive)
 - `sites` (domain, `productive` flag; deleted with their last capture unless productive)
 - `monitors` (device name and geometry; a monitor as arranged, so replugging adds rows, see above)
 - `layouts` (the monitor ids attached at the same time, ascending, comma-separated; never deleted)
 - `captures` (UTC ms + local offset, active/idle, app, site, layout (null before schema 6), window title and bounds, `pending_delete`)
-- `segments` (monitor, relative path, size, quantizer, `state` 0 = staged / 1 = encoded)
+- `segments` (monitor, relative path (indexed), size, quality, `state` 0 = staged / 1 = encoded, `format` 0 = AV1 video /
+  1 = JPEG / 2 = WebP; an image is a segment with one frame)
 - `segment_frames` (segment, frame index, file offset and length, key flag; indexes can have gaps after deletes)
 - `frames` (capture × monitor → segment frame; unchanged monitors point at an earlier frame; indexed by segment frame)
 - `reclaim_queue` (segments that may hold unreferenced frames, with a generation counter)
@@ -220,7 +265,7 @@ SQLite schema (version 6, migrations in `WorklapseDatabase`):
 ## Building, running, testing
 
 Requirements: .NET 10 SDK; Visual Studio 2026 or its Build Tools with the C++ workload (for the native
-library, which `dotnet build` builds when needed: ≈5 min the first time, see `native/README.md`). From the
+library, which `dotnet build` builds when needed: ≈7 min the first time, see `native/README.md`). From the
 repository root:
 
 ```sh
@@ -246,7 +291,7 @@ test `settings.json` still points at the copy after each step.
 
 ---
 
-## Status (2026-10-17, updated after productive apps and sites)
+## Status (2026-10-17, updated after image recording)
 
 Working on Windows:
 
@@ -272,6 +317,11 @@ Working on Windows:
   file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
   to `settings.json.broken-<date>`.
 
+- Recording as JPEG or WebP images (2026-10-17, not yet reviewed by the developer): Settings → Recording; a file per
+  changed capture; deletes remove the files; crash-safe naming; Day review plays them. Checked with tests (codec
+  round trip and colours as other viewers show them, recording, format switching, deletes, failed ticks, crash
+  leftovers) and benchmarks on real captures (see Benchmarks). Not yet done by hand: the Settings dialog itself, and
+  an image recording looked at in Day review.
 - Plugging monitors in and out (2026-10-17, not yet reviewed by the developer): layouts recorded per capture,
   Day review and its Monitor list follow them, older captures' layouts worked out; selected monitors by stable
   identity. Checked with tests (recorder with a fake desktop, the guess) and in Day review on a copy of the
@@ -291,6 +341,11 @@ Known gaps and caveats:
   minimized, so a search-terms or typing fallback can't apply there (their address bar shows the URL anyway);
   other browsers (Brave, Opera, Vivaldi) aren't read; the first read of a Firefox can exceed the 300 ms limit.
   Window titles are recorded for private windows as before (only the site is left out).
+- Images: WebP costs ~0.2–0.4 s of CPU per changed large monitor, on the recorder's thread inside the capture's
+  transaction (all monitors of a tick are captured one after another, so up to ~1 s apart). A frame read in Day review
+  in the instant between its capture being committed and its file being renamed shows "Couldn't read this frame".
+- A video segment's staging file created in a tick that a crash interrupted (not an error: those are cleaned up) is
+  left on disk with no segment (pre-existing; images have the cleanup described above).
 - Encoding failures (`BatchEncoder.EncodingFailed`) aren't shown or logged anywhere yet; the segment stays
   staged (with any deleted frames still in its staging file) and is retried at the next start. Failures to
   remove deleted video are shown in the status window.
@@ -349,12 +404,36 @@ Items 1 and 2 were handed off in `docs/HANDOFF.md` (2026-10-16); both are built 
    while recording is paused or locked; deleted rows are zeroed in the database and its log truncated; and
    what couldn't be removed is shown in the status window. The status-window line was checked by build and
    tests only, not looked at on screen. What remains is listed under Known gaps.
-3. **TimeSnapper import.** Copy the old database first. The Firebird 1.5 file opens only with
-   TimeSnapper's own 32-bit `fbembed.dll` and its bundled old FirebirdSql driver: load them from a
-   32-bit process (32-bit PowerShell works; modern FirebirdClient fails with "user name and password are not
-   defined"). Import `ACTIVITY` rows (time, duration, program, caption, file name) as captures with a
-   "legacy JPEG" frame kind that Day review shows directly; map `PROGRAM` and the productive classification.
-   Note that 15,450 activity rows have no file name (meaning unknown).
+3. **TimeSnapper import** (agreed 2026-10-17: a one-time tool, after image recording). Copy the old database first.
+   The Firebird 1.5 file opens only with TimeSnapper's own 32-bit `fbembed.dll` and its bundled old FirebirdSql
+   driver, from a 32-bit process (32-bit PowerShell works; modern FirebirdClient fails with "user name and password
+   are not defined"; a distro's `libfbclient` is Firebird 3+ and can't open it either). The images become image
+   segments (JPEG); the import adds what images from outside the data folder need. Agreed: skip TimeSnapper's
+   captures where Worklapse has its own. Open: a read-only TimeSnapper folder the images stay in, with an offer to
+   move them into the data folder later (the developer wants them left in place while trying it out); how Day review
+   shows a window-sized picture with no monitor layout. What the data holds (read-only look, 2026-10-17, at the
+   2026-10-15 copy):
+   - **Productive** = the program or site is in `CLASSIFICATION` (90 rows, one per `PROGRAM.ID`, `KEYWORDS` all
+     empty; no unproductive or neutral class). TimeSnapper's daily grade counts a row productive if its exe *or* its
+     site is classified (Worklapse: the site decides). Map by lower-case exe name / domain: `PROGRAM` has a row per
+     path or version (Rider ×4, Presayo ×9).
+   - **Programs and sites:** `PROGRAM.NAME` is the upper-case exe name (`ACTIVITY.PROGRAM` the original case),
+     sites (`PROGTYPE` 1) the upper-case host without `www.`, port kept; `WEBPROGID` links a row to its site
+     (firefox, msedge, chrome only). `URL` is scraped address-bar text, often junk, can hold login tokens: use the
+     site's name, not the URL. 77 old site names are page titles (181 rows) and need cleaning or dropping.
+   - **Time:** `SNAPDATE` is local wall-clock time; this machine is on Saskatchewan time (UTC−6 all year, no DST).
+     `DURATION` is a fixed 10 s credit, not a measurement; idle time is simply no rows. Rows are 10 s apart.
+   - **Images:** all 400,286 files exist (34.7 GB), absolute paths under `%LOCALAPPDATA%\TimeSnapper\Snapshots`,
+     one per row, baseline 4:2:0 JPEGs of the active window (6,725 different sizes); 3 PNGs of the whole desktop
+     (the first three rows) that the image code can't read yet. Use `FILENAME` as stored (two are in the next
+     day's folder).
+   - **The 15,450 rows without a file:** 4,215 are "(Unknown)" programs TimeSnapper couldn't identify (games, Task
+     Manager, installers; titles kept); 11,104 are ordinary rows in 102 runs (Jan–May 2026: YouTube, Facebook,
+     OpenCode overnight, Parsec, games) whose images were most likely deleted in TimeSnapper's Day Browser, which
+     keeps the row; 131 belong to the block below. Whether to import them is the developer's call.
+   - **An earlier import inside TimeSnapper:** rows 48,295–64,810 (2025-12-01 to 2026-01-06, before TimeSnapper was
+     installed) are 15 s apart with no program or title, `DURATION` 1: only pictures.
+   - **Titles:** characters outside Windows-1252 were stored as `?` (lost); titles are cut at 254 characters.
 4. **Day review polish:** day picker (calendar) and Alt+←/→ for days if wanted; showing which segment
    is still being encoded; remember window size and monitor choice; a frame-accurate time readout when
    dragging.
@@ -381,15 +460,7 @@ Windows needs a decision on where the data lives.
 
 ### 3. Experiments (after the app is usable)
 
-- **WebP-only recording (developer's idea).** Store each changed capture as a WebP image instead of
-  video. Expected effect, from the benchmarks above:
-  - removes libaom and the 15-minute encoding spike;
-  - steady memory would barely change (it no longer includes encoders);
-  - disk use would rise a lot: roughly 10–20× for whole screens, or about 2× if only changed
-    regions are stored as WebP tiles;
-  - deletes become trivial (drop the images).
-
-  The existing `IFrameSink` / `FrameProvider` split is the seam for a second storage format. Worth
-  measuring with real captures before switching.
+- Storing only the changed parts of the screen as WebP tiles (about 2× the disk of video instead of 10–20× for
+  whole images) — not TimeSnapper-like (the files aren't pictures of the screen), so not part of image recording.
 - Two-level quality (key q45 / other frames q10) as an option, for those who need small text exact.
 - Hardware AV1 encoding (NVENC) — needs a newer NVIDIA driver, and wakes the discrete GPU.

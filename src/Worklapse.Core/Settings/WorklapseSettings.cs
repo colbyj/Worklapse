@@ -1,3 +1,5 @@
+using Worklapse.Core.Storage;
+
 namespace Worklapse.Core.Settings;
 
 public enum CaptureMode
@@ -28,8 +30,17 @@ public sealed record WorklapseSettings
 
     public bool PauseWhenLocked { get; init; } = true;
 
+    /// <summary>How captures are stored: AV1 video, or an image file (JPEG or WebP) per changed capture.</summary>
+    public FrameFormat Format { get; init; } = FrameFormat.Video;
+
     /// <summary>AV1 quantizer (libaom cq-level, 0–63). Lower is sharper and larger.</summary>
     public int Quality { get; init; } = 40;
+
+    /// <summary>JPEG quality, 1–100. Higher is sharper and larger. TimeSnapper used 15.</summary>
+    public int JpegQuality { get; init; } = 15;
+
+    /// <summary>WebP quality, 0–100. Higher is sharper and larger. Text read more clearly at 10 than JPEG's at 15.</summary>
+    public int WebPQuality { get; init; } = 25;
 
     public string DataFolder { get; init; } = DefaultDataFolder;
 
@@ -41,12 +52,23 @@ public sealed record WorklapseSettings
     /// </summary>
     public bool UseGpuRendering { get; init; }
 
+    /// <summary>How new frames are stored: the format, and that format's quality setting.</summary>
+    public (FrameFormat Format, int Quality) FrameStorage() => Format switch
+    {
+        FrameFormat.Jpeg => (FrameFormat.Jpeg, JpegQuality),
+        FrameFormat.WebP => (FrameFormat.WebP, WebPQuality),
+        _ => (FrameFormat.Video, Quality),
+    };
+
     public WorklapseSettings Normalized() => this with
     {
+        Format = Enum.IsDefined(Format) ? Format : FrameFormat.Video, // a number in a hand-edited file
         SelectedMonitors = SelectedMonitors ?? [], // "null" in a hand-edited file
         IntervalSeconds = Math.Clamp(IntervalSeconds, 2, 300),
         IdleMinutes = Math.Clamp(IdleMinutes, 1, 120),
         Quality = Math.Clamp(Quality, 0, 63),
+        JpegQuality = Math.Clamp(JpegQuality, 1, 100),
+        WebPQuality = Math.Clamp(WebPQuality, 0, 100),
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,
     };
 }

@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 6;
+    private const int SchemaVersion = 7;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -227,6 +227,21 @@ public sealed class WorklapseDatabase : IDisposable
                 ALTER TABLE captures ADD COLUMN layout_id INTEGER REFERENCES layouts (id);
                 """);
             Execute("PRAGMA user_version = 6;");
+            transaction.Commit();
+        }
+
+        if (version < 7)
+        {
+            // Recording as images (JPEG or WebP) instead of video: each image is a segment with one frame, in its own
+            // file. Staged means the recorder may still show it again for a monitor that hasn't changed.
+            using var transaction = BeginTransaction();
+            Execute("""
+                ALTER TABLE segments ADD COLUMN format INTEGER NOT NULL DEFAULT 0;   -- 0 = AV1 video, 1 = JPEG, 2 = WebP
+
+                -- Finds a segment by its file. Images make a segment per changed capture, too many to search through.
+                CREATE INDEX ix_segments_path ON segments (path);
+                """);
+            Execute("PRAGMA user_version = 7;");
             transaction.Commit();
         }
     }

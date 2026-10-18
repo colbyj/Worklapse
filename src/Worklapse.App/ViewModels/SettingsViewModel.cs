@@ -3,6 +3,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
+using Worklapse.Core.Storage;
 
 namespace Worklapse.App.ViewModels;
 
@@ -59,8 +60,28 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _pauseWhenLocked;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsImages), nameof(QualityWarning))]
+    private bool _isVideo;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsImages))]
+    private bool _isJpeg;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsImages))]
+    private bool _isWebP;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QualityWarning), nameof(QualityText))]
     private double _quality;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(JpegQualityText))]
+    private double _jpegQuality;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WebPQualityText))]
+    private double _webPQuality;
 
     // An empty folder used to mean the default one silently; now it has to be chosen (Browse or Default).
     [ObservableProperty]
@@ -76,8 +97,11 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public void UseDefaultDataFolder() => DataFolder = WorklapseSettings.DefaultDataFolder;
 
-    public bool QualityWarning => Quality >= QualityWarningThreshold;
+    public bool IsImages => IsJpeg || IsWebP;
+    public bool QualityWarning => IsVideo && Quality >= QualityWarningThreshold;
     public string QualityText => ((int)Quality).ToString();
+    public string JpegQualityText => ((int)JpegQuality).ToString();
+    public string WebPQualityText => ((int)WebPQuality).ToString();
 
     // Settings the dialog doesn't show (set in the settings file) are kept as they are.
     public void RestoreDefaults() => Load(new WorklapseSettings { UseGpuRendering = _store.Current.UseGpuRendering });
@@ -103,7 +127,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         IntervalSeconds = (int)(IntervalSeconds ?? 10),
         IdleMinutes = (int)(IdleMinutes ?? 5),
         PauseWhenLocked = PauseWhenLocked,
+        Format = IsJpeg ? FrameFormat.Jpeg : IsWebP ? FrameFormat.WebP : FrameFormat.Video,
         Quality = (int)Quality,
+        JpegQuality = (int)JpegQuality,
+        WebPQuality = (int)WebPQuality,
         DataFolder = DataFolder.Trim(),
     };
 
@@ -122,7 +149,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         IntervalSeconds = settings.IntervalSeconds;
         IdleMinutes = settings.IdleMinutes;
         PauseWhenLocked = settings.PauseWhenLocked;
+        IsVideo = settings.Format == FrameFormat.Video;
+        IsJpeg = settings.Format == FrameFormat.Jpeg;
+        IsWebP = settings.Format == FrameFormat.WebP;
         Quality = settings.Quality;
+        JpegQuality = settings.JpegQuality;
+        WebPQuality = settings.WebPQuality;
         DataFolder = settings.DataFolder;
         _loading = false;
         // Defaults don't touch the Programs page (its marks are history, not settings); its changes still count.

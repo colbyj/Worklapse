@@ -18,20 +18,20 @@ public sealed unsafe class Av1Encoder : IDisposable
     public Av1Encoder(int width, int height, int quality, int cpuUsed = DefaultCpuUsed, int? threads = null,
         IReadOnlyDictionary<string, string>? options = null)
     {
-        Av1Native.EnsureCompatible();
+        WorklapseNative.EnsureCompatible();
         Width = width;
         Height = height;
-        var error = stackalloc byte[Av1Native.ErrorBufferLength];
+        var error = stackalloc byte[WorklapseNative.ErrorBufferLength];
         error[0] = 0;
-        _handle = Av1Native.EncoderCreate(width, height, quality, cpuUsed, threads ?? DefaultThreads, error);
+        _handle = WorklapseNative.EncoderCreate(width, height, quality, cpuUsed, threads ?? DefaultThreads, error);
         if (_handle == 0)
-            throw new InvalidOperationException($"Could not create the AV1 encoder ({width}×{height}): {Av1Native.Utf8(error)}");
+            throw new InvalidOperationException($"Could not create the AV1 encoder ({width}×{height}): {WorklapseNative.Utf8(error)}");
 
         foreach (var (name, value) in options ?? DefaultOptions)
         {
-            if (Av1Native.EncoderSetOption(_handle, name, value) != 0)
+            if (WorklapseNative.EncoderSetOption(_handle, name, value) != 0)
             {
-                var message = Av1Native.Utf8(Av1Native.EncoderError(_handle));
+                var message = WorklapseNative.Utf8(WorklapseNative.EncoderError(_handle));
                 Dispose();
                 throw new ArgumentException($"Invalid AV1 encoder option {name}={value}: {message}", nameof(options));
             }
@@ -58,9 +58,9 @@ public sealed unsafe class Av1Encoder : IDisposable
 
         fixed (byte* frame = i420)
         {
-            var size = Av1Native.EncoderEncodeI420(_handle, frame, ptsMs, quality ?? -1, out var data, out var isKey);
+            var size = WorklapseNative.EncoderEncodeI420(_handle, frame, ptsMs, quality ?? -1, out var data, out var isKey);
             if (size < 0)
-                throw new InvalidOperationException("AV1 encoding failed: " + Av1Native.Utf8(Av1Native.EncoderError(_handle)));
+                throw new InvalidOperationException("AV1 encoding failed: " + WorklapseNative.Utf8(WorklapseNative.EncoderError(_handle)));
             return new EncodedFrame(new ReadOnlySpan<byte>(data, size).ToArray(), isKey != 0);
         }
     }
@@ -69,7 +69,7 @@ public sealed unsafe class Av1Encoder : IDisposable
     {
         if (_handle != 0)
         {
-            Av1Native.EncoderDestroy(_handle);
+            WorklapseNative.EncoderDestroy(_handle);
             _handle = 0;
         }
     }

@@ -12,7 +12,7 @@ public sealed unsafe class Av1Decoder : IDisposable
 
     public Av1Decoder(int? threads = null)
     {
-        Av1Native.EnsureCompatible();
+        WorklapseNative.EnsureCompatible();
         _threads = threads ?? Av1Encoder.DefaultThreads;
         _handle = Create(_threads);
     }
@@ -29,8 +29,8 @@ public sealed unsafe class Av1Decoder : IDisposable
         ObjectDisposedException.ThrowIf(_handle == 0, this);
         fixed (byte* p = data)
         {
-            if (Av1Native.DecoderDecode(_handle, p, data.Length, out var width, out var height) != 0)
-                throw new InvalidDataException("AV1 decoding failed: " + Av1Native.Utf8(Av1Native.DecoderError(_handle)));
+            if (WorklapseNative.DecoderDecode(_handle, p, data.Length, out var width, out var height) != 0)
+                throw new InvalidDataException("AV1 decoding failed: " + WorklapseNative.Utf8(WorklapseNative.DecoderError(_handle)));
             Width = width;
             Height = height;
         }
@@ -44,8 +44,8 @@ public sealed unsafe class Av1Decoder : IDisposable
             throw new ArgumentException("The destination is smaller than the decoded frame.", nameof(destination));
         fixed (byte* p = destination)
         {
-            if (Av1Native.DecoderCopyBgra(_handle, p, stride) != 0)
-                throw new InvalidOperationException(Av1Native.Utf8(Av1Native.DecoderError(_handle)));
+            if (WorklapseNative.DecoderCopyBgra(_handle, p, stride) != 0)
+                throw new InvalidOperationException(WorklapseNative.Utf8(WorklapseNative.DecoderError(_handle)));
         }
     }
 
@@ -57,8 +57,8 @@ public sealed unsafe class Av1Decoder : IDisposable
             throw new ArgumentException("The destination is smaller than the decoded frame.", nameof(destination));
         fixed (byte* p = destination)
         {
-            if (Av1Native.DecoderCopyI420(_handle, p) != 0)
-                throw new InvalidOperationException(Av1Native.Utf8(Av1Native.DecoderError(_handle)));
+            if (WorklapseNative.DecoderCopyI420(_handle, p) != 0)
+                throw new InvalidOperationException(WorklapseNative.Utf8(WorklapseNative.DecoderError(_handle)));
         }
     }
 
@@ -74,18 +74,18 @@ public sealed unsafe class Av1Decoder : IDisposable
     {
         if (_handle != 0)
         {
-            Av1Native.DecoderDestroy(_handle);
+            WorklapseNative.DecoderDestroy(_handle);
             _handle = 0;
         }
     }
 
     private static nint Create(int threads)
     {
-        var error = stackalloc byte[Av1Native.ErrorBufferLength];
+        var error = stackalloc byte[WorklapseNative.ErrorBufferLength];
         error[0] = 0;
-        var handle = Av1Native.DecoderCreate(threads, error);
+        var handle = WorklapseNative.DecoderCreate(threads, error);
         if (handle == 0)
-            throw new InvalidOperationException("Could not create the AV1 decoder: " + Av1Native.Utf8(error));
+            throw new InvalidOperationException("Could not create the AV1 decoder: " + WorklapseNative.Utf8(error));
         return handle;
     }
 }

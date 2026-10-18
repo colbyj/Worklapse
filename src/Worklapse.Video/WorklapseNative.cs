@@ -2,13 +2,13 @@ using System.Runtime.InteropServices;
 
 namespace Worklapse.Video;
 
-/// <summary>Bindings for the C wrapper in native/av1/worklapse_av1.c.</summary>
-internal static unsafe partial class Av1Native
+/// <summary>Bindings for the native library in native/src (AV1 video, JPEG and WebP images).</summary>
+internal static unsafe partial class WorklapseNative
 {
-    private const string Library = "worklapse_av1";
+    private const string Library = "worklapse_native";
 
     /// <summary>The wrapper ABI these bindings were written for; checked once on first use.</summary>
-    public const int ExpectedAbiVersion = 3;
+    public const int ExpectedAbiVersion = 4;
 
     public const int ErrorBufferLength = 512;
 
@@ -54,6 +54,24 @@ internal static unsafe partial class Av1Native
     [LibraryImport(Library, EntryPoint = "wl_dec_destroy")]
     public static partial void DecoderDestroy(nint decoder);
 
+    [LibraryImport(Library, EntryPoint = "wl_jpeg_encode_i420")]
+    public static partial int JpegEncodeI420(byte* i420, int width, int height, int quality, out byte* data, byte* error);
+
+    [LibraryImport(Library, EntryPoint = "wl_webp_encode_i420")]
+    public static partial int WebPEncodeI420(byte* i420, int width, int height, int quality, out byte* data, byte* error);
+
+    [LibraryImport(Library, EntryPoint = "wl_image_free")]
+    public static partial void ImageFree(byte* data, int format);
+
+    [LibraryImport(Library, EntryPoint = "wl_image_info")]
+    public static partial int ImageInfo(byte* data, int size, out int width, out int height, byte* error);
+
+    [LibraryImport(Library, EntryPoint = "wl_image_decode_i420")]
+    public static partial int ImageDecodeI420(byte* data, int size, int width, int height, byte* i420, byte* error);
+
+    [LibraryImport(Library, EntryPoint = "wl_image_decode_bgra")]
+    public static partial int ImageDecodeBgra(byte* data, int size, int width, int height, byte* bgra, int stride, byte* error);
+
     private static int _checked;
 
     public static void EnsureCompatible()
@@ -63,7 +81,7 @@ internal static unsafe partial class Av1Native
         var version = AbiVersion();
         if (version != ExpectedAbiVersion)
             throw new InvalidOperationException(
-                $"worklapse_av1 has ABI version {version}, but this build expects {ExpectedAbiVersion}. Rebuild the native library.");
+                $"worklapse_native has ABI version {version}, but this build expects {ExpectedAbiVersion}. Rebuild the native library.");
         Volatile.Write(ref _checked, 1);
     }
 

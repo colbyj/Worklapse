@@ -93,9 +93,9 @@ public class VideoRoundTripTests
         var start = new DateTimeOffset(2026, 10, 15, 9, 0, 0, TimeSpan.FromHours(-6));
 
         var refs = new List<FrameRef>();
-        using (var sink = new StagedVideoSink(store, () => 30))
+        using (var sink = new FrameSink(store, () => (FrameFormat.Video, 30)))
         {
-            for (var i = 0; i < StagedVideoSink.FramesPerSegment + 3; i++)
+            for (var i = 0; i < FrameSink.FramesPerSegment + 3; i++)
                 refs.Add(TestRecording.Append(store, sink, monitor, monitorId, ToI420(TestImage(i)), start.AddSeconds(10 * i)).Frame);
 
             // The first segment filled up and is being encoded; the second is still staged.
@@ -111,7 +111,7 @@ public class VideoRoundTripTests
 
         // A full segment rolls over into a second one that starts with a key frame.
         Assert.Equal(2, refs.Select(r => r.SegmentId).Distinct().Count());
-        Assert.Equal(0, refs[StagedVideoSink.FramesPerSegment].FrameIndex);
+        Assert.Equal(0, refs[FrameSink.FramesPerSegment].FrameIndex);
 
         // Decode the last frame of the second segment from its key frame, using only the database index.
         var last = refs[^1];
@@ -151,14 +151,14 @@ public class VideoRoundTripTests
         var start = new DateTimeOffset(2026, 10, 15, 9, 0, 0, TimeSpan.Zero);
 
         // Like quitting (or crashing) mid-segment: the sink is disposed with a segment still open.
-        using (var sink = new StagedVideoSink(store, () => 30))
+        using (var sink = new FrameSink(store, () => (FrameFormat.Video, 30)))
         {
             for (var i = 0; i < 5; i++)
                 TestRecording.Append(store, sink, monitor, monitorId, ToI420(TestImage(i)), start.AddSeconds(10 * i));
         }
         Assert.Equal([(int)SegmentState.Staged], SegmentStates(db));
 
-        using (var sink = new StagedVideoSink(store, () => 30))
+        using (var sink = new FrameSink(store, () => (FrameFormat.Video, 30)))
             Assert.True(sink.Encoder.WaitUntilIdle(TimeSpan.FromMinutes(1)));
 
         Assert.Equal([(int)SegmentState.Encoded], SegmentStates(db));

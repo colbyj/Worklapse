@@ -9,7 +9,7 @@ TestResults/
 # Native dependencies built locally (see native/README.md)
 native/vcpkg_installed/
 native/win-x64/
-native/av1/build/
+native/src/build/
 
 # Reference material that must not be committed
 *.FDB
