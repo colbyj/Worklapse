@@ -142,9 +142,10 @@ public partial class DayReviewWindow : Window
     {
         var captures = _viewModel.Captures;
         var index = _viewModel.Current;
+        // Only the monitors attached then: those of other times can be in the same place.
         var monitors = _viewModel.SelectedMonitor?.MonitorId is { } only
-            ? _viewModel.Day.Monitors.Where(m => m.Id == only).ToList()
-            : _viewModel.Day.Monitors.ToList();
+            ? _viewModel.CurrentMonitors.Where(m => m.Id == only).ToList()
+            : _viewModel.CurrentMonitors;
         if (index < 0 || index >= captures.Count || monitors.Count == 0)
         {
             _plan = null;
@@ -228,6 +229,14 @@ public partial class DayReviewWindow : Window
         var overlay = error is not null ? "Couldn't read this frame: " + error.Message : _plan.Overlay;
         Frames.SetContent(tiles, overlay);
         UpdateViewText();
+
+        // Each bitmap is a full-size copy of a monitor; drop those of monitors not shown now (unplugged, or
+        // another monitor chosen).
+        foreach (var id in _bitmaps.Keys.Where(id => _plan.Tiles.All(t => t.Monitor.Id != id)).ToList())
+        {
+            _bitmaps.Remove(id, out var unused);
+            unused!.Dispose();
+        }
     }
 
     private void CopyToBitmap(long monitorId, DecodedFrame frame)

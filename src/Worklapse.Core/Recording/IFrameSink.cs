@@ -17,6 +17,12 @@ public interface IFrameSink : IDisposable
     /// <summary>Called after the transaction that contained the latest <see cref="Append"/> calls commits.</summary>
     void Committed();
 
+    /// <summary>
+    /// Finishes the monitor's open segment, if any (it was unplugged). Like a full segment closed by
+    /// <see cref="Append"/>, it goes to the encoder at the next <see cref="Committed"/>.
+    /// </summary>
+    void Close(long monitorId);
+
     /// <summary>Finishes all open segments so the next frame of each monitor starts a new one.</summary>
     void CloseAll();
 }

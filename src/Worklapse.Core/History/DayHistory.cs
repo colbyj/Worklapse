@@ -10,6 +10,10 @@ public readonly record struct MonitorFrame(long MonitorId, FrameRef Frame);
 /// <summary>One capture tick as recorded, with how its app and site are classified now.</summary>
 /// <param name="Site">The website a browser showed (domain only); null for other apps and older captures.</param>
 /// <param name="SiteProductive">The site's classification; null when there is no site.</param>
+/// <param name="MonitorIds">
+/// The monitors attached at the time, captured or not (ascending ids, see <see cref="DayHistory.Monitors"/>): as
+/// recorded, or for captures recorded before that, as <see cref="MonitorLayouts"/> works it out.
+/// </param>
 public sealed record CaptureRecord(
     long Id,
     DateTimeOffset Time,
@@ -21,7 +25,8 @@ public sealed record CaptureRecord(
     bool AppProductive,
     bool? SiteProductive,
     bool PendingDelete,
-    IReadOnlyList<MonitorFrame> Frames)
+    IReadOnlyList<MonitorFrame> Frames,
+    IReadOnlyList<long> MonitorIds)
 {
     public bool IsActive => Kind == CaptureKind.Active;
 
@@ -45,6 +50,10 @@ public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 public sealed record ProgramUsage(ProgramKey Program, bool Productive, TimeSpan Recorded);
 
 /// <summary>Everything recorded on one local calendar day, in time order.</summary>
+/// <param name="Monitors">
+/// Every monitor attached at some point that day. Not all at once: plugging monitors in or out records them as
+/// new ones, which can occupy the same place; each capture's <see cref="CaptureRecord.MonitorIds"/> says which.
+/// </param>
 public sealed record DayHistory(DateOnly Day, IReadOnlyList<CaptureRecord> Captures, IReadOnlyList<MonitorRecord> Monitors)
 {
     public bool IsEmpty => Captures.Count == 0;

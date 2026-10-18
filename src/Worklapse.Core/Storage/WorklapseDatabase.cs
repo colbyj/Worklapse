@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 5;
+    private const int SchemaVersion = 6;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -210,6 +210,23 @@ public sealed class WorklapseDatabase : IDisposable
                 CREATE INDEX ix_captures_site ON captures (site_id) WHERE site_id IS NOT NULL;
                 """);
             Execute("PRAGMA user_version = 5;");
+            transaction.Commit();
+        }
+
+        if (version < 6)
+        {
+            // Which monitors were attached at each capture, captured or not, so Day review shows the arrangement
+            // as it was. Plugging monitors in or out adds monitors rows, and without this every monitor of the day
+            // was drawn at once, on top of each other. Older captures have none (Day review works it out).
+            using var transaction = BeginTransaction();
+            Execute("""
+                CREATE TABLE layouts (
+                    id        INTEGER PRIMARY KEY,
+                    monitors  TEXT NOT NULL UNIQUE      -- monitor ids, ascending, comma-separated
+                );
+                ALTER TABLE captures ADD COLUMN layout_id INTEGER REFERENCES layouts (id);
+                """);
+            Execute("PRAGMA user_version = 6;");
             transaction.Commit();
         }
     }

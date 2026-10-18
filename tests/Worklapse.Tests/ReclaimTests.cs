@@ -310,6 +310,7 @@ public class ReclaimTests
         {
             // Schema 3, as left by deletes made before space was reclaimed.
             db.Execute("""
+                ALTER TABLE captures DROP COLUMN layout_id; DROP TABLE layouts;
                 DROP INDEX ix_captures_site; ALTER TABLE captures DROP COLUMN site_id; DROP TABLE sites;
                 DROP TABLE reclaim_queue; DROP TABLE dead_segment_files; DROP INDEX ix_frames_segment; DROP INDEX ix_captures_app;
                 PRAGMA user_version = 3;
@@ -335,7 +336,7 @@ public class ReclaimTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using var version = db.Command("PRAGMA user_version;");
-            Assert.Equal(5L, version.ExecuteScalar());
+            Assert.Equal(6L, version.ExecuteScalar());
             using var queued = db.Command("SELECT group_concat(segment_id) FROM reclaim_queue;");
             Assert.Equal(partlyDeleted.ToString(), queued.ExecuteScalar());
         }
@@ -596,12 +597,13 @@ public class ReclaimTests
 
         private sealed class FakeScreen : IScreenSource
         {
+            private ulong _captures; // every capture counts as changed
             public byte[] Next { get; set; } = Image(0);
             public IReadOnlyList<MonitorInfo> GetMonitors() => [Monitor];
 
             // A copy: the recorder may change the buffer in place.
             public ScreenCapture? Capture(MonitorInfo monitor) =>
-                new() { Monitor = monitor, Width = Width, Height = Height, Frame = Next.ToArray(), Changed = true };
+                new() { Monitor = monitor, Width = Width, Height = Height, Frame = Next.ToArray(), Hash = ++_captures };
 
             public void Dispose() { }
         }

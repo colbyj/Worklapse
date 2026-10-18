@@ -23,7 +23,9 @@ public enum SegmentState
 /// <summary>Writes captures, segments and frame indexes. Used only from the recorder thread.</summary>
 public sealed class RecordingStore(WorklapseDatabase db)
 {
+    // Monitors and layouts are never deleted, so their ids can be remembered (unlike apps and sites).
     private readonly Dictionary<MonitorInfo, long> _monitors = [];
+    private readonly Dictionary<string, long> _layouts = [];
 
     public WorklapseDatabase Database => db;
 
@@ -85,11 +87,28 @@ public sealed class RecordingStore(WorklapseDatabase db)
         return _monitors[monitor] = (long)upsert.ExecuteScalar()!;
     }
 
-    public long InsertCapture(DateTimeOffset timestamp, CaptureKind kind, long? appId, string? title, PixelRect? window, long? siteId = null)
+    /// <summary>The id of the layout made of these monitors (attached at the same time), adding it if new.</summary>
+    public long GetOrAddLayout(IEnumerable<long> monitorIds)
+    {
+        var key = string.Join(",", monitorIds.Order());
+        if (_layouts.TryGetValue(key, out var id))
+            return id;
+
+        using var upsert = db.Command("""
+            INSERT INTO layouts (monitors) VALUES ($monitors)
+            ON CONFLICT (monitors) DO UPDATE SET monitors = monitors
+            RETURNING id;
+            """);
+        upsert.Parameters.AddWithValue("$monitors", key);
+        return _layouts[key] = (long)upsert.ExecuteScalar()!;
+    }
+
+    public long InsertCapture(DateTimeOffset timestamp, CaptureKind kind, long? appId, string? title, PixelRect? window, long? siteId = null,
+        long? layoutId = null)
     {
         using var insert = db.Command("""
-            INSERT INTO captures (ts_ms, utc_offset_min, kind, app_id, window_title, window_x, window_y, window_width, window_height, site_id)
-            VALUES ($ts, $offset, $kind, $app, $title, $wx, $wy, $ww, $wh, $site)
+            INSERT INTO captures (ts_ms, utc_offset_min, kind, app_id, window_title, window_x, window_y, window_width, window_height, site_id, layout_id)
+            VALUES ($ts, $offset, $kind, $app, $title, $wx, $wy, $ww, $wh, $site, $layout)
             RETURNING id;
             """);
         insert.Parameters.AddWithValue("$ts", timestamp.ToUnixTimeMilliseconds());
@@ -97,6 +116,7 @@ public sealed class RecordingStore(WorklapseDatabase db)
         insert.Parameters.AddWithValue("$kind", (int)kind);
         insert.Parameters.AddWithValue("$app", (object?)appId ?? DBNull.Value);
         insert.Parameters.AddWithValue("$site", (object?)siteId ?? DBNull.Value);
+        insert.Parameters.AddWithValue("$layout", (object?)layoutId ?? DBNull.Value);
         insert.Parameters.AddWithValue("$title", (object?)title ?? DBNull.Value);
         insert.Parameters.AddWithValue("$wx", (object?)window?.X ?? DBNull.Value);
         insert.Parameters.AddWithValue("$wy", (object?)window?.Y ?? DBNull.Value);

@@ -15,7 +15,10 @@ public sealed record WorklapseSettings
 
     public CaptureMode CaptureMode { get; init; } = CaptureMode.AllMonitors;
 
-    /// <summary>Device names of the monitors captured in <see cref="CaptureMode.SelectedMonitors"/> mode.</summary>
+    /// <summary>
+    /// The monitors captured in <see cref="CaptureMode.SelectedMonitors"/> mode, by
+    /// <see cref="Platform.MonitorInfo.StableId"/> (device names change when monitors are plugged in or out).
+    /// </summary>
     public IReadOnlyList<string> SelectedMonitors { get; init; } = [];
 
     public int IntervalSeconds { get; init; } = 10;

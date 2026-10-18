@@ -32,7 +32,9 @@ public sealed class Recorder : IAsyncDisposable
     private readonly Func<RecordingStore, IFrameSink> _createSink;
     private readonly TimeProvider _time;
     private readonly CancellationTokenSource _stop = new();
-    private readonly Dictionary<long, (FrameRef Frame, PixelRect? Mask)> _lastFrames = [];
+    // Per monitor, the frame an unchanged capture can reuse: always one in its open segment.
+    private readonly Dictionary<long, (FrameRef Frame, PixelRect? Mask, ulong Hash)> _lastFrames = [];
+    private HashSet<long> _attached = [];
 
     private WorklapseDatabase? _db;
     private RecordingStore? _store;
@@ -158,8 +160,10 @@ public sealed class Recorder : IAsyncDisposable
                 MarkIdleSince(store, now - idleFor);
                 _wasIdle = true;
             }
-            store.InsertCapture(now, CaptureKind.Idle, null, null, null);
+            var idleLayout = RecordLayout(store, _platform.Screen.GetMonitors());
+            store.InsertCapture(now, CaptureKind.Idle, null, null, null, layoutId: idleLayout);
             transaction.Commit();
+            _sink!.Committed();
             SetStatus(Status with { State = RecorderState.Idle, Error = null });
             return;
         }
@@ -172,9 +176,10 @@ public sealed class Recorder : IAsyncDisposable
 
         using (var transaction = store.BeginTransaction())
         {
+            var layoutId = RecordLayout(store, monitors);
             long? appId = foreground is null ? null : store.GetOrAddApp(foreground.ProcessName, foreground.ProcessPath);
             long? siteId = foreground?.Site is { } site ? store.GetOrAddSite(site) : null;
-            var captureId = store.InsertCapture(now, CaptureKind.Active, appId, foreground?.Title, foreground?.Bounds, siteId);
+            var captureId = store.InsertCapture(now, CaptureKind.Active, appId, foreground?.Title, foreground?.Bounds, siteId, layoutId);
 
             foreach (var monitor in targets)
             {
@@ -188,7 +193,7 @@ public sealed class Recorder : IAsyncDisposable
                     : null;
 
                 FrameRef frame;
-                if (!capture.Changed && _lastFrames.TryGetValue(monitorId, out var last) && last.Mask == mask)
+                if (_lastFrames.TryGetValue(monitorId, out var last) && last.Hash == capture.Hash && last.Mask == mask)
                 {
                     frame = last.Frame;
                 }
@@ -198,7 +203,7 @@ public sealed class Recorder : IAsyncDisposable
                     if (mask is { } keep)
                         I420.BlackOutsideOf(capture.Frame.Span, capture.Width, capture.Height, keep);
                     frame = _sink!.Append(monitorId, capture, now);
-                    _lastFrames[monitorId] = (frame, mask);
+                    _lastFrames[monitorId] = (frame, mask, capture.Hash);
                 }
 
                 store.InsertFrame(captureId, monitorId, frame);
@@ -224,7 +229,7 @@ public sealed class Recorder : IAsyncDisposable
                 return monitors.Where(m => m.IsPrimary).Take(1).ToList();
 
             case CaptureMode.SelectedMonitors:
-                return monitors.Where(m => settings.SelectedMonitors.Contains(m.DeviceName, StringComparer.OrdinalIgnoreCase)).ToList();
+                return monitors.Where(m => settings.SelectedMonitors.Contains(m.StableId, StringComparer.OrdinalIgnoreCase)).ToList();
 
             case CaptureMode.ActiveApplication:
                 if (foreground is null)
@@ -252,6 +257,23 @@ public sealed class Recorder : IAsyncDisposable
         update.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Records which monitors are attached (for Day review), and finishes the open segments of those that went
+    /// away, so they're encoded now rather than whenever recording next pauses. Call it inside the capture's
+    /// transaction, followed by <see cref="IFrameSink.Committed"/>.
+    /// </summary>
+    private long RecordLayout(RecordingStore store, IReadOnlyList<MonitorInfo> monitors)
+    {
+        var attached = monitors.Select(store.GetOrAddMonitor).ToHashSet();
+        foreach (var gone in _attached.Where(id => !attached.Contains(id)))
+        {
+            _sink!.Close(gone);
+            _lastFrames.Remove(gone);
+        }
+        _attached = attached;
+        return store.GetOrAddLayout(attached);
+    }
+
     private RecordingStore EnsureStorage(string dataFolder)
     {
         if (_db is not null && !string.Equals(_db.DataFolder, dataFolder, StringComparison.OrdinalIgnoreCase))
@@ -275,6 +297,7 @@ public sealed class Recorder : IAsyncDisposable
     private void CloseStorage()
     {
         _lastFrames.Clear();
+        _attached = [];
         _sink?.Dispose();
         _db?.Dispose();
         _sink = null;

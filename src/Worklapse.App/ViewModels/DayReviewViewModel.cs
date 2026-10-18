@@ -10,8 +10,10 @@ using Worklapse.Core.Storage;
 
 namespace Worklapse.App.ViewModels;
 
-public sealed record MonitorChoice(long? MonitorId, string Label)
+/// <param name="Monitor">Null for all monitors.</param>
+public sealed record MonitorChoice(MonitorRecord? Monitor, string Label)
 {
+    public long? MonitorId => Monitor?.Id;
     public override string ToString() => Label;
 }
 
@@ -54,6 +56,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _playTimer;
     private IReadOnlyList<DateOnly> _days = [];
     private int? _anchor;
+    private Dictionary<long, MonitorRecord> _monitorsById = [];
+    private IReadOnlyList<long>? _choicesFor;   // the monitors MonitorChoices lists
+    private MonitorRecord? _chosenMonitor;      // picked by the user (null: all); kept while it isn't attached
+    private bool _updatingChoices;
 
     /// <param name="capturesDeleted">Called after captures are deleted permanently, to remove their video from disk.</param>
     public DayReviewViewModel(HistoryStore history, TimeSpan captureInterval, Action<DeleteResult>? capturesDeleted = null)
@@ -104,6 +110,11 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _summaryRange = "";
     [ObservableProperty] private string _markedButtonText = "Marked";
     [ObservableProperty] private string _confirmMessage = "";
+
+    /// <summary>The monitors attached at the current capture, by id.</summary>
+    public IReadOnlyList<MonitorRecord> CurrentMonitors => Current >= 0 && Current < Captures.Count
+        ? Captures[Current].MonitorIds.Select(id => _monitorsById[id]).ToList()
+        : [];
 
     public bool HasSelection => SelectionStart is not null && SelectionEnd is not null;
     public bool HasMarked => MarkedRanges.Count > 0;
@@ -362,7 +373,38 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     // --- monitor and speed choices ------------------------------------------------------------
 
-    partial void OnSelectedMonitorChanged(MonitorChoice? value) => FrameChanged?.Invoke();
+    partial void OnSelectedMonitorChanged(MonitorChoice? value)
+    {
+        if (_updatingChoices)
+            return;
+        _chosenMonitor = value?.Monitor;
+        FrameChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Lists the monitors attached at the current capture; the day can have more (plugging monitors in or out
+    /// records them as new ones, often in the same place). Selects the monitor the user picked, else the one in
+    /// its place, else all, and goes back to the picked one when it's attached again.
+    /// </summary>
+    private void UpdateMonitorChoices()
+    {
+        var attached = Current >= 0 && Current < Captures.Count ? Captures[Current].MonitorIds : [];
+        if (_choicesFor is not null && attached.SequenceEqual(_choicesFor))
+            return;
+        _choicesFor = attached;
+
+        _updatingChoices = true;
+        MonitorChoices.Clear();
+        MonitorChoices.Add(new MonitorChoice(null, "All monitors"));
+        var number = 1;
+        foreach (var monitor in attached.Select(id => _monitorsById[id]).OrderByDescending(m => m.IsPrimary).ThenBy(m => m.Bounds.X))
+            MonitorChoices.Add(new MonitorChoice(monitor, $"{number++} — {monitor.Bounds.Width}×{monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}"));
+        SelectedMonitor = _chosenMonitor is not { } chosen ? MonitorChoices[0]
+            : MonitorChoices.FirstOrDefault(c => c.MonitorId == chosen.Id)
+              ?? MonitorChoices.FirstOrDefault(c => c.Monitor?.Bounds == chosen.Bounds)
+              ?? MonitorChoices[0];
+        _updatingChoices = false;
+    }
 
     // --- loading ------------------------------------------------------------------------------
 
@@ -370,19 +412,12 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     private void LoadDay(DateOnly day)
     {
-        Day = _history.LoadDay(day);
+        SetDay(_history.LoadDay(day));
         _anchor = null;
         SelectionStart = SelectionEnd = null;
         Current = -1;
         RebuildDerived();
-
-        var previousMonitor = SelectedMonitor?.MonitorId;
-        MonitorChoices.Clear();
-        MonitorChoices.Add(new MonitorChoice(null, "All monitors"));
-        var number = 1;
-        foreach (var monitor in Day.Monitors.OrderByDescending(m => m.IsPrimary).ThenBy(m => m.Bounds.X))
-            MonitorChoices.Add(new MonitorChoice(monitor.Id, $"{number++} — {monitor.Bounds.Width}×{monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}"));
-        SelectedMonitor = MonitorChoices.FirstOrDefault(m => m.MonitorId == previousMonitor) ?? MonitorChoices[0];
+        UpdateMonitorChoices();
 
         DayText = Day.Day.ToString("ddd d MMM yyyy", CultureInfo.CurrentCulture);
         Title = $"{Day.Day.ToString("D", CultureInfo.CurrentCulture)} — Day review — Worklapse";
@@ -400,7 +435,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private void Reload(long? keepCaptureId)
     {
         var selected = (SelectionStart, SelectionEnd) is (int s, int e) ? (Captures[s].Id, Captures[e].Id) : ((long, long)?)null;
-        Day = _history.LoadDay(Day.Day);
+        SetDay(_history.LoadDay(Day.Day));
 
         // The selection and playhead are indexes into the old list, which a delete makes longer than the new
         // one: map them to the reloaded day (by capture) before anything is rebuilt from them.
@@ -418,9 +453,18 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         {
             // Nothing left to move to (everything deleted): clear the frame shown.
             UpdateFrameText();
+            UpdateMonitorChoices();
             FrameChanged?.Invoke();
         }
         TimelineChanged?.Invoke();
+    }
+
+    private void SetDay(DayHistory day)
+    {
+        Day = day;
+        _monitorsById = day.Monitors.ToDictionary(m => m.Id);
+        // The records are new even when the same monitors are attached.
+        _choicesFor = null;
     }
 
     private void RebuildDerived()
@@ -482,6 +526,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             return;
         Current = index;
         UpdateFrameText();
+        UpdateMonitorChoices();
         TimelineChanged?.Invoke();
         FrameChanged?.Invoke();
     }

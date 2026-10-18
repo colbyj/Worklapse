@@ -13,7 +13,7 @@ internal static class TestRecording
     {
         using var transaction = store.BeginTransaction();
         var captureId = store.InsertCapture(time, CaptureKind.Active, null, null, null);
-        var capture = new ScreenCapture { Monitor = monitor, Width = monitor.Bounds.Width, Height = monitor.Bounds.Height, Frame = i420, Changed = true };
+        var capture = new ScreenCapture { Monitor = monitor, Width = monitor.Bounds.Width, Height = monitor.Bounds.Height, Frame = i420, Hash = 0 };
         var frame = sink.Append(monitorId, capture, time);
         store.InsertFrame(captureId, monitorId, frame);
         transaction.Commit();

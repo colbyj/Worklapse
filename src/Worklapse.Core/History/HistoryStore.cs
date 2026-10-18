@@ -58,11 +58,30 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
             }
         }
 
+        // Layouts are shared: captures with the same monitors attached get the same list.
+        var layouts = new Dictionary<long, IReadOnlyList<long>>();
+        using (var command = db.Command("""
+            SELECT id, monitors FROM layouts
+            WHERE id IN (SELECT layout_id FROM captures WHERE ts_ms >= $start AND ts_ms < $end);
+            """))
+        {
+            command.Parameters.AddWithValue("$start", startMs);
+            command.Parameters.AddWithValue("$end", endMs);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var ids = reader.GetString(1).Split(',', StringSplitOptions.RemoveEmptyEntries).Select(long.Parse).ToArray();
+                layouts[reader.GetInt64(0)] = ids;
+                monitorIds.UnionWith(ids);
+            }
+        }
+
         var captures = new List<CaptureRecord>();
+        var unrecorded = new List<int>(); // captures from before layouts were recorded
         using (var command = db.Command("""
             SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, c.window_title,
                    c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0), c.pending_delete,
-                   s.domain, s.productive
+                   s.domain, s.productive, c.layout_id
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
@@ -77,6 +96,9 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                 var time = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(2)));
                 PixelRect? window = reader.IsDBNull(6) ? null
                     : new PixelRect(reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9));
+                IReadOnlyList<long>? layout = reader.IsDBNull(14) ? null : layouts[reader.GetInt64(14)];
+                if (layout is null)
+                    unrecorded.Add(captures.Count);
                 captures.Add(new CaptureRecord(
                     id,
                     time,
@@ -88,7 +110,8 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                     AppProductive: reader.GetInt64(10) != 0,
                     SiteProductive: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
                     PendingDelete: reader.GetInt64(11) != 0,
-                    frames.TryGetValue(id, out var list) ? list : []));
+                    frames.TryGetValue(id, out var list) ? list : [],
+                    MonitorIds: layout ?? []));
             }
         }
 
@@ -100,6 +123,13 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
             while (reader.Read())
                 monitors.Add(new MonitorRecord(reader.GetInt64(0), reader.GetString(1),
                     new PixelRect(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5)), reader.GetInt64(6) != 0));
+        }
+
+        if (unrecorded.Count > 0)
+        {
+            var guessed = MonitorLayouts.Guess(captures, monitors.ToDictionary(m => m.Id));
+            foreach (var i in unrecorded)
+                captures[i] = captures[i] with { MonitorIds = guessed[i] };
         }
 
         return new DayHistory(day, captures, monitors);

@@ -30,6 +30,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
+| Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
 | Shared history across OSes | Wanted eventually (likely on D:, BitLocker-unlocked under Linux, with Fast Startup off). Not started. | — |
 
@@ -85,7 +86,7 @@ src/
   Worklapse.Video/            AV1 interop, IVF files, staging files, batch encoder, frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
   Worklapse.App/              Avalonia app: tray icon, status window, settings dialog, Day review
-tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites)
+tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts)
 docs/PROJECT.md               this file
 docs/HANDOFF.md               briefs for the next tasks, for a new session
 ```
@@ -95,14 +96,39 @@ docs/HANDOFF.md               briefs for the next tasks, for a new session
 1. `Recorder` (Core) ticks every interval on a background task. It skips the tick when paused or locked,
    records an idle capture when there's been no input for the idle limit, and otherwise:
 2. asks `IForegroundWindowProbe` for the focused window (app, title, bounds, and for a browser the site) and
-   `IScreenSource` for each monitor chosen by the capture mode;
-3. reuses the previous frame for a monitor whose pixels didn't change (hash), otherwise appends the
+   `IScreenSource` for the monitors attached, records them as the capture's layout (idle captures too), and
+   captures each monitor chosen by the capture mode;
+3. reuses a monitor's previous frame when the new capture's pixel hash equals that frame's (the recorder keeps the
+   hash with the frame; comparing per device name went wrong after a replug), otherwise appends the
    capture to `StagedVideoSink` (in active-application mode, everything outside the window is blacked out first);
-4. writes the capture and frame references in one SQLite transaction.
+4. writes the capture, its layout and frame references in one SQLite transaction.
 5. When a segment has 90 frames (or recording pauses), `BatchEncoder` encodes it to AV1 on its own thread,
    rewrites the frame offsets to point into the `.ivf` file, marks the segment encoded and deletes the staging file.
    Frames whose captures were deleted while it was staged are left out (a frame no `frames` row refers to by then
    counts as deleted, so every appended frame must get its `frames` row in the same transaction).
+
+### How plugging monitors in and out is handled
+
+A `monitors` row is a monitor *as arranged*: device name, position, size and primary flag. Windows hands the
+`\\.\DISPLAYn` names out again and moves monitors when displays come and go (on 2026-10-17: the laptop panel
+alone as primary, then the ultrawide left of it, then the final arrangement, within 20 s), so a replug adds rows,
+several of which can occupy the same place. Hence:
+
+- every capture stores its layout (`layouts`: the ids of the monitors attached, captured or not);
+- when a monitor leaves the layout, the recorder closes its open segment (`IFrameSink.Close`), so it's encoded
+  then rather than at the next pause, and forgets its last frame (frames are only reused within an open segment);
+- Day review shows the monitors of the current capture's layout. Its Monitor list is rebuilt when the layout
+  changes; a monitor the user picked stays picked while attached, else the one in its place, else all monitors,
+  and comes back when it's attached again;
+- captures recorded before schema 6 get a layout from `MonitorLayouts.Guess`: a capture with frames of several
+  monitors had exactly those; one with a single frame (active application, primary monitor) had that monitor plus
+  the day's other monitors with frames, nearest in time first, skipping any that can't have been attached at the
+  same time as one already in (overlapping it, sharing its device name, or a second primary); an idle capture takes
+  the nearest earlier layout. On the 2026-10-17 recording this gives the real arrangement except during the 20 s of
+  the replug and, until 13:39, without the lower-left monitor (its old device name was then the panel's);
+- *Selected monitors* match `MonitorInfo.StableId` (Windows: `EnumDisplayDevices` with
+  `EDD_GET_DEVICE_INTERFACE_NAME`, e.g. `\\?\DISPLAY#GSM77BE#5&3a2dcb36&0&UID4624#{…}`: the EDID model and the
+  connector; ~0.3 ms per monitor per tick). The Settings dialog keeps selected monitors that aren't attached.
 
 ### How sites are read (Windows)
 
@@ -159,7 +185,7 @@ open, retried every minute) is in `BatchEncoder.DeletedContentLeft` and shown in
 
 ### How playback works
 
-`HistoryStore` loads a day (captures, frame references, monitors). `FrameProvider` decodes any frame,
+`HistoryStore` loads a day (captures with their layouts, frame references, monitors). `FrameProvider` decodes any frame,
 whether its segment is staged or encoded; it keeps one single-threaded decoder per monitor positioned in
 that monitor's current segment, so stepping forward decodes one frame. Stepping back restarts from the
 segment's key frame; on the way it keeps the two frames before the target, so the next steps back are free.
@@ -176,12 +202,13 @@ Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse
 `%APPDATA%\Worklapse\settings.json` (Linux: `~/.config/Worklapse`). The data folder holds
 `worklapse.db` and `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open).
 
-SQLite schema (version 5, migrations in `WorklapseDatabase`):
+SQLite schema (version 6, migrations in `WorklapseDatabase`):
 
 - `apps` (exe name, path, `productive` flag; classified by exe name; deleted with their last capture unless productive)
 - `sites` (domain, `productive` flag; deleted with their last capture unless productive)
-- `monitors` (device name and geometry)
-- `captures` (UTC ms + local offset, active/idle, app, site, window title and bounds, `pending_delete`)
+- `monitors` (device name and geometry; a monitor as arranged, so replugging adds rows, see above)
+- `layouts` (the monitor ids attached at the same time, ascending, comma-separated; never deleted)
+- `captures` (UTC ms + local offset, active/idle, app, site, layout (null before schema 6), window title and bounds, `pending_delete`)
 - `segments` (monitor, relative path, size, quantizer, `state` 0 = staged / 1 = encoded)
 - `segment_frames` (segment, frame index, file offset and length, key flag; indexes can have gaps after deletes)
 - `frames` (capture × monitor → segment frame; unchanged monitors point at an earlier frame; indexed by segment frame)
@@ -245,8 +272,14 @@ Working on Windows:
   file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
   to `settings.json.broken-<date>`.
 
-Tested less or not at all: active-application mode over a longer session, selected monitors, plugging
-displays in and out, rotated displays (GDI should handle them, untested), Store-app window detection,
+- Plugging monitors in and out (2026-10-17, not yet reviewed by the developer): layouts recorded per capture,
+  Day review and its Monitor list follow them, older captures' layouts worked out; selected monitors by stable
+  identity. Checked with tests (recorder with a fake desktop, the guess) and in Day review on a copy of the
+  2026-10-17 recording (screenshots at 10:51, 11:30, 14:00 and a capture recorded with the new build; Monitor
+  list; picking a monitor across the replug).
+
+Tested less or not at all: active-application mode over a longer session, selected monitors (only the matching,
+by tests; not the Settings dialog), an actual replug with the new build, rotated displays (GDI should handle them, untested), Store-app window detection,
 drag selection and keyboard stepping by a person (only toolbar buttons were exercised automatically), the
 Day review right-click menu (built and compiled, not clicked: it needs a real right-click), sites in Chrome and
 Edge as the foreground app of a real recording (read correctly from test windows, which couldn't be brought to
@@ -267,6 +300,10 @@ Known gaps and caveats:
   them); a frame kept right after a deleted range can carry small stale fragments of the deleted screens (the
   small-text effect in Decisions); and a monitor that still shows the same picture in a kept capture keeps
   its frame, since that capture shows it.
+- Monitors: for captures recorded before schema 6, the worked-out layout can keep a monitor that was unplugged
+  without another taking its place (shown as "Not recorded", or its last picture while idle), and is rough during
+  a replug itself. Device names in a `settings.json` written before stable ids (`\\.\DISPLAY3`) no longer match
+  any monitor; choose the monitors again. Stable ids change if a monitor moves to another port or GPU.
 - Small text can lag behind in the video (see Decisions).
 - Avalonia and .NET are the bulk of the remaining footprint while recording (~88 MB in all with software
   rendering, measured shortly after start); see the recorder/UI split below.

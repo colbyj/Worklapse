@@ -34,6 +34,24 @@ internal static partial class NativeMethods
         public string DeviceName;
     }
 
+    public const uint EddGetDeviceInterfaceName = 1;
+    public const int DisplayDeviceActive = 1;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DisplayDevice
+    {
+        public int Size;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string DeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string DeviceString;
+        public int StateFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string DeviceId;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string DeviceKey;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct BitmapInfoHeader
     {
@@ -61,6 +79,10 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetMonitorInfo(nint monitor, ref MonitorInfoEx info);
+
+    [DllImport("user32.dll", EntryPoint = "EnumDisplayDevicesW", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumDisplayDevices(string device, uint index, ref DisplayDevice info, uint flags);
 
     [LibraryImport("user32.dll")]
     public static partial nint GetDC(nint hwnd);

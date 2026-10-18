@@ -8,7 +8,7 @@ namespace Worklapse.App.ViewModels;
 
 public sealed partial class MonitorOption : ObservableObject
 {
-    public required string DeviceName { get; init; }
+    public required string StableId { get; init; }
     public required string Label { get; init; }
     [ObservableProperty] private bool _isChecked;
 }
@@ -20,6 +20,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private readonly SettingsStore _store;
     private bool _loading;
+    private IReadOnlyList<string> _unpluggedSelected = []; // selected monitors not attached now: kept as they are
 
     public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors)
     {
@@ -29,7 +30,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             var option = new MonitorOption
             {
-                DeviceName = monitor.DeviceName,
+                StableId = monitor.StableId,
                 Label = $"{number++} — {monitor.Bounds.Width} × {monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}",
             };
             option.PropertyChanged += (_, _) => MarkDirty();
@@ -98,7 +99,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             : IsPrimaryMonitor ? CaptureMode.PrimaryMonitor
             : IsSelectedMonitors ? CaptureMode.SelectedMonitors
             : CaptureMode.AllMonitors,
-        SelectedMonitors = Monitors.Where(m => m.IsChecked).Select(m => m.DeviceName).ToList(),
+        SelectedMonitors = [.. Monitors.Where(m => m.IsChecked).Select(m => m.StableId), .. _unpluggedSelected],
         IntervalSeconds = (int)(IntervalSeconds ?? 10),
         IdleMinutes = (int)(IdleMinutes ?? 5),
         PauseWhenLocked = PauseWhenLocked,
@@ -114,7 +115,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         IsSelectedMonitors = settings.CaptureMode == CaptureMode.SelectedMonitors;
         IsAllMonitors = settings.CaptureMode == CaptureMode.AllMonitors;
         foreach (var monitor in Monitors)
-            monitor.IsChecked = settings.SelectedMonitors.Contains(monitor.DeviceName, StringComparer.OrdinalIgnoreCase);
+            monitor.IsChecked = settings.SelectedMonitors.Contains(monitor.StableId, StringComparer.OrdinalIgnoreCase);
+        _unpluggedSelected = settings.SelectedMonitors
+            .Where(id => !Monitors.Any(m => string.Equals(m.StableId, id, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         IntervalSeconds = settings.IntervalSeconds;
         IdleMinutes = settings.IdleMinutes;
         PauseWhenLocked = settings.PauseWhenLocked;

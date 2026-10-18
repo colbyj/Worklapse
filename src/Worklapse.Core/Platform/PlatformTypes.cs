@@ -19,7 +19,19 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
     public PixelRect Offset(int dx, int dy) => this with { X = X + dx, Y = Y + dy };
 }
 
-public sealed record MonitorInfo(string DeviceName, PixelRect Bounds, bool IsPrimary);
+/// <param name="DeviceName">
+/// The system's name for the display output (Windows: \\.\DISPLAY1). Not stable: Windows hands the names out
+/// again when monitors are plugged in or out.
+/// </param>
+public sealed record MonitorInfo(string DeviceName, PixelRect Bounds, bool IsPrimary)
+{
+    /// <summary>
+    /// Identifies the physical monitor across replugging, rearranging and restarts (Windows: its device
+    /// interface path, made of the model from its EDID and the connector it's on). The device name when the
+    /// platform has nothing better.
+    /// </summary>
+    public string StableId { get; init; } = DeviceName;
+}
 
 /// <summary>The window that had focus at capture time.</summary>
 /// <param name="Site">
@@ -40,6 +52,10 @@ public sealed class ScreenCapture
     public required int Height { get; init; }
     public required Memory<byte> Frame { get; init; }
 
-    /// <summary>False when the pixels are identical to the source's previous capture of this monitor.</summary>
-    public required bool Changed { get; init; }
+    /// <summary>
+    /// A hash of the pixels: equal hashes mean an unchanged screen. The recorder compares it with the frame it
+    /// would reuse, not with whatever the source captured last under the same device name, which after
+    /// replugging can be another monitor.
+    /// </summary>
+    public required ulong Hash { get; init; }
 }

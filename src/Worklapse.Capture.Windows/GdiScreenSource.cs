@@ -21,7 +21,6 @@ public sealed class GdiScreenSource : IScreenSource
     private const int StripRows = 64;
 
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, ulong> _hashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly XxHash3 _hasher = new();
     private StripBitmap? _strip;
     private byte[] _frame = [];
@@ -36,11 +35,31 @@ public sealed class GdiScreenSource : IScreenSource
             {
                 var r = info.Monitor;
                 monitors.Add(new MonitorInfo(info.DeviceName, new PixelRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top),
-                    (info.Flags & MonitorInfoPrimary) != 0));
+                    (info.Flags & MonitorInfoPrimary) != 0)
+                {
+                    StableId = DevicePath(info.DeviceName) ?? info.DeviceName,
+                });
             }
             return true;
         }, 0);
         return monitors.OrderBy(m => m.Bounds.X).ThenBy(m => m.Bounds.Y).ToList();
+    }
+
+    /// <summary>
+    /// The device interface path of the monitor shown on a display output (\\?\DISPLAY#GSM77BE#5&amp;…&amp;UID4624#{…}):
+    /// its model from the EDID plus the connector, which stay the same when Windows renumbers the outputs.
+    /// The first active one if the output is cloned to several. About 0.3 ms.
+    /// </summary>
+    private static string? DevicePath(string deviceName)
+    {
+        for (uint i = 0; ; i++)
+        {
+            var device = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
+            if (!EnumDisplayDevices(deviceName, i, ref device, EddGetDeviceInterfaceName))
+                return null;
+            if ((device.StateFlags & DisplayDeviceActive) != 0 && !string.IsNullOrEmpty(device.DeviceId))
+                return device.DeviceId;
+        }
     }
 
     public ScreenCapture? Capture(MonitorInfo monitor)
@@ -82,17 +101,13 @@ public sealed class GdiScreenSource : IScreenSource
                 ReleaseDC(0, screen);
             }
 
-            var hash = _hasher.GetCurrentHashAsUInt64();
-            var changed = !_hashes.TryGetValue(monitor.DeviceName, out var previous) || previous != hash;
-            _hashes[monitor.DeviceName] = hash;
-
             return new ScreenCapture
             {
                 Monitor = monitor,
                 Width = width,
                 Height = height,
                 Frame = _frame.AsMemory(0, size),
-                Changed = changed,
+                Hash = _hasher.GetCurrentHashAsUInt64(),
             };
         }
     }

@@ -54,6 +54,14 @@ public sealed class StagedVideoSink : IFrameSink
         _closedUncommitted.Clear();
     }
 
+    public void Close(long monitorId)
+    {
+        if (!_open.Remove(monitorId, out var segment))
+            return;
+        segment.Writer.Dispose();
+        _closedUncommitted.Add(segment.Id);
+    }
+
     public void CloseAll()
     {
         foreach (var segment in _open.Values)

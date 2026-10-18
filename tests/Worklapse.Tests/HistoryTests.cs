@@ -11,7 +11,7 @@ public class HistoryTests
 
     private static CaptureRecord Capture(int secondsAfterNine, CaptureKind kind = CaptureKind.Active, bool productive = false, bool marked = false,
         string app = "app.exe", string? site = null, bool? siteProductive = null) =>
-        new(secondsAfterNine, Nine.AddSeconds(secondsAfterNine), kind, app, site, "Title", null, productive, siteProductive, marked, []);
+        new(secondsAfterNine, Nine.AddSeconds(secondsAfterNine), kind, app, site, "Title", null, productive, siteProductive, marked, [], []);
 
     [Theory]
     // app productive, site (null = none), site productive → counted as productive
@@ -143,7 +143,10 @@ public class HistoryTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             // Back to schema 4, with captures and a productive app recorded under it.
-            db.Execute("DROP INDEX ix_captures_site; ALTER TABLE captures DROP COLUMN site_id; DROP TABLE sites; PRAGMA user_version = 4;");
+            db.Execute("""
+                ALTER TABLE captures DROP COLUMN layout_id; DROP TABLE layouts;
+                DROP INDEX ix_captures_site; ALTER TABLE captures DROP COLUMN site_id; DROP TABLE sites; PRAGMA user_version = 4;
+                """);
             var (nine, offset) = (Nine.ToUnixTimeMilliseconds(), (int)Nine.Offset.TotalMinutes);
             db.Execute($"""
                 INSERT INTO apps (id, exe_name, productive) VALUES (1, 'rider64.exe', 1), (2, 'firefox.exe', 0);
@@ -155,7 +158,7 @@ public class HistoryTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using (var version = db.Command("PRAGMA user_version;"))
-                Assert.Equal(5L, version.ExecuteScalar());
+                Assert.Equal(6L, version.ExecuteScalar());
             var history = new HistoryStore(db);
             var captures = history.LoadDay(DateOnly.FromDateTime(Nine.LocalDateTime)).Captures;
             Assert.Equal([true, false], captures.Select(c => c.Productive));
