@@ -58,6 +58,7 @@ public sealed partial class StatusViewModel : ObservableObject
             RecorderState.Paused => ("Paused", InactiveBrush, LastCapture(status)),
             RecorderState.Idle => ("Idle", InactiveBrush, $"No input for {settings.IdleMinutes}+ minutes"),
             RecorderState.Locked => ("Screen locked", InactiveBrush, LastCapture(status)),
+            RecorderState.Excluded => ("Excluded", InactiveBrush, LastCapture(status)),
             RecorderState.Error => ("Not recording", ErrorBrush, status.Error ?? "Unknown error"),
             _ => (status.State.ToString(), InactiveBrush, ""),
         };

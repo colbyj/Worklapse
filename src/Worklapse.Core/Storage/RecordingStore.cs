@@ -83,6 +83,21 @@ public sealed class RecordingStore(WorklapseDatabase db)
         return (long)upsert.ExecuteScalar()!;
     }
 
+    /// <summary>
+    /// Whether the app (any copy with that exe name) or the site is excluded from recording. Looked up every
+    /// tick, so a change on the Programs page applies from the next capture.
+    /// </summary>
+    public bool IsExcluded(string exeName, string? domain)
+    {
+        using var find = db.Command("""
+            SELECT EXISTS (SELECT 1 FROM apps WHERE exe_name = $name AND excluded = 1)
+                OR EXISTS (SELECT 1 FROM sites WHERE domain = $domain AND excluded = 1);
+            """);
+        find.Parameters.AddWithValue("$name", exeName);
+        find.Parameters.AddWithValue("$domain", (object?)domain ?? DBNull.Value);
+        return (long)find.ExecuteScalar()! != 0;
+    }
+
     public long GetOrAddMonitor(MonitorInfo monitor)
     {
         if (_monitors.TryGetValue(monitor, out var id))

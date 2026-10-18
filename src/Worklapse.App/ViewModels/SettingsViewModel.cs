@@ -179,7 +179,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private void OnAnyPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(IsDirty))
+        // CanApply follows IsDirty: counting it as a change kept the dialog dirty right after Apply.
+        if (e.PropertyName is not (nameof(IsDirty) or nameof(CanApply)))
             MarkDirty();
         if (e.PropertyName is nameof(IsVideo) or nameof(IsJpeg) or nameof(IsWebP) or nameof(Quality) or nameof(JpegQuality) or nameof(WebPQuality)
             or nameof(IntervalSeconds))

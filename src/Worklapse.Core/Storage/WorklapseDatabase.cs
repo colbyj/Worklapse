@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 7;
+    private const int SchemaVersion = 8;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -242,6 +242,19 @@ public sealed class WorklapseDatabase : IDisposable
                 CREATE INDEX ix_segments_path ON segments (path);
                 """);
             Execute("PRAGMA user_version = 7;");
+            transaction.Commit();
+        }
+
+        if (version < 8)
+        {
+            // Apps (by exe name) and sites nothing is recorded for while they have the focus: no capture at all,
+            // so that time shows as not recorded.
+            using var transaction = BeginTransaction();
+            Execute("""
+                ALTER TABLE apps ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE sites ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+                """);
+            Execute("PRAGMA user_version = 8;");
             transaction.Commit();
         }
     }

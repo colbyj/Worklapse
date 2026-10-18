@@ -14,6 +14,8 @@ public sealed partial class ProgramRow : ObservableObject
         Recorded = usage.Recorded;
         Saved = usage.Productive;
         _productive = usage.Productive;
+        SavedExcluded = usage.Excluded;
+        _excluded = usage.Excluded;
     }
 
     public ProgramKey Program { get; }
@@ -25,21 +27,30 @@ public sealed partial class ProgramRow : ObservableObject
     /// <summary>The classification in the database; <see cref="Productive"/> is what the dialog shows.</summary>
     public bool Saved { get; set; }
 
+    /// <summary>The exclusion in the database; <see cref="Excluded"/> is what the dialog shows.</summary>
+    public bool SavedExcluded { get; set; }
+
+    public bool IsDirty => Productive != Saved || Excluded != SavedExcluded;
+
     [ObservableProperty] private bool _productive;
+
+    /// <summary>Nothing is recorded while it has the focus.</summary>
+    [ObservableProperty] private bool _excluded;
 }
 
 public enum ProgramSort
 {
     Productive,
+    Excluded,
     Name,
     Kind,
     Recorded,
 }
 
 /// <summary>
-/// The Programs page of the Settings dialog: every app and website recorded, to mark productive. The marks
-/// live in the history database (they belong with the history), and like the other settings take effect on
-/// Apply or OK.
+/// The Programs page of the Settings dialog: every app and website recorded, to mark productive or exclude
+/// from recording. The marks live in the history database (they belong with the history), and like the other
+/// settings take effect on Apply or OK.
 /// </summary>
 public sealed partial class ProgramsViewModel : ObservableObject
 {
@@ -59,11 +70,12 @@ public sealed partial class ProgramsViewModel : ObservableObject
     [ObservableProperty] private bool _descending = true;
 
     public string ProductiveHeader => Header("Productive", ProgramSort.Productive);
+    public string ExcludedHeader => Header("Excluded", ProgramSort.Excluded);
     public string NameHeader => Header("Name", ProgramSort.Name);
     public string KindHeader => Header("Type", ProgramSort.Kind);
     public string RecordedHeader => Header("Recorded", ProgramSort.Recorded);
 
-    public bool IsDirty => _all.Any(r => r.Productive != r.Saved);
+    public bool IsDirty => _all.Any(r => r.IsDirty);
 
     /// <summary>Reads the list from the history in <paramref name="dataFolder"/>, off the UI thread.</summary>
     public async Task LoadAsync(string dataFolder)
@@ -97,14 +109,18 @@ public sealed partial class ProgramsViewModel : ObservableObject
     /// <summary>Writes the changed marks to the history in <paramref name="dataFolder"/>.</summary>
     public void Apply(string dataFolder)
     {
-        var changed = _all.Where(r => r.Productive != r.Saved).ToList();
+        var changed = _all.Where(r => r.IsDirty).ToList();
         if (changed.Count == 0)
             return;
         using var history = new HistoryStore(WorklapseDatabase.Open(dataFolder));
         foreach (var row in changed)
         {
-            history.SetProductive(row.Program, row.Productive);
+            if (row.Productive != row.Saved)
+                history.SetProductive(row.Program, row.Productive);
+            if (row.Excluded != row.SavedExcluded)
+                history.SetExcluded(row.Program, row.Excluded);
             row.Saved = row.Productive;
+            row.SavedExcluded = row.Excluded;
         }
     }
 
@@ -114,7 +130,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
         if (Sort == column)
             Descending = !Descending;
         else
-            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.Productive);
+            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.Productive or ProgramSort.Excluded);
         Refresh();
     }
 
@@ -127,6 +143,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
         Func<ProgramRow, object> key = Sort switch
         {
             ProgramSort.Productive => r => r.Productive,
+            ProgramSort.Excluded => r => r.Excluded,
             ProgramSort.Name => r => r.Name,
             ProgramSort.Kind => r => r.KindText,
             _ => r => r.Recorded,
@@ -140,6 +157,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
             : filter.Length > 0 ? $"{Rows.Count} of {apps} apps and {sites} websites"
             : $"{apps} apps and {sites} websites";
         OnPropertyChanged(nameof(ProductiveHeader));
+        OnPropertyChanged(nameof(ExcludedHeader));
         OnPropertyChanged(nameof(NameHeader));
         OnPropertyChanged(nameof(KindHeader));
         OnPropertyChanged(nameof(RecordedHeader));

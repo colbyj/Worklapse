@@ -12,6 +12,9 @@ public enum RecorderState
     Paused,
     Idle,
     Locked,
+
+    /// <summary>An app or site excluded on the Programs page has the focus: nothing is recorded.</summary>
+    Excluded,
     Error,
 }
 
@@ -170,6 +173,14 @@ public sealed class Recorder : IAsyncDisposable
         _wasIdle = false;
 
         var foreground = _platform.Foreground.GetForegroundWindow();
+        if (foreground is not null && store.IsExcluded(foreground.ProcessName, foreground.Site))
+        {
+            // Nothing at all, not even that the time passed: it shows as not recorded. Unlike a pause the segments
+            // stay open, so a moment in an excluded app doesn't end them.
+            SetStatus(Status with { State = RecorderState.Excluded, Error = null });
+            return;
+        }
+
         var monitors = _platform.Screen.GetMonitors();
         var targets = ChooseMonitors(settings, monitors, foreground);
         var captured = 0;

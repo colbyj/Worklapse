@@ -30,6 +30,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Rendering (Windows) | Avalonia software rendering by default; `"UseGpuRendering": true` in `settings.json` switches to the GPU (ANGLE/Direct3D 11) at the next start. Not in the Settings dialog. Agreed 2026-10-16. | Measured: GPU rendering cost ~80 MB more while recording, ~450 MB more while reviewing four monitors, and kept ~200 MB after the review closed, with no CPU saving in a normal-sized window. It may be smoother with Day review maximized on a very large or high-DPI screen (not measured). |
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
+| Excluded apps and sites | Marked on Settings → Programs (Excluded column, next to Productive). While an excluded app (by exe name) or site has the focus, **nothing is recorded** (no capture at all), so that time shows as *Not recorded*; once the idle limit passes it is recorded as idle as usual (an idle capture has no app or frames). Excluded if the app or the site is (a browser excluded covers all its pages). A browser tick whose site can't be read (private window, too slow) is recorded as the browser. Recorded history is left as it is. Kept in the database like the productive marks; an excluded app or site keeps its row when its captures are deleted. | Developer, 2026-10-18: nothing kept rather than time-and-name; the Programs list only (something must be recorded once before it can be excluded); no browser-specific handling for now. |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
@@ -116,7 +117,8 @@ docs/HANDOFF.md               briefs for the next tasks, for a new session
 1. `Recorder` (Core) ticks every interval on a background task. It skips the tick when paused or locked,
    records an idle capture when there's been no input for the idle limit, and otherwise:
 2. asks `IForegroundWindowProbe` for the focused window (app, title, bounds, and for a browser the site) and
-   `IScreenSource` for the monitors attached, records them as the capture's layout (idle captures too), and
+   `IScreenSource` for the monitors attached; if the app or site is excluded (Settings → Programs) it records
+   nothing for this tick; otherwise it records the monitors as the capture's layout (idle captures too), and
    captures each monitor chosen by the capture mode;
 3. reuses a monitor's previous frame when the new capture's pixel hash equals that frame's (the recorder keeps the
    hash with the frame; comparing per device name went wrong after a replug), otherwise appends the
@@ -246,10 +248,11 @@ Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse
 `worklapse.db`, `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open) and, when
 recording images, `images/YYYY-MM-DD/HHmmss-m<monitor>.jpg` or `.webp`.
 
-SQLite schema (version 7, migrations in `WorklapseDatabase`):
+SQLite schema (version 8, migrations in `WorklapseDatabase`):
 
-- `apps` (exe name, path, `productive` flag; classified by exe name; deleted with their last capture unless productive)
-- `sites` (domain, `productive` flag; deleted with their last capture unless productive)
+- `apps` (exe name, path, `productive` and `excluded` flags; classified by exe name; deleted with their last capture unless
+  productive or excluded)
+- `sites` (domain, `productive` and `excluded` flags; deleted with their last capture unless productive or excluded)
 - `monitors` (device name and geometry; a monitor as arranged, so replugging adds rows, see above)
 - `layouts` (the monitor ids attached at the same time, ascending, comma-separated; never deleted)
 - `captures` (UTC ms + local offset, active/idle, app, site, layout (null before schema 6), window title and bounds, `pending_delete`)
@@ -338,6 +341,10 @@ Working on Windows:
   a capture without a window, or whose window misses every recorded monitor, shows all monitors. Checked off-screen
   (Avalonia headless, synthetic two-monitor day: all monitors, app-only, idle; zoom, middle drag, scroll bars), not
   by hand.
+- Excluded apps and sites (2026-10-18, not yet reviewed by the developer): Excluded column on Settings → Programs
+  (schema 8); the recorder skips the tick while one has the focus and the status window shows *Excluded*. Tested
+  with the recorder on a fake desktop (`ExclusionTests`) and the Programs page rendered off-screen; not tried in a
+  real recording. Also fixed: Settings stayed dirty after Apply (Apply remained enabled).
 
 Tested less or not at all: active-application mode over a longer session, selected monitors (only the matching,
 by tests; not the Settings dialog), an actual replug with the new build, rotated displays (GDI should handle them, untested), Store-app window detection,

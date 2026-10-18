@@ -47,7 +47,8 @@ public enum ProgramKind
 public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 
 /// <summary>An app or site with its classification and how long it was recorded.</summary>
-public sealed record ProgramUsage(ProgramKey Program, bool Productive, TimeSpan Recorded);
+/// <param name="Excluded">Nothing is recorded while it has the focus.</param>
+public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded);
 
 /// <summary>Everything recorded on one local calendar day, in time order.</summary>
 /// <param name="Monitors">

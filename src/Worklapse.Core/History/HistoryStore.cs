@@ -147,9 +147,9 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
 
     /// <summary>
     /// Deletes the captures marked on <paramref name="day"/> (their frame references go with them), and the
-    /// apps left without captures unless marked productive, so their names go too. Queues the segments the
-    /// captures used, for the batch encoder to remove the frames nothing refers to any more from disk; the
-    /// video stays there until it does.
+    /// apps and sites left without captures unless marked productive or excluded, so their names go too. Queues
+    /// the segments the captures used, for the batch encoder to remove the frames nothing refers to any more from
+    /// disk; the video stays there until it does.
     /// </summary>
     public DeleteResult DeleteMarked(DateOnly day)
     {
@@ -187,8 +187,8 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         var deleted = command.ExecuteNonQuery();
 
         db.Execute("""
-            DELETE FROM apps WHERE productive = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
-            DELETE FROM sites WHERE productive = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
+            DELETE FROM apps WHERE productive = 0 AND excluded = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
+            DELETE FROM sites WHERE productive = 0 AND excluded = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
             """);
         transaction.Commit();
         return new DeleteResult(deleted, staged);
@@ -209,8 +209,22 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
     }
 
     /// <summary>
-    /// Every app and site recorded, with its classification and its active time (marked captures left out),
-    /// counted as in <see cref="SpanSummary"/>: each capture until the next, at most
+    /// Excludes an app (every copy with that exe name) or a site from recording, or includes it again. The
+    /// recorder looks it up every tick; history already recorded stays as it is.
+    /// </summary>
+    public void SetExcluded(ProgramKey program, bool excluded)
+    {
+        using var command = db.Command(program.Kind == ProgramKind.App
+            ? "UPDATE apps SET excluded = $excluded WHERE exe_name = $name;"
+            : "UPDATE sites SET excluded = $excluded WHERE domain = $name;");
+        command.Parameters.AddWithValue("$excluded", excluded ? 1 : 0);
+        command.Parameters.AddWithValue("$name", program.Name);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Every app and site recorded, with its classification, whether it's excluded, and its active time (marked
+    /// captures left out), counted as in <see cref="SpanSummary"/>: each capture until the next, at most
     /// <paramref name="maxCaptureLength"/>.
     /// </summary>
     public List<ProgramUsage> GetPrograms(TimeSpan maxCaptureLength)
@@ -221,11 +235,11 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                        CASE WHEN kind = 0 AND pending_delete = 0
                             THEN min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) ELSE 0 END AS ms
                 FROM captures)
-            SELECT 0, a.exe_name, max(a.productive), coalesce(sum(s.ms), 0)
+            SELECT 0, a.exe_name, max(a.productive), max(a.excluded), coalesce(sum(s.ms), 0)
             FROM apps a LEFT JOIN spans s ON s.app_id = a.id
             GROUP BY a.exe_name
             UNION ALL
-            SELECT 1, t.domain, t.productive, coalesce(sum(s.ms), 0)
+            SELECT 1, t.domain, t.productive, t.excluded, coalesce(sum(s.ms), 0)
             FROM sites t LEFT JOIN spans s ON s.site_id = t.id
             GROUP BY t.id;
             """);
@@ -235,8 +249,9 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         while (reader.Read())
             programs.Add(new ProgramUsage(
                 new ProgramKey(reader.GetInt32(0) == 0 ? ProgramKind.App : ProgramKind.Site, reader.GetString(1)),
-                reader.GetInt64(2) != 0,
-                TimeSpan.FromMilliseconds(reader.GetInt64(3))));
+                Productive: reader.GetInt64(2) != 0,
+                Excluded: reader.GetInt64(3) != 0,
+                TimeSpan.FromMilliseconds(reader.GetInt64(4))));
         return programs;
     }
 
