@@ -34,7 +34,10 @@ public sealed class BatchEncoder : IDisposable
     private string? _deletedContentLeft;
     private bool _reclaimQueued; // under _gate
     private bool _closed;        // under _gate
-    private int _busy;
+
+    // Jobs queued or running: counted from before a job is queued until after it has finished, so there is no
+    // moment between the queue and the thread where the encoder looks idle with work still to do.
+    private int _jobs;
 
     public BatchEncoder(string dataFolder)
         : this(dataFolder, rebuildStepHook: null)
@@ -53,7 +56,7 @@ public sealed class BatchEncoder : IDisposable
             pending.Parameters.AddWithValue("$staged", (int)SegmentState.Staged);
             using var reader = pending.ExecuteReader();
             while (reader.Read())
-                _queue.Add(new Job(JobKind.Encode, reader.GetInt64(0)));
+                Add(new Job(JobKind.Encode, reader.GetInt64(0)));
         }
         RequestReclaim();
 
@@ -88,7 +91,7 @@ public sealed class BatchEncoder : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_closed, this);
-            _queue.Add(new Job(JobKind.Encode, segmentId));
+            Add(new Job(JobKind.Encode, segmentId));
         }
     }
 
@@ -103,12 +106,12 @@ public sealed class BatchEncoder : IDisposable
             if (_closed || _reclaimQueued)
                 return;
             _reclaimQueued = true;
-            _queue.Add(new Job(JobKind.Reclaim, 0));
+            Add(new Job(JobKind.Reclaim, 0));
         }
     }
 
     /// <summary>True while segments are queued or being encoded or reclaimed.</summary>
-    public bool IsBusy => _queue.Count > 0 || Volatile.Read(ref _busy) == 1;
+    public bool IsBusy => Volatile.Read(ref _jobs) > 0;
 
     /// <summary>Waits until the queue is empty. For tests and orderly shutdown.</summary>
     public bool WaitUntilIdle(TimeSpan timeout)
@@ -152,6 +155,12 @@ public sealed class BatchEncoder : IDisposable
 
     private readonly record struct Job(JobKind Kind, long SegmentId);
 
+    private void Add(Job job)
+    {
+        Interlocked.Increment(ref _jobs);
+        _queue.Add(job);
+    }
+
     private void Run()
     {
         using var db = WorklapseDatabase.Open(_dataFolder);
@@ -159,7 +168,6 @@ public sealed class BatchEncoder : IDisposable
         {
             foreach (var job in _queue.GetConsumingEnumerable(_stop.Token))
             {
-                Volatile.Write(ref _busy, 1);
                 try
                 {
                     if (job.Kind == JobKind.Encode)
@@ -173,7 +181,8 @@ public sealed class BatchEncoder : IDisposable
                 }
                 finally
                 {
-                    Volatile.Write(ref _busy, 0);
+                    // After any job this one queued (another reclaim pass, a rebuilt segment) has been counted.
+                    Interlocked.Decrement(ref _jobs);
                 }
             }
         }
