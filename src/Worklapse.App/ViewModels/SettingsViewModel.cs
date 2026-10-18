@@ -60,16 +60,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _pauseWhenLocked;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsImages), nameof(QualityWarning))]
+    [NotifyPropertyChangedFor(nameof(QualityWarning))]
     private bool _isVideo;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsImages))]
-    private bool _isJpeg;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsImages))]
-    private bool _isWebP;
+    [ObservableProperty] private bool _isJpeg;
+    [ObservableProperty] private bool _isWebP;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QualityWarning), nameof(QualityText))]
@@ -85,7 +80,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     // An empty folder used to mean the default one silently; now it has to be chosen (Browse or Default).
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasDataFolder), nameof(CanApply))]
+    [NotifyPropertyChangedFor(nameof(HasDataFolder), nameof(CanApply), nameof(DataFolderExists))]
     private string _dataFolder = "";
 
     [ObservableProperty]
@@ -93,11 +88,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _isDirty;
 
     public bool HasDataFolder => !string.IsNullOrWhiteSpace(DataFolder);
+
+    /// <summary>The folder in the box can be opened (a new one is only made once recording starts there).</summary>
+    public bool DataFolderExists => HasDataFolder && Directory.Exists(DataFolder.Trim());
     public bool CanApply => IsDirty && HasDataFolder;
 
     public void UseDefaultDataFolder() => DataFolder = WorklapseSettings.DefaultDataFolder;
 
-    public bool IsImages => IsJpeg || IsWebP;
     public bool QualityWarning => IsVideo && Quality >= QualityWarningThreshold;
     public string QualityText => ((int)Quality).ToString();
     public string JpegQualityText => ((int)JpegQuality).ToString();

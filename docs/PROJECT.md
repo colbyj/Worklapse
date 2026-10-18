@@ -298,8 +298,8 @@ Working on Windows:
 - Recording of all four capture modes, idle and lock detection, unchanged-frame reuse, batch AV1 encoding,
   crash recovery of staged segments.
 - Status window and tray menu (pause/resume, Day review, settings, quit); Settings dialog (capture mode,
-  monitors, interval, idle, lock, quality, history folder; an empty folder is refused, Default fills in the
-  standard one).
+  monitors, interval, idle, lock, recording format and quality, history folder; an empty folder is refused, Default
+  fills in the standard one, the folder button opens it in the file manager).
 - Productive apps and websites (2026-10-17, not yet reviewed by the developer): sites read from Chrome, Edge
   and Firefox; Settings → Programs lists every app and site with its recorded time (filter, sort, checkbox,
   applied with Apply/OK); right-click in Day review on the frame (its site and app) or the timeline (each app and
@@ -317,11 +317,12 @@ Working on Windows:
   file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
   to `settings.json.broken-<date>`.
 
-- Recording as JPEG or WebP images (2026-10-17, not yet reviewed by the developer): Settings → Recording; a file per
-  changed capture; deletes remove the files; crash-safe naming; Day review plays them. Checked with tests (codec
+- Recording as JPEG or WebP images (2026-10-17, not yet reviewed by the developer): Settings → Recording, each choice
+  with its trade-offs written under it (disk, memory, CPU, small text); a file per changed capture; deletes remove the
+  files; crash-safe naming; Day review plays them. Checked with tests (codec
   round trip and colours as other viewers show them, recording, format switching, deletes, failed ticks, crash
-  leftovers) and benchmarks on real captures (see Benchmarks). Not yet done by hand: the Settings dialog itself, and
-  an image recording looked at in Day review.
+  leftovers) and benchmarks on real captures (see Benchmarks); the Settings dialog checked as rendered off-screen
+  (Avalonia headless), not clicked. Not yet done by hand: an image recording looked at in Day review.
 - Plugging monitors in and out (2026-10-17, not yet reviewed by the developer): layouts recorded per capture,
   Day review and its Monitor list follow them, older captures' layouts worked out; selected monitors by stable
   identity. Checked with tests (recorder with a fake desktop, the guess) and in Day review on a copy of the

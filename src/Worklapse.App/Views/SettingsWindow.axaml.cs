@@ -27,6 +27,13 @@ public partial class SettingsWindow : Window
 
     private void OnDefaultFolder(object? sender, RoutedEventArgs e) => ViewModel.UseDefaultDataFolder();
 
+    /// <summary>Shows the folder in the box (applied or not) in the file manager.</summary>
+    private async void OnOpenFolder(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel.DataFolderExists)
+            await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(ViewModel.DataFolder.Trim()));
+    }
+
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)
