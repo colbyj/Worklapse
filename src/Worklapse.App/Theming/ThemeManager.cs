@@ -9,8 +9,8 @@ namespace Worklapse.App.Theming;
 
 /// <summary>
 /// Matches the UI's colours to the OS and keeps them matched: Windows 11's palette with the system accent on
-/// Windows, the active colour scheme on KDE, Adwaita on GNOME, and Breeze (light or dark, with the desktop's accent)
-/// elsewhere.
+/// Windows, the active colour scheme on KDE, Adwaita on GNOME and the other GTK desktops, and Breeze (light or dark,
+/// with the desktop's accent) elsewhere.
 /// Colours are written into the brushes defined in Styles/BreezeResources.axaml and <see cref="AppBrushes"/>,
 /// so views refer to those brushes and never to colours.
 /// </summary>
@@ -85,13 +85,17 @@ public static class ThemeManager
         if (IsKde && KdeColors.Load(KdeColors.KdeGlobalsPath) is { } scheme)
             return UiPalette.FromKde(scheme);
         var accent = values?.AccentColor1 is { } a && a != NoAccent ? a : (Color?)null;
-        if (IsDesktop("GNOME"))
+        if (GtkDesktops.Any(IsDesktop))
             return UiPalette.Adwaita(dark, accent);
-        // Other desktops, and KDE before a colour scheme has ever been applied (Breeze is then in effect).
+        // Qt desktops (LXQt), anything unrecognised, and KDE before a colour scheme has ever been applied (Breeze is
+        // then in effect).
         return UiPalette.Breeze(dark, accent);
     }
 
     private static bool IsKde => IsDesktop("KDE");
+
+    /// <summary>GTK-based desktops, as XDG_CURRENT_DESKTOP names them; their themes are Adwaita or close to it.</summary>
+    private static readonly string[] GtkDesktops = ["GNOME", "XFCE", "X-Cinnamon", "MATE", "Budgie", "Pantheon", "Unity", "LXDE"];
 
     /// <summary>Whether XDG_CURRENT_DESKTOP names this desktop (it's a list, e.g. "ubuntu:GNOME").</summary>
     private static bool IsDesktop(string name) =>
