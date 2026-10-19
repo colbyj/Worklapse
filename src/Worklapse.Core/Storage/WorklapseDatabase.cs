@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 8;
+    private const int SchemaVersion = 9;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -255,6 +255,63 @@ public sealed class WorklapseDatabase : IDisposable
                 ALTER TABLE sites ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
                 """);
             Execute("PRAGMA user_version = 8;");
+            transaction.Commit();
+        }
+
+        if (version < 9)
+        {
+            // Projects. An app or site linked to a project marks its active time with it; ranges set by hand override
+            // the links (a NULL project there means "no project"). Notes belong to a project and a moment, and are shown
+            // on the block of that project around it. The timesheet holds the time to bill per project per day.
+            using var transaction = BeginTransaction();
+            Execute("""
+                CREATE TABLE categories (
+                    id     INTEGER PRIMARY KEY,
+                    name   TEXT NOT NULL,
+                    color  INTEGER NOT NULL                         -- 0xRRGGBB
+                );
+
+                CREATE TABLE projects (
+                    id           INTEGER PRIMARY KEY,
+                    name         TEXT NOT NULL,
+                    category_id  INTEGER REFERENCES categories (id) ON DELETE SET NULL,
+                    color        INTEGER,                           -- 0xRRGGBB; NULL = the category's
+                    archived     INTEGER NOT NULL DEFAULT 0
+                );
+
+                ALTER TABLE apps ADD COLUMN project_id INTEGER REFERENCES projects (id) ON DELETE SET NULL;
+                ALTER TABLE sites ADD COLUMN project_id INTEGER REFERENCES projects (id) ON DELETE SET NULL;
+
+                -- Never overlap; adjacent ranges with the same project are merged.
+                CREATE TABLE project_spans (
+                    id          INTEGER PRIMARY KEY,
+                    start_ms    INTEGER NOT NULL,                   -- UTC, like captures.ts_ms
+                    end_ms      INTEGER NOT NULL,
+                    project_id  INTEGER REFERENCES projects (id) ON DELETE CASCADE
+                );
+                CREATE INDEX ix_project_spans_start ON project_spans (start_ms);
+
+                CREATE TABLE notes (
+                    id          INTEGER PRIMARY KEY,
+                    project_id  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                    ts_ms       INTEGER NOT NULL,
+                    text        TEXT NOT NULL
+                );
+                CREATE INDEX ix_notes_ts ON notes (ts_ms);
+
+                CREATE TABLE day_notes (
+                    day   TEXT PRIMARY KEY,                         -- local date, yyyy-MM-dd
+                    text  TEXT NOT NULL
+                );
+
+                CREATE TABLE timesheet (
+                    day         TEXT NOT NULL,                      -- local date, yyyy-MM-dd
+                    project_id  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                    logged_min  INTEGER NOT NULL,
+                    PRIMARY KEY (day, project_id)
+                ) WITHOUT ROWID;
+                """);
+            Execute("PRAGMA user_version = 9;");
             transaction.Commit();
         }
     }

@@ -81,7 +81,7 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         using (var command = db.Command("""
             SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, c.window_title,
                    c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0), c.pending_delete,
-                   s.domain, s.productive, c.layout_id
+                   s.domain, s.productive, c.layout_id, a.project_id, s.project_id
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
@@ -111,7 +111,9 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                     SiteProductive: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
                     PendingDelete: reader.GetInt64(11) != 0,
                     frames.TryGetValue(id, out var list) ? list : [],
-                    MonitorIds: layout ?? []));
+                    MonitorIds: layout ?? [],
+                    AppProjectId: reader.IsDBNull(15) ? null : reader.GetInt64(15),
+                    SiteProjectId: reader.IsDBNull(16) ? null : reader.GetInt64(16)));
             }
         }
 
@@ -135,6 +137,43 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         return new DayHistory(day, captures, monitors);
     }
 
+    /// <summary>
+    /// A day's captures without their frames, monitors or window titles: enough to total its time per project, for
+    /// views that sum many days.
+    /// </summary>
+    public IReadOnlyList<CaptureRecord> LoadActivity(DateOnly day)
+    {
+        var (startMs, endMs) = DayBounds(day);
+        using var command = db.Command("""
+            SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, coalesce(a.productive, 0), c.pending_delete,
+                   s.domain, s.productive, a.project_id, s.project_id
+            FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
+            WHERE c.ts_ms >= $start AND c.ts_ms < $end
+            ORDER BY c.ts_ms, c.id;
+            """);
+        command.Parameters.AddWithValue("$start", startMs);
+        command.Parameters.AddWithValue("$end", endMs);
+        using var reader = command.ExecuteReader();
+        var captures = new List<CaptureRecord>();
+        while (reader.Read())
+            captures.Add(new CaptureRecord(
+                reader.GetInt64(0),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(2))),
+                (CaptureKind)reader.GetInt32(3),
+                AppName: reader.IsDBNull(4) ? null : reader.GetString(4),
+                Site: reader.IsDBNull(7) ? null : reader.GetString(7),
+                WindowTitle: null,
+                Window: null,
+                AppProductive: reader.GetInt64(5) != 0,
+                SiteProductive: reader.IsDBNull(8) ? null : reader.GetInt64(8) != 0,
+                PendingDelete: reader.GetInt64(6) != 0,
+                Frames: [],
+                MonitorIds: [],
+                AppProjectId: reader.IsDBNull(9) ? null : reader.GetInt64(9),
+                SiteProjectId: reader.IsDBNull(10) ? null : reader.GetInt64(10)));
+        return captures;
+    }
+
     /// <summary>Marks (or unmarks) every capture with start ≤ time &lt; end for deletion.</summary>
     public int SetPendingDelete(DateTimeOffset start, DateTimeOffset end, bool pending)
     {
@@ -147,7 +186,8 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
 
     /// <summary>
     /// Deletes the captures marked on <paramref name="day"/> (their frame references go with them), and the
-    /// apps and sites left without captures unless marked productive or excluded, so their names go too. Queues
+    /// apps and sites left without captures unless marked productive or excluded or linked to a project, so their
+    /// names go too. Queues
     /// the segments the captures used, for the batch encoder to remove the frames nothing refers to any more from
     /// disk; the video stays there until it does.
     /// </summary>
@@ -187,8 +227,8 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         var deleted = command.ExecuteNonQuery();
 
         db.Execute("""
-            DELETE FROM apps WHERE productive = 0 AND excluded = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
-            DELETE FROM sites WHERE productive = 0 AND excluded = 0 AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
+            DELETE FROM apps WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
+            DELETE FROM sites WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
             """);
         transaction.Commit();
         return new DeleteResult(deleted, staged);
@@ -223,6 +263,21 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
     }
 
     /// <summary>
+    /// Links an app (every copy with that exe name) or a site to a project, or unlinks it (null). Its active time is
+    /// marked with the project wherever no range set by hand says otherwise; links are looked up when a day is read,
+    /// so this applies to all history at once.
+    /// </summary>
+    public void SetProject(ProgramKey program, long? projectId)
+    {
+        using var command = db.Command(program.Kind == ProgramKind.App
+            ? "UPDATE apps SET project_id = $project WHERE exe_name = $name;"
+            : "UPDATE sites SET project_id = $project WHERE domain = $name;");
+        command.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$name", program.Name);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// Every app and site recorded, with its classification, whether it's excluded, and its active time (marked
     /// captures left out), counted as in <see cref="SpanSummary"/>: each capture until the next, at most
     /// <paramref name="maxCaptureLength"/>.
@@ -235,11 +290,11 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                        CASE WHEN kind = 0 AND pending_delete = 0
                             THEN min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) ELSE 0 END AS ms
                 FROM captures)
-            SELECT 0, a.exe_name, max(a.productive), max(a.excluded), coalesce(sum(s.ms), 0)
+            SELECT 0, a.exe_name, max(a.productive), max(a.excluded), coalesce(sum(s.ms), 0), max(a.project_id)
             FROM apps a LEFT JOIN spans s ON s.app_id = a.id
             GROUP BY a.exe_name
             UNION ALL
-            SELECT 1, t.domain, t.productive, t.excluded, coalesce(sum(s.ms), 0)
+            SELECT 1, t.domain, t.productive, t.excluded, coalesce(sum(s.ms), 0), t.project_id
             FROM sites t LEFT JOIN spans s ON s.site_id = t.id
             GROUP BY t.id;
             """);
@@ -251,11 +306,22 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                 new ProgramKey(reader.GetInt32(0) == 0 ? ProgramKind.App : ProgramKind.Site, reader.GetString(1)),
                 Productive: reader.GetInt64(2) != 0,
                 Excluded: reader.GetInt64(3) != 0,
-                TimeSpan.FromMilliseconds(reader.GetInt64(4))));
+                TimeSpan.FromMilliseconds(reader.GetInt64(4)),
+                ProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5)));
         return programs;
     }
 
     public void Dispose() => db.Dispose();
+
+    /// <summary>The start and end of a local day, as <see cref="LoadDay"/> bounds it.</summary>
+    public static (DateTimeOffset Start, DateTimeOffset End) DayRange(DateOnly day)
+    {
+        var (start, end) = DayBounds(day);
+        var zone = TimeZoneInfo.Local;
+        var startTime = DateTimeOffset.FromUnixTimeMilliseconds(start);
+        var endTime = DateTimeOffset.FromUnixTimeMilliseconds(end);
+        return (startTime.ToOffset(zone.GetUtcOffset(startTime)), endTime.ToOffset(zone.GetUtcOffset(endTime)));
+    }
 
     /// <summary>
     /// UTC milliseconds bounding a local day. Captures store their own offset, but the day itself is the

@@ -1,0 +1,189 @@
+using Worklapse.Core.History;
+
+namespace Worklapse.Core.Projects;
+
+/// <summary>A stretch of time marked with one project, with nothing else in between.</summary>
+/// <param name="Active">Time with input inside it (captures marked for deletion left out).</param>
+/// <param name="Productive">The productive part of <paramref name="Active"/>.</param>
+/// <param name="SetByHand">How much of it comes from ranges set by hand rather than links.</param>
+public sealed record ProjectBlock(DateTimeOffset Start, DateTimeOffset End, long ProjectId, TimeSpan Active, TimeSpan Productive, TimeSpan SetByHand)
+{
+    /// <summary>Everything in the block, idle or not recorded included: the project's Assigned time.</summary>
+    public TimeSpan Length => End - Start;
+
+    /// <summary>Where a note written for this block is attached.</summary>
+    public DateTimeOffset Middle => Start + (End - Start) / 2;
+}
+
+/// <param name="Assigned">All time marked with the project, idle or not recorded included.</param>
+/// <param name="Active">Time with input.</param>
+/// <param name="Productive">Active time in productive apps and sites.</param>
+public sealed record ProjectTotals(TimeSpan Assigned, TimeSpan Active, TimeSpan Productive);
+
+/// <summary>Recorded time marked with no project.</summary>
+public sealed record UnassignedTotals(TimeSpan Productive, TimeSpan Other, TimeSpan Idle);
+
+/// <summary>A span of time (usually a day) worked out per project.</summary>
+public sealed record ProjectTime(IReadOnlyList<ProjectBlock> Blocks, IReadOnlyDictionary<long, ProjectTotals> Totals, UnassignedTotals Unassigned);
+
+/// <summary>
+/// Works out which project each moment belongs to. A range set by hand decides inside it (its project, or none);
+/// elsewhere active captures follow their links (<see cref="CaptureRecord.LinkedProjectId"/>), and idle or
+/// unrecorded time belongs to no project. Captures marked for deletion count for nothing.
+/// </summary>
+public static class ProjectTimeline
+{
+    /// <param name="spans">The ranges set by hand, in time order, not overlapping.</param>
+    /// <param name="maxCaptureLength">As in <see cref="SpanSummary.For"/>: each capture lasts until the next, at most this.</param>
+    public static ProjectTime Build(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans,
+        DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
+    {
+        var pieces = Pieces(captures, start, end, maxCaptureLength);
+
+        // Every place where something changes, then walk the gaps between them.
+        var cuts = new List<DateTimeOffset>(pieces.Count * 2 + spans.Count * 2 + 2) { start, end };
+        foreach (var piece in pieces)
+        {
+            cuts.Add(piece.From);
+            cuts.Add(piece.To);
+        }
+        foreach (var span in spans)
+        {
+            if (span.Start > start && span.Start < end) cuts.Add(span.Start);
+            if (span.End > start && span.End < end) cuts.Add(span.End);
+        }
+        cuts.Sort();
+
+        var blocks = new List<ProjectBlock>();
+        var (unassignedProductive, unassignedOther, unassignedIdle) = (TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
+        var (p, s) = (0, 0);
+        for (var i = 0; i + 1 < cuts.Count; i++)
+        {
+            var (from, to) = (cuts[i], cuts[i + 1]);
+            if (to <= from)
+                continue;
+            while (p < pieces.Count && pieces[p].To <= from) p++;
+            while (s < spans.Count && spans[s].End <= from) s++;
+            Piece? piece = p < pieces.Count && pieces[p].From <= from ? pieces[p] : null;
+            ProjectSpan? span = s < spans.Count && spans[s].Start <= from ? spans[s] : null;
+
+            var length = to - from;
+            var active = piece is { Kind: PieceKind.Active } ? length : TimeSpan.Zero;
+            var productive = piece is { Kind: PieceKind.Active, Productive: true } ? length : TimeSpan.Zero;
+            var project = span is not null ? span.ProjectId : piece?.Link;
+
+            if (project is { } id)
+            {
+                var byHand = span is not null ? length : TimeSpan.Zero;
+                if (blocks.Count > 0 && blocks[^1] is var last && last.ProjectId == id && last.End == from)
+                    blocks[^1] = last with { End = to, Active = last.Active + active, Productive = last.Productive + productive, SetByHand = last.SetByHand + byHand };
+                else
+                    blocks.Add(new ProjectBlock(from, to, id, active, productive, byHand));
+            }
+            else if (piece is { } recorded)
+            {
+                if (recorded.Kind == PieceKind.Active)
+                {
+                    if (recorded.Productive) unassignedProductive += length;
+                    else unassignedOther += length;
+                }
+                else if (recorded.Kind == PieceKind.Idle)
+                {
+                    unassignedIdle += length;
+                }
+            }
+        }
+
+        var totals = new Dictionary<long, ProjectTotals>();
+        foreach (var block in blocks)
+        {
+            var sum = totals.GetValueOrDefault(block.ProjectId) ?? new ProjectTotals(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
+            totals[block.ProjectId] = new ProjectTotals(sum.Assigned + block.Length, sum.Active + block.Active, sum.Productive + block.Productive);
+        }
+        return new ProjectTime(blocks, totals, new UnassignedTotals(unassignedProductive, unassignedOther, unassignedIdle));
+    }
+
+    private enum PieceKind { Active, Idle, Marked }
+
+    /// <summary>The time one capture stands for, clipped to the span, and the project its links point to.</summary>
+    private sealed record Piece(DateTimeOffset From, DateTimeOffset To, PieceKind Kind, bool Productive, long? Link);
+
+    private static List<Piece> Pieces(IReadOnlyList<CaptureRecord> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
+    {
+        var pieces = new List<Piece>(captures.Count);
+        for (var i = 0; i < captures.Count; i++)
+        {
+            var capture = captures[i];
+            var from = capture.Time;
+            var to = i + 1 < captures.Count ? captures[i + 1].Time : from + maxCaptureLength;
+            if (to - from > maxCaptureLength)
+                to = from + maxCaptureLength;
+            if (from < start) from = start;
+            if (to > end) to = end;
+            if (to <= from)
+                continue;
+
+            var kind = capture.PendingDelete ? PieceKind.Marked : capture.IsActive ? PieceKind.Active : PieceKind.Idle;
+            pieces.Add(new Piece(from, to, kind, capture.Productive, kind == PieceKind.Active ? capture.LinkedProjectId : null));
+        }
+        return pieces;
+    }
+
+    /// <summary>How short a gap between two blocks of the same project is offered for joining.</summary>
+    public static readonly TimeSpan JoinableGap = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// The gaps worth offering to join: between two blocks of the same project, shorter than
+    /// <paramref name="shorterThan"/>, with no other project in between. Joining one means setting it to that project
+    /// by hand; nothing is ever joined on its own.
+    /// </summary>
+    public static List<ProjectSpan> JoinableGaps(IReadOnlyList<ProjectBlock> blocks, TimeSpan shorterThan)
+    {
+        var gaps = new List<ProjectSpan>();
+        for (var i = 0; i + 1 < blocks.Count; i++)
+        {
+            var (before, after) = (blocks[i], blocks[i + 1]);
+            if (before.ProjectId == after.ProjectId && after.Start > before.End && after.Start - before.End < shorterThan)
+                gaps.Add(new ProjectSpan(before.End, after.Start, before.ProjectId));
+        }
+        return gaps;
+    }
+}
+
+/// <summary>Which block each note is shown on.</summary>
+/// <param name="PerBlock">The notes of each block, in the order of the blocks given; each block's in time order.</param>
+/// <param name="Orphans">Notes whose project has no block in the span.</param>
+public sealed record PlacedNotes(IReadOnlyList<IReadOnlyList<ProjectNote>> PerBlock, IReadOnlyList<ProjectNote> Orphans);
+
+public static class NotePlacement
+{
+    /// <summary>
+    /// A note goes on the block of its project that contains its moment; if none does (the block moved or shrank), on
+    /// the nearest block of that project; with no block of its project at all, it's an orphan.
+    /// </summary>
+    public static PlacedNotes Place(IReadOnlyList<ProjectNote> notes, IReadOnlyList<ProjectBlock> blocks)
+    {
+        var perBlock = blocks.Select(_ => new List<ProjectNote>()).ToArray();
+        var orphans = new List<ProjectNote>();
+        foreach (var note in notes.OrderBy(n => n.Time).ThenBy(n => n.Id))
+        {
+            var best = -1;
+            var bestDistance = TimeSpan.MaxValue;
+            for (var i = 0; i < blocks.Count; i++)
+            {
+                if (blocks[i].ProjectId != note.ProjectId)
+                    continue;
+                var distance = note.Time < blocks[i].Start ? blocks[i].Start - note.Time
+                    : note.Time >= blocks[i].End ? note.Time - blocks[i].End
+                    : TimeSpan.Zero;
+                if (distance < bestDistance)
+                    (best, bestDistance) = (i, distance);
+            }
+            if (best >= 0)
+                perBlock[best].Add(note);
+            else
+                orphans.Add(note);
+        }
+        return new PlacedNotes(perBlock, orphans);
+    }
+}

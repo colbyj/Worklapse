@@ -60,10 +60,12 @@ public sealed class RecordingStore(WorklapseDatabase db)
                 return existing;
         }
 
-        // Apps are classified by name, so another copy of one already marked (another path) is marked too.
+        // Apps are classified and linked by name, so another copy of one already marked or linked (another path) is
+        // marked and linked too.
         using var insert = db.Command("""
-            INSERT INTO apps (exe_name, exe_path, productive)
-            VALUES ($name, $path, coalesce((SELECT max(productive) FROM apps WHERE exe_name = $name), 0))
+            INSERT INTO apps (exe_name, exe_path, productive, project_id)
+            VALUES ($name, $path, coalesce((SELECT max(productive) FROM apps WHERE exe_name = $name), 0),
+                    (SELECT max(project_id) FROM apps WHERE exe_name = $name))
             RETURNING id;
             """);
         insert.Parameters.AddWithValue("$name", exeName);

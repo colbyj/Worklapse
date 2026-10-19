@@ -14,6 +14,8 @@ public readonly record struct MonitorFrame(long MonitorId, FrameRef Frame);
 /// The monitors attached at the time, captured or not (ascending ids, see <see cref="DayHistory.Monitors"/>): as
 /// recorded, or for captures recorded before that, as <see cref="MonitorLayouts"/> works it out.
 /// </param>
+/// <param name="AppProjectId">The project the app is linked to, if any.</param>
+/// <param name="SiteProjectId">The project the site is linked to, if any.</param>
 public sealed record CaptureRecord(
     long Id,
     DateTimeOffset Time,
@@ -26,7 +28,9 @@ public sealed record CaptureRecord(
     bool? SiteProductive,
     bool PendingDelete,
     IReadOnlyList<MonitorFrame> Frames,
-    IReadOnlyList<long> MonitorIds)
+    IReadOnlyList<long> MonitorIds,
+    long? AppProjectId = null,
+    long? SiteProjectId = null)
 {
     public bool IsActive => Kind == CaptureKind.Active;
 
@@ -35,6 +39,13 @@ public sealed record CaptureRecord(
     /// browser marked productive counts only for pages without a known site.
     /// </summary>
     public bool Productive => SiteProductive ?? AppProductive;
+
+    /// <summary>
+    /// The project this capture's links point to: the site's when it has one, otherwise the app's. Unlike
+    /// <see cref="Productive"/>, a site without a link leaves it to its browser, so a browser kept for one project
+    /// covers every page that isn't linked elsewhere.
+    /// </summary>
+    public long? LinkedProjectId => SiteProjectId ?? AppProjectId;
 }
 
 public enum ProgramKind
@@ -48,7 +59,8 @@ public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 
 /// <summary>An app or site with its classification and how long it was recorded.</summary>
 /// <param name="Excluded">Nothing is recorded while it has the focus.</param>
-public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded);
+/// <param name="ProjectId">The project its active time is marked with, if it's linked to one.</param>
+public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded, long? ProjectId = null);
 
 /// <summary>Everything recorded on one local calendar day, in time order.</summary>
 /// <param name="Monitors">

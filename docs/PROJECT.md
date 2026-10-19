@@ -31,6 +31,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
 | Excluded apps and sites | Marked on Settings → Programs (Excluded column, next to Productive). While an excluded app (by exe name) or site has the focus, **nothing is recorded** (no capture at all), so that time shows as *Not recorded*; once the idle limit passes it is recorded as idle as usual (an idle capture has no app or frames). Excluded if the app or the site is (a browser excluded covers all its pages). A browser tick whose site can't be read (private window, too slow) is recorded as the browser. Recorded history is left as it is. Kept in the database like the productive marks; an excluded app or site keeps its row when its captures are deleted. | Developer, 2026-10-18: nothing kept rather than time-and-name; the Programs list only (something must be recorded once before it can be excluded); no browser-specific handling for now. |
+| Projects and the main window | **Designed 2026-10-18, not built yet** — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
@@ -403,6 +404,81 @@ Still open, if the peak matters:
 - After 15 s idle the first step costs ~0.7 s while decoders reopen and decode from the key frame; stepping
   back costs ~0.3–1 s every third step for the same reason.
 
+### 1a. Projects, timesheet and a main window — designed 2026-10-18, approved, next to build
+
+Mockups (four rounds; "Round 4" is the approved one): https://claude.ai/artifact/2HyWXXPGWRR6bJR232Nomx
+(private to the developer). Agreed with the developer over the design rounds:
+
+**Main window.** Replaces the status window and the separate Day review window. A left rail of icons only
+switches screens: at the top the three views — **Overview**, **Day review**, **Timesheet** — at the bottom
+**recording** (state + start/stop) and **Settings** (stays a dialog). The app opens on Overview; closing the
+window hides it to the tray and keeps recording. Recording state must be obvious on every screen: status bar
+segment (red dot "Recording · capture mode"), rail button; when paused, an info bar under the tool bar
+("Recording is paused… [Resume Recording]") and a paused rail icon. The status window's other messages
+(recording errors, deleted content not yet removed, Excluded) move to the status bar and the tray tooltip.
+
+**Projects.** Projects belong to categories; a category has a colour and a project uses it unless given its
+own. Projects can be archived (hidden from lists, kept in history). Apps and sites get a project link (Settings →
+Applications, or Day review); a link marks that app's/site's **active** time with the project (site beats
+browser). Idle and unrecorded time stays unassigned unless set by hand. Ranges set by hand (a project, or
+"no project") override the links. Projects never overlap. There is no suggestion system.
+
+**Notes.** A note belongs to one project block, never spans projects. Stored with its project and a moment in
+time; shown on whichever block of that project contains that moment (blocks are computed and change when links
+or ranges change); two notes in one block are joined; a note whose block disappears is kept and listed in the
+Projects tab. Plus one note per day.
+
+**Times.** *Active* = time with input, productive or not. *Productive* = active time in productive apps/sites
+(the existing per-app flag). *Assigned* = all time marked as the project, idle or not. *Logged* = what the
+developer types (hh:mm) to bill, per project per day. Screens show h:mm; CSV export uses decimal hours.
+
+**Screens.**
+- *Overview* (home): week mode — one timeline per day (projects above activity), step a week at a time, click a
+  day to open it in Day review; below, a tree of totals by category → project (day columns, Assigned, Logged)
+  with a "No project" branch (productive / other), and day notes that expand to their block notes. Month mode
+  swaps the timelines for a month grid; the tree's columns become weeks.
+- *Day review*: as today, plus a Projects lane above the activity lane. Tool bar: day/frame/playback controls
+  on the left; monitor menu (with Focus on Active App, which leaves the tool bar) and zoom on the right. Right
+  side panel. With no selection, three tabs from raw to curated: **Applications** (the day's apps/sites:
+  active time, Productive checkbox, project link), **Projects** (project blocks only, how each was assigned,
+  its note; between two blocks of the same project less than 10 minutes apart, a spot offering to join them),
+  **Time Log** (Project, Assigned, Logged — editable). Day note underneath. With a selection (a
+  single frame is just a short range): **Recorded** (app runs in order, repeated when switching back, idle and
+  not-recorded rows; per-app Productive and Project), **Projects and notes** (each project block in the
+  selection with its note box; "No project" time), and an action bar: **Set Project ▾**, **Clear Project**,
+  **Mark for Deletion**. The same commands on the Edit menu and the timeline's right-click menu.
+- *Timesheet*: one line per project per day — Project, Notes (block notes joined), Active, Productive,
+  Assigned, Logged (editable cell). Week/month, totals by category, Export CSV.
+- *Settings* tabs: General, **Applications** (was Programs; adds a Project column), **Projects** (categories,
+  projects, colour, archived, linked apps), **Appearance** (was Application). The Defaults button only on
+  General and Appearance.
+
+Desktop idiom (developer, 2026-10-18): no segmented pills (toggle tool buttons or combo boxes), framed tabs,
+grids with editable cells rather than a text box per row, no accent buttons in tool bars, no cards or badges.
+
+**Build order** (each phase reviewed before the next; commit only when asked):
+1. Data and time calculations, no UI: schema 9 (`categories`, `projects`, `apps.project_id`, `sites.project_id`,
+   hand-set `project_spans` with no overlaps, `notes`, `day_notes`, `timesheet`); a Core calculator for a day's
+   project blocks and per-project Active/Productive/Assigned; CSV export. Most of the tests go here.
+   **Built 2026-10-18, not yet reviewed or committed** (153 tests pass). Code: `Worklapse.Core/Projects/`
+   (`ProjectStore` — categories, projects, ranges set by hand, notes, day notes, logged time; `ProjectTimeline` —
+   blocks and totals, `NotePlacement`; `Timesheet`, `TimesheetCsv`), `HistoryStore.SetProject`/`LoadActivity`/
+   `DayRange`, `CaptureRecord.LinkedProjectId`. Choices made while building, to confirm: a site without a link
+   leaves it to its browser's link (unlike Productive, where the site always decides); a note whose block no
+   longer contains its moment goes on the nearest block of its project that day before becoming an orphan; deleting
+   a project deletes its ranges, notes and logged time (archive keeps them). Agreed after building (developer,
+   2026-10-18): **nothing is ever joined automatically** — `ProjectTimeline.JoinableGaps` lists gaps shorter than
+   10 minutes between two blocks of the same project (no other project in between), the Projects tab offers to join
+   each one, and joining sets the gap to that project by hand; **Clear Project** does what it says: the selection
+   ends up with no project (a range set to "no project", overriding links); there is no "back to links" command.
+   Schema 9 is one-way: once a build with it has opened the real data folder, older builds can't.
+2. Settings tabs: Applications (Project column), Projects, Appearance; Defaults moved into its tabs.
+3. Main window shell: rail, Day review moved in as a view, tool bar reordered, recording state everywhere,
+   close-to-tray; the status window removed.
+4. Day review labelling: Projects lane, side panel tabs, selection panel and actions, menus.
+5. Timesheet view.
+6. Overview (week, month; month totals need a lighter query than loading every capture).
+
 ### 1. Make it usable day to day
 
 Items 1 and 2 were handed off in `docs/HANDOFF.md` (2026-10-16); both are built (2026-10-17), awaiting review.
@@ -456,7 +532,7 @@ Items 1 and 2 were handed off in `docs/HANDOFF.md` (2026-10-16); both are built 
    is still being encoded; remember window size and monitor choice; a frame-accurate time readout when
    dragging.
 5. **Everyday app behaviour (confirm each with the developer before building):** start with Windows,
-   start hidden in the tray, a second launch bringing up the status window, a log file for errors.
+   start hidden in the tray, a second launch bringing up the main window (see 1a), a log file for errors.
 6. **Packaging:** a self-contained publish with the native DLL, and an installer or zip.
 
 ### 1b. Memory: split the recorder from the UI (proposed, not yet agreed)
