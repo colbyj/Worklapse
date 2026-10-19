@@ -31,7 +31,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
 | Excluded apps and sites | Marked on Settings → Programs (Excluded column, next to Productive). While an excluded app (by exe name) or site has the focus, **nothing is recorded** (no capture at all), so that time shows as *Not recorded*; once the idle limit passes it is recorded as idle as usual (an idle capture has no app or frames). Excluded if the app or the site is (a browser excluded covers all its pages). A browser tick whose site can't be read (private window, too slow) is recorded as the browser. Recorded history is left as it is. Kept in the database like the productive marks; an excluded app or site keeps its row when its captures are deleted. | Developer, 2026-10-18: nothing kept rather than time-and-name; the Programs list only (something must be recorded once before it can be excluded); no browser-specific handling for now. |
-| Projects and the main window | **Designed 2026-10-18, not built yet** — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
+| Projects and the main window | **Designed 2026-10-18, being built** (phases 1–3 done) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
@@ -107,7 +107,7 @@ src/
   Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
                               frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
-  Worklapse.App/              Avalonia app: tray icon, status window, settings dialog, Day review
+  Worklapse.App/              Avalonia app: tray icon, main window (rail; Day review; Overview and Timesheet to come), settings dialog
 tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts, images)
 docs/PROJECT.md               this file
 docs/HANDOFF.md               briefs for the next tasks, for a new session
@@ -227,7 +227,7 @@ zeroed rather than left in free pages; when a pass has nothing left to do, the e
 log (`wal_checkpoint(TRUNCATE)`), which otherwise keeps the pages as they were. The recorder looks apps up on
 every capture instead of caching ids, since a delete can remove an app row. Whatever keeps deleted video on
 disk after a pass (a segment that couldn't be rebuilt, retried at the next start; a file another program has
-open, retried every minute) is in `BatchEncoder.DeletedContentLeft` and shown in the status window until it's gone.
+open, retried every minute) is in `BatchEncoder.DeletedContentLeft` and shown in a message bar under each view's tool bar until it's gone.
 
 ### How playback works
 
@@ -278,7 +278,7 @@ dotnet test tests/Worklapse.Tests
 dotnet run --project src/Worklapse.App
 ```
 
-Worklapse starts with a small status window and a tray icon; closing the window keeps it recording.
+Worklapse starts with its main window (Day review for now) and a tray icon; closing the window keeps it recording.
 Quit from the tray menu. Only one instance runs at a time.
 
 Testing without touching real data: set `WORKLAPSE_CONFIG_DIR` to a folder containing a `settings.json`
@@ -484,6 +484,15 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    scratch data folder; 153 tests pass.
 3. Main window shell: rail, Day review moved in as a view, tool bar reordered, recording state everywhere,
    close-to-tray; the status window removed.
+   **Built 2026-10-18.** `MainWindow` (menu bar across the top; rail with Overview / Day review / Timesheet, then
+   recording and Settings at the bottom; Ctrl+1/2/3), `MainViewModel`, `DayReviewView` (was `DayReviewWindow`; tool
+   bar: day, frames, playback and deletion on the left, monitor menu with Focus on Active App and zoom on the right),
+   `RecordingViewModel` (was `StatusViewModel`) shown by `RecordingIndicator` (start of each view's status bar) and
+   `RecordingMessages` (bars under the tool bar: paused with Resume Recording, not recording, deleted content still on
+   disk); the tray menu is Show Worklapse / Pause–Resume / Settings / Quit and its tooltip says the state. Closing the
+   window really closes it (its views and the Day review's memory go; recording carries on in the tray); Show
+   Worklapse makes a new one. Overview and Timesheet are placeholders until phases 5–6, so the window opens on Day
+   review for now. A change of data folder reopens Day review on the new folder. Checked with headless screenshots.
 4. Day review labelling: Projects lane, side panel tabs, selection panel and actions, menus.
 5. Timesheet view.
 6. Overview (week, month; month totals need a lighter query than loading every capture).

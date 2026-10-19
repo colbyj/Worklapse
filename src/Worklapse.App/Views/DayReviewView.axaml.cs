@@ -15,7 +15,11 @@ using PixelRect = Worklapse.Core.Platform.PixelRect;
 
 namespace Worklapse.App.Views;
 
-public partial class DayReviewWindow : Window
+/// <summary>
+/// Day review inside the main window: the day's timeline, the picture of the current capture, and playback. The
+/// main window forwards keys to it while it's shown, and calls <see cref="Close"/> when letting it go.
+/// </summary>
+public partial class DayReviewView : UserControl
 {
     private readonly DayReviewViewModel _viewModel;
     private readonly FrameRenderer _renderer = null!;
@@ -28,21 +32,24 @@ public partial class DayReviewWindow : Window
     private bool _closed;
 
     // Needed by the XAML loader; the app always uses the other constructor.
-    public DayReviewWindow() : this(null!, null!) { }
+    public DayReviewView() : this(null!, null!, null!) { }
 
-    public DayReviewWindow(DayReviewViewModel viewModel, string dataFolder)
+    public DayReviewView(DayReviewViewModel viewModel, string dataFolder, RecordingViewModel recording)
     {
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = viewModel;
         if (viewModel is null)
             return; // designer
+        Messages.DataContext = recording;
+        Indicator.DataContext = recording;
 
         Timeline.Clicked += viewModel.Seek;
         Timeline.Dragged += viewModel.DragSelect;
         Frames.ViewChanged += UpdateView;
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
+        MonitorMenu.Opening += (_, _) => FillMonitorMenu();
 
         // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, what
         // the selection contains (or the frame's, without a selection).
@@ -54,26 +61,26 @@ public partial class DayReviewWindow : Window
 
         viewModel.TimelineChanged += UpdateTimeline;
         viewModel.FrameChanged += RequestFrames;
-
-        // Arrow keys step through frames wherever focus is (toolbar buttons would otherwise move focus).
-        AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
-        Activated += (_, _) => viewModel.RefreshCommand.Execute(null);
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(DayReviewViewModel.SelectedMonitor) or nameof(DayReviewViewModel.FocusOnApplication))
+                UpdateView();
+        };
 
         UpdateTimeline();
         RequestFrames();
         UpdateView();
     }
 
-    protected override void OnClosed(EventArgs e)
+    /// <summary>Lets go of the renderer and the pictures; the view model is the main window's to dispose.</summary>
+    public void Close()
     {
-        base.OnClosed(e);
-        if (_viewModel is null)
+        if (_viewModel is null || _closed)
             return;
         _closed = true;
         _viewModel.TimelineChanged -= UpdateTimeline;
         _viewModel.FrameChanged -= RequestFrames;
         _renderer.Dispose();
-        _viewModel.Dispose();
 
         // The bitmaps hold a full-size copy of each monitor; don't leave them to the finalizer.
         _plan = null;
@@ -84,10 +91,10 @@ public partial class DayReviewWindow : Window
         _bitmaps.Clear();
     }
 
-    private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
+    /// <summary>Arrow keys step through frames wherever the focus is, except in text and open lists.</summary>
+    public void HandleKey(KeyEventArgs e)
     {
-        // Leave keys alone while a drop-down list is open.
-        if (e.Source is ComboBox { IsDropDownOpen: true } || e.Source is ComboBoxItem)
+        if (e.Source is ComboBox { IsDropDownOpen: true } or ComboBoxItem or TextBox)
             return;
 
         switch (e.Key)
@@ -102,6 +109,43 @@ public partial class DayReviewWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    private MenuFlyout MonitorMenu => (MenuFlyout)MonitorButton.Flyout!;
+
+    public void ZoomIn() => Frames.ZoomBy(1.5);
+
+    public void ZoomOut() => Frames.ZoomBy(1 / 1.5);
+
+    public void Fit() => Frames.Fit();
+
+    /// <summary>The monitors to choose between, then whether to show only the window that had the focus.</summary>
+    private void FillMonitorMenu()
+    {
+        var items = new List<Control>();
+        foreach (var choice in _viewModel.MonitorChoices)
+        {
+            var item = new MenuItem
+            {
+                Header = choice.Label,
+                ToggleType = MenuItemToggleType.Radio,
+                GroupName = "monitor",
+                IsChecked = Equals(choice, _viewModel.SelectedMonitor),
+            };
+            item.Click += (_, _) => _viewModel.SelectedMonitor = choice;
+            items.Add(item);
+        }
+        items.Add(new Separator());
+        var focus = new MenuItem
+        {
+            Header = "Focus on Active App",
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = _viewModel.FocusOnApplication,
+        };
+        ToolTip.SetTip(focus, "Show only the window that had focus, centred, without the monitors around it");
+        focus.Click += (_, _) => _viewModel.FocusOnApplication = !_viewModel.FocusOnApplication;
+        items.Add(focus);
+        MonitorMenu.ItemsSource = items;
     }
 
     /// <summary>A menu filled when it opens, from the capture or selection at that moment; empty means none.</summary>
@@ -331,11 +375,9 @@ public partial class DayReviewWindow : Window
             Frames.ScrollTo(new Vector(HorizontalBar.Value, VerticalBar.Value));
     }
 
-    private void OnZoomIn(object? sender, RoutedEventArgs e) => Frames.ZoomBy(1.5);
+    private void OnZoomIn(object? sender, RoutedEventArgs e) => ZoomIn();
 
-    private void OnZoomOut(object? sender, RoutedEventArgs e) => Frames.ZoomBy(1 / 1.5);
+    private void OnZoomOut(object? sender, RoutedEventArgs e) => ZoomOut();
 
-    private void OnFit(object? sender, RoutedEventArgs e) => Frames.Fit();
-
-    private void OnClose(object? sender, RoutedEventArgs e) => Close();
+    private void OnFit(object? sender, RoutedEventArgs e) => Fit();
 }

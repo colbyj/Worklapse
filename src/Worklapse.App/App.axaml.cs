@@ -23,11 +23,11 @@ public partial class App : Application
     private PlatformServices? _platform;
     private Recorder? _recorder;
     private volatile FrameSink? _sink; // the recorder's current one, created on its thread
-    private StatusViewModel? _status;
-    private StatusWindow? _statusWindow;
-    private DayReviewWindow? _reviewWindow;
+    private RecordingViewModel? _recording;
+    private MainWindow? _mainWindow;
     private NativeMenuItem? _pauseItem;
-    private bool _quitting;
+    private TrayIcon? _tray;
+    private IClassicDesktopStyleApplicationLifetime? _desktop;
 
     public override void Initialize()
     {
@@ -85,32 +85,22 @@ public partial class App : Application
         _platform = CreatePlatform();
         _recorder = new Recorder(_settings, _platform, CreateSink);
 
-        var status = _status = new StatusViewModel(_recorder, _settings, ShowSettingsAsync, ShowDayReview);
-        _statusWindow = new StatusWindow { DataContext = status };
-        _statusWindow.Closing += (_, e) =>
-        {
-            if (_quitting)
-                return;
-            e.Cancel = true;
-            _statusWindow.Hide();
-        };
+        _desktop = desktop;
+        var recording = _recording = new RecordingViewModel(_recorder, _settings);
+        recording.PropertyChanged += (_, _) => UpdateTray();
 
-        _recorder.StatusChanged += (_, s) => Dispatcher.UIThread.Post(() =>
-        {
-            status.Update(s);
-            if (_pauseItem is not null)
-                _pauseItem.Header = _recorder.IsPaused ? "Resume Recording" : "Pause Recording";
-        });
-        _settings.Changed += (_, _) => Dispatcher.UIThread.Post(() => status.Update(_recorder.Status));
+        _recorder.StatusChanged += (_, s) => Dispatcher.UIThread.Post(() => recording.Update(s));
+        _settings.Changed += (_, _) => Dispatcher.UIThread.Post(() => recording.Update(_recorder.Status));
 
         CreateTrayIcon(desktop);
         _recorder.Start();
-        _statusWindow.Show();
+        // The Overview is to be the first view; until it's built, Day review is.
+        ShowMainWindow(MainView.DayReview);
     }
 
     /// <summary>
     /// The recorder's sink, made on the recorder's thread (again after an error or a change of data folder). Its
-    /// batch encoder also removes deleted captures' video and images; the status window says when it can't.
+    /// batch encoder also removes deleted captures' video and images; the main window says when it can't.
     /// </summary>
     private FrameSink CreateSink(RecordingStore store)
     {
@@ -122,7 +112,7 @@ public partial class App : Application
         void Report() => Dispatcher.UIThread.Post(() =>
         {
             if (_sink == sink)
-                _status!.DeletedContentLeft = encoder.DeletedContentLeft;
+                _recording!.DeletedContentLeft = encoder.DeletedContentLeft;
         });
         encoder.DeletedContentLeftChanged += (_, _) => Report();
         _sink = sink;
@@ -140,63 +130,78 @@ public partial class App : Application
     private void CreateTrayIcon(IClassicDesktopStyleApplicationLifetime desktop)
     {
         _pauseItem = new NativeMenuItem("Pause Recording");
-        _pauseItem.Click += (_, _) => _recorder!.IsPaused = !_recorder.IsPaused;
+        _pauseItem.Click += (_, _) => _recording!.TogglePauseCommand.Execute(null);
 
-        var showItem = new NativeMenuItem("Show Status");
-        showItem.Click += (_, _) => ShowStatusWindow();
-
-        var reviewItem = new NativeMenuItem("Review Day…");
-        reviewItem.Click += (_, _) => ShowDayReview();
+        var showItem = new NativeMenuItem("Show Worklapse");
+        showItem.Click += (_, _) => ShowMainWindow();
 
         var settingsItem = new NativeMenuItem("Settings…");
         settingsItem.Click += async (_, _) => await ShowSettingsAsync();
 
         var quitItem = new NativeMenuItem("Quit Worklapse");
-        quitItem.Click += async (_, _) => await QuitAsync(desktop);
+        quitItem.Click += async (_, _) => await QuitAsync();
 
-        var tray = new TrayIcon
+        _tray = new TrayIcon
         {
             Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://Worklapse/Assets/worklapse.ico"))),
             ToolTipText = "Worklapse",
-            Menu = new NativeMenu { Items = { showItem, reviewItem, _pauseItem, settingsItem, new NativeMenuItemSeparator(), quitItem } },
+            Menu = new NativeMenu { Items = { showItem, _pauseItem, settingsItem, new NativeMenuItemSeparator(), quitItem } },
         };
-        tray.Clicked += (_, _) => ShowStatusWindow();
-        TrayIcon.SetIcons(this, [tray]);
+        _tray.Clicked += (_, _) => ShowMainWindow();
+        TrayIcon.SetIcons(this, [_tray]);
+        UpdateTray();
     }
 
-    private void ShowStatusWindow()
+    /// <summary>The tray says whether Worklapse is recording, and offers to pause or resume.</summary>
+    private void UpdateTray()
     {
-        _statusWindow!.Show();
-        _statusWindow.Activate();
-    }
-
-    /// <summary>Opens the Day review, or brings it to the front if it's already open.</summary>
-    private void ShowDayReview()
-    {
-        if (_reviewWindow is { } open)
-        {
-            open.Activate();
+        if (_tray is null || _recording is null)
             return;
-        }
+        _tray.ToolTipText = _recording.TrayText;
+        _pauseItem!.Header = _recording.PauseText;
+    }
 
+    /// <summary>
+    /// Shows the main window, making it if it was closed (closing it lets its views and their memory go; recording
+    /// carries on).
+    /// </summary>
+    private MainWindow ShowMainWindow(MainView? view = null)
+    {
+        if (_mainWindow is null)
+        {
+            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, view ?? MainView.DayReview);
+            _mainWindow = new MainWindow(viewModel, _settings!, QuitAsync);
+            _mainWindow.Closed += (_, _) =>
+            {
+                _mainWindow = null;
+                // Reviewing leaves a large heap behind (the views, frame buffers).
+                ReleaseMemory();
+            };
+            _mainWindow.Show();
+        }
+        else if (view is { } shown)
+        {
+            ((MainViewModel)_mainWindow.DataContext!).View = shown;
+        }
+        if (_mainWindow.WindowState == WindowState.Minimized)
+            _mainWindow.WindowState = WindowState.Normal;
+        _mainWindow.Activate();
+        return _mainWindow;
+    }
+
+    /// <summary>Day review, reading the history in the data folder the settings name now.</summary>
+    private DayReviewViewModel CreateDayReview()
+    {
         var settings = _settings!.Current;
         var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder));
         // The recorder's batch encoder (open even while paused or locked) removes the deleted video and images from
         // disk. Frames in the segments still being recorded go once those are closed and encoded.
-        var viewModel = new DayReviewViewModel(history, _settings, TimeSpan.FromSeconds(settings.IntervalSeconds), result =>
+        return new DayReviewViewModel(history, _settings, TimeSpan.FromSeconds(settings.IntervalSeconds), result =>
         {
             _sink?.Encoder.RequestReclaim();
             if (result.StagedSegmentsAffected)
                 _recorder!.CloseSegmentsSoon();
         });
-        _reviewWindow = new DayReviewWindow(viewModel, settings.DataFolder);
-        _reviewWindow.Closed += (_, _) =>
-        {
-            _reviewWindow = null;
-            // Reviewing leaves a large heap behind (the window, frame buffers).
-            ReleaseMemory();
-        };
-        _reviewWindow.Show();
     }
 
     private async Task ShowSettingsAsync()
@@ -205,8 +210,7 @@ public partial class App : Application
         // The recording preview captures the primary monitor with a source of its own.
         var sampler = OperatingSystem.IsWindows() ? new PrimaryScreenSampler(new GdiScreenSource()) : null;
         var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler) };
-        ShowStatusWindow();
-        await dialog.ShowDialog(_statusWindow!);
+        await dialog.ShowDialog(ShowMainWindow());
         // The recording preview held a few screens of pixels.
         ReleaseMemory();
     }
@@ -219,13 +223,12 @@ public partial class App : Application
         () => GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true),
         DispatcherPriority.Background);
 
-    private async Task QuitAsync(IClassicDesktopStyleApplicationLifetime desktop)
+    private async Task QuitAsync()
     {
-        _quitting = true;
-        _reviewWindow?.Close();
+        _mainWindow?.Close();
         if (_recorder is not null)
             await _recorder.DisposeAsync();
         _platform?.Dispose();
-        desktop.Shutdown();
+        _desktop?.Shutdown();
     }
 }

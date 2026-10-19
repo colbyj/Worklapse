@@ -1,0 +1,189 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Worklapse.App.ViewModels"
+             xmlns:views="using:Worklapse.App.Views"
+             xmlns:controls="using:Worklapse.App.Controls"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             x:Class="Worklapse.App.Views.DayReviewView"
+             x:DataType="vm:DayReviewViewModel">
+  <UserControl.Styles>
+    <Style Selector="ic|SymbolIcon">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+    <Style Selector="TextBlock.toolLabel">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="4,0,4,0" />
+      <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel>
+    <!-- Tool bar: moving through the day on the left, how it's shown on the right. -->
+    <Border DockPanel.Dock="Top" Classes="toolBar">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
+          <Button x:Name="MonitorButton" Classes="tool" ToolTip.Tip="Which monitors to show" AutomationProperties.Name="Monitors">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Desktop" />
+              <TextBlock Text="{Binding SelectedMonitor.Label, FallbackValue='All monitors'}" />
+              <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
+            </StackPanel>
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight" />
+            </Button.Flyout>
+          </Button>
+          <Border Classes="separator" />
+          <Button Classes="tool" Click="OnZoomOut" ToolTip.Tip="Zoom out" AutomationProperties.Name="Zoom out">
+            <ic:SymbolIcon Symbol="ZoomOut" />
+          </Button>
+          <TextBlock x:Name="ZoomText" VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" />
+          <Button Classes="tool" Click="OnZoomIn" ToolTip.Tip="Zoom in (or scroll over the picture)" AutomationProperties.Name="Zoom in">
+            <ic:SymbolIcon Symbol="ZoomIn" />
+          </Button>
+          <Button Classes="tool" Click="OnFit" ToolTip.Tip="Fit to window" AutomationProperties.Name="Fit to window">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="ScaleFit" />
+              <TextBlock Text="Fit" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="2">
+          <Button Classes="tool" Command="{Binding PreviousDayCommand}" ToolTip.Tip="Previous day" AutomationProperties.Name="Previous day">
+            <ic:SymbolIcon Symbol="ChevronLeft" />
+          </Button>
+          <TextBlock Text="{Binding DayText}" Classes="strong" VerticalAlignment="Center" MinWidth="118" TextAlignment="Center" />
+          <Button Classes="tool" Command="{Binding NextDayCommand}" ToolTip.Tip="Next day" AutomationProperties.Name="Next day">
+            <ic:SymbolIcon Symbol="ChevronRight" />
+          </Button>
+
+          <Border Classes="separator" />
+
+          <Button Classes="tool" Command="{Binding PreviousFrameCommand}" ToolTip.Tip="Previous frame (←)" AutomationProperties.Name="Previous frame">
+            <ic:SymbolIcon Symbol="Previous" />
+          </Button>
+          <Button Classes="tool" Command="{Binding TogglePlayCommand}" ToolTip.Tip="Play or pause" AutomationProperties.Name="Play or pause" MinWidth="78">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Play" IsVisible="{Binding !IsPlaying}" />
+              <ic:SymbolIcon Symbol="Pause" IsVisible="{Binding IsPlaying}" />
+              <TextBlock Text="{Binding PlayText}" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Command="{Binding NextFrameCommand}" ToolTip.Tip="Next frame (→)" AutomationProperties.Name="Next frame">
+            <ic:SymbolIcon Symbol="Next" />
+          </Button>
+          <TextBlock Text="Speed:" Classes="toolLabel" />
+          <ComboBox ItemsSource="{Binding Speeds}" SelectedItem="{Binding Speed}" MinWidth="104" VerticalAlignment="Center" />
+
+          <Border Classes="separator" />
+
+          <Button Classes="tool" Command="{Binding MarkSelectionCommand}" ToolTip.Tip="Mark the selection for deletion">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Delete" />
+              <TextBlock Text="Mark for Deletion" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Command="{Binding ClearSelectionCommand}" ToolTip.Tip="Clear selection (Esc)" AutomationProperties.Name="Clear selection">
+            <ic:SymbolIcon Symbol="SelectAllOff" />
+          </Button>
+          <Button Classes="tool" ToolTip.Tip="Ranges marked for deletion on this day">
+            <StackPanel>
+              <TextBlock Text="{Binding MarkedButtonText}" />
+              <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
+            </StackPanel>
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedLeft">
+                <StackPanel Width="380" Spacing="8">
+                  <TextBlock Text="Marked for Deletion" Classes="strong" />
+                  <ItemsControl ItemsSource="{Binding MarkedRanges}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:MarkedRange">
+                        <Border Classes="group" Padding="8,6" Margin="0,0,0,6">
+                          <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                              <Button Content="Go To" Command="{Binding GoTo}" MinWidth="0" />
+                              <Button Content="Restore" Command="{Binding Restore}" MinWidth="0" />
+                            </StackPanel>
+                            <StackPanel VerticalAlignment="Center">
+                              <TextBlock Text="{Binding RangeText}" Classes="strong" />
+                              <TextBlock Text="{Binding Detail}" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                          </DockPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <DockPanel IsVisible="{Binding HasMarked}">
+                    <Button DockPanel.Dock="Left" Command="{Binding ConfirmDeletesCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource UiNegativeBrush}" />
+                        <TextBlock Text="Delete Permanently" />
+                      </StackPanel>
+                    </Button>
+                    <TextBlock Text="Marked time is already left out of the totals." Classes="hint" VerticalAlignment="Center" Margin="10,0,0,0" />
+                  </DockPanel>
+                  <TextBlock Text="Nothing is marked for deletion." Classes="secondary" IsVisible="{Binding HasNoMarked}" />
+                  <TextBlock Text="{Binding ConfirmMessage}" Classes="secondary" />
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <views:RecordingMessages DockPanel.Dock="Top" x:Name="Messages" DataContext="{x:Null}" />
+
+    <!-- Timeline -->
+    <Border DockPanel.Dock="Top" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1" Padding="8,6,8,0">
+      <controls:TimelineControl x:Name="Timeline" />
+    </Border>
+
+    <!-- Status bar: the current frame, then recording state and the selection or whole-day summary. -->
+    <Border DockPanel.Dock="Bottom" Classes="statusBar">
+      <StackPanel>
+        <DockPanel Margin="8,0" Height="22">
+          <TextBlock x:Name="ViewText" DockPanel.Dock="Right" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Text="{Binding FrameTime}" Classes="strong" />
+            <Ellipse Width="9" Height="9" Fill="{Binding FrameStateBrush}" VerticalAlignment="Center" Margin="4,0,0,0" />
+            <TextBlock Text="{Binding FrameState}" />
+            <TextBlock Text="{Binding FrameApp}" Classes="secondary" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="900" />
+          </StackPanel>
+        </DockPanel>
+        <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0">
+          <WrapPanel Margin="8,0" MinHeight="22" Orientation="Horizontal">
+            <views:RecordingIndicator x:Name="Indicator" DataContext="{x:Null}" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <TextBlock Text="{Binding SummaryTitle}" Classes="strong" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding SummaryRange}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
+            <ItemsControl ItemsSource="{Binding Stats}" VerticalAlignment="Center">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:StatItem">
+                  <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,4">
+                    <Border Classes="statusDivider" Margin="8,0,3,0" />
+                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Swatch}" IsVisible="{Binding Swatch, Converter={x:Static ObjectConverters.IsNotNull}}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Label}" />
+                    <TextBlock Text="{Binding Value}" Classes="strong" />
+                    <TextBlock Text="{Binding Note}" Classes="secondary" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </WrapPanel>
+        </Border>
+      </StackPanel>
+    </Border>
+
+    <!-- The picture, with scroll bars while it's larger than the view. -->
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+      <controls:FrameView x:Name="Frames" />
+      <ScrollBar x:Name="VerticalBar" Grid.Column="1" Orientation="Vertical" AllowAutoHide="False" Visibility="Auto" />
+      <ScrollBar x:Name="HorizontalBar" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" Visibility="Auto" />
+    </Grid>
+  </DockPanel>
+</UserControl>

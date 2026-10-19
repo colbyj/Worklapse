@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Worklapse.App.ViewModels"
+             xmlns:theming="using:Worklapse.App.Theming"
+             x:Class="Worklapse.App.Views.RecordingMessages"
+             x:DataType="vm:RecordingViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.messageBar">
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="10,5" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Under a view's tool bar: what needs attention about recording. Nothing shows while all is well. -->
+  <StackPanel>
+    <Border Classes="messageBar" IsVisible="{Binding IsPaused}"
+            Background="{x:Static theming:AppBrushes.WarningBar}" BorderBrush="{x:Static theming:AppBrushes.WarningBarFrame}">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="Resume Recording" Command="{Binding TogglePauseCommand}" />
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Panel Width="16" Height="16" VerticalAlignment="Center">
+            <Ellipse Fill="{x:Static theming:AppBrushes.WarningIcon}" />
+            <Path Fill="White" Width="6" Height="7" Stretch="Fill" Data="M0,0 H2 V7 H0 Z M4,0 H6 V7 H4 Z" />
+          </Panel>
+          <TextBlock Text="Recording is paused." FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding PausedText}" VerticalAlignment="Center" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Border Classes="messageBar" IsVisible="{Binding HasError}"
+            Background="{x:Static theming:AppBrushes.ErrorBar}" BorderBrush="{x:Static theming:AppBrushes.ErrorBarFrame}">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Panel Width="16" Height="16" VerticalAlignment="Top">
+          <Ellipse Fill="{x:Static theming:AppBrushes.ErrorIcon}" />
+          <Path Stroke="White" StrokeThickness="1.6" Width="6" Height="6" Stretch="Fill" Data="M0,0 L6,6 M6,0 L0,6" />
+        </Panel>
+        <TextBlock Text="Not recording." FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <Border Classes="messageBar" IsVisible="{Binding HasDeletedContentLeft}"
+            Background="{x:Static theming:AppBrushes.WarningBar}" BorderBrush="{x:Static theming:AppBrushes.WarningBarFrame}">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Panel Width="16" Height="16" VerticalAlignment="Top">
+          <Ellipse Fill="{x:Static theming:AppBrushes.WarningIcon}" />
+          <Path Fill="White" Width="2" Height="9" Stretch="Fill" Data="M0,0 H2 V6 H0 Z M0,7.5 H2 V9 H0 Z" />
+        </Panel>
+        <TextBlock Text="{Binding DeletedContentText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

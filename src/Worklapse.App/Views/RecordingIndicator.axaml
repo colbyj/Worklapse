@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Worklapse.App.ViewModels"
+             xmlns:theming="using:Worklapse.App.Theming"
+             x:Class="Worklapse.App.Views.RecordingIndicator"
+             x:DataType="vm:RecordingViewModel">
+  <!-- The start of every view's status bar: whether Worklapse is recording, then a divider. -->
+  <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+    <Ellipse Width="9" Height="9" Fill="{Binding DotBrush}" IsVisible="{Binding ShowsDot}" VerticalAlignment="Center" />
+    <Path IsVisible="{Binding IsPaused}" Width="9" Height="9" Stretch="Fill" VerticalAlignment="Center"
+          Fill="{x:Static theming:AppBrushes.Paused}" Data="M0,0 H3 V9 H0 Z M6,0 H9 V9 H6 Z" />
+    <TextBlock Text="{Binding StateText}" Classes="strong" VerticalAlignment="Center" />
+    <TextBlock Text="{Binding DetailText}" Classes="secondary" VerticalAlignment="Center" />
+    <Border Classes="statusDivider" Margin="4,0" />
+  </StackPanel>
+</UserControl>

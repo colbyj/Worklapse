@@ -1,0 +1,159 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Worklapse.App.ViewModels"
+        xmlns:ic="using:FluentIcons.Avalonia"
+        x:Class="Worklapse.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="{Binding Title}"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="1400" Height="900" MinWidth="900" MinHeight="560"
+        WindowStartupLocation="CenterScreen">
+  <Window.Styles>
+    <!-- The rail: icon buttons that switch views (top) and reach recording and Settings (bottom). The shown view's
+         button has the selection fill and an accent mark on its left, like Windows' navigation panes. -->
+    <Style Selector="Button.rail">
+      <Setter Property="Width" Value="38" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.rail /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BoxShadow" Value="none" />
+    </Style>
+    <Style Selector="Button.rail:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+    </Style>
+    <Style Selector="Button.rail.selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource UiSeparatorBrush}" />
+    </Style>
+    <Style Selector="Button.rail ic|SymbolIcon">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.rail Border.mark">
+      <Setter Property="Width" Value="3" />
+      <Setter Property="Height" Value="16" />
+      <Setter Property="CornerRadius" Value="1.5" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource UiAccentBrush}" />
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.rail.selected Border.mark">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <Menu DockPanel.Dock="Top" Classes="header">
+      <MenuItem Header="_File">
+        <MenuItem Header="_Settings…" Command="{Binding OpenSettingsCommand}" InputGesture="Ctrl+OemComma" HotKey="Ctrl+OemComma">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="Settings" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="{Binding Recording.PauseText}" Command="{Binding Recording.TogglePauseCommand}" />
+        <Separator />
+        <MenuItem Header="_Close Window" Click="OnCloseWindow" InputGesture="Ctrl+W" HotKey="Ctrl+W">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="Dismiss" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="_Quit Worklapse" Click="OnQuit" InputGesture="Ctrl+Q" HotKey="Ctrl+Q" />
+      </MenuItem>
+      <MenuItem Header="_Edit" IsVisible="{Binding IsDayReview}">
+        <MenuItem Header="_Mark Selection for Deletion" Command="{Binding DayReview.MarkSelectionCommand}">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="Delete" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="_Clear Selection" Command="{Binding DayReview.ClearSelectionCommand}" InputGesture="Escape" />
+        <Separator />
+        <MenuItem Header="C_onfirm Deletions" Command="{Binding DayReview.ConfirmDeletesCommand}" IsEnabled="{Binding DayReview.HasMarked}" />
+      </MenuItem>
+      <MenuItem Header="_View">
+        <MenuItem Header="_Overview" Command="{Binding ShowOverviewCommand}" InputGesture="Ctrl+D1" HotKey="Ctrl+D1"
+                  ToggleType="Radio" GroupName="view" IsChecked="{Binding IsOverview, Mode=OneWay}" />
+        <MenuItem Header="_Day Review" Command="{Binding ShowDayReviewCommand}" InputGesture="Ctrl+D2" HotKey="Ctrl+D2"
+                  ToggleType="Radio" GroupName="view" IsChecked="{Binding IsDayReview, Mode=OneWay}" />
+        <MenuItem Header="_Timesheet" Command="{Binding ShowTimesheetCommand}" InputGesture="Ctrl+D3" HotKey="Ctrl+D3"
+                  ToggleType="Radio" GroupName="view" IsChecked="{Binding IsTimesheet, Mode=OneWay}" />
+        <Separator IsVisible="{Binding IsDayReview}" />
+        <MenuItem Header="Zoom _In" Click="OnZoomIn" IsVisible="{Binding IsDayReview}">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="ZoomIn" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="Zoom O_ut" Click="OnZoomOut" IsVisible="{Binding IsDayReview}">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="ZoomOut" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="_Fit to Window" Click="OnFit" IsVisible="{Binding IsDayReview}">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="ScaleFit" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="Focus on _Active App" ToggleType="CheckBox" IsVisible="{Binding IsDayReview}"
+                  IsChecked="{Binding DayReview.FocusOnApplication, Mode=TwoWay, FallbackValue=False}" />
+      </MenuItem>
+      <MenuItem Header="_Go" IsVisible="{Binding IsDayReview}">
+        <MenuItem Header="_Previous Frame" Command="{Binding DayReview.PreviousFrameCommand}" InputGesture="Left" />
+        <MenuItem Header="_Next Frame" Command="{Binding DayReview.NextFrameCommand}" InputGesture="Right" />
+        <Separator />
+        <MenuItem Header="Previous _Day" Command="{Binding DayReview.PreviousDayCommand}" />
+        <MenuItem Header="Next D_ay" Command="{Binding DayReview.NextDayCommand}" />
+        <Separator />
+        <MenuItem Header="_Refresh" Command="{Binding DayReview.RefreshCommand}" InputGesture="F5" HotKey="F5">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="ArrowClockwise" /></MenuItem.Icon>
+        </MenuItem>
+      </MenuItem>
+    </Menu>
+
+    <!-- The rail. -->
+    <Border DockPanel.Dock="Left" Width="48" Background="{DynamicResource UiWindowBrush}"
+            BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,1,0" Padding="0,6">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Bottom" Spacing="2">
+          <Button Classes="rail" Command="{Binding Recording.TogglePauseCommand}" ToolTip.Tip="{Binding Recording.RailTip}"
+                  AutomationProperties.Name="{Binding Recording.RailTip}">
+            <Panel Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Ellipse Stroke="{DynamicResource UiTextBrush}" StrokeThickness="1.3" />
+              <Ellipse Width="8" Height="8" Fill="{Binding Recording.DotBrush}" IsVisible="{Binding Recording.ShowsDot}" />
+              <Path IsVisible="{Binding Recording.IsPaused}" Width="7" Height="8" Stretch="Fill"
+                    Fill="{DynamicResource UiTextBrush}" Data="M0,0 H2.5 V8 H0 Z M4.5,0 H7 V8 H4.5 Z" />
+            </Panel>
+          </Button>
+          <Button Classes="rail" Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings" AutomationProperties.Name="Settings">
+            <ic:SymbolIcon Symbol="Settings" />
+          </Button>
+        </StackPanel>
+        <StackPanel Spacing="2">
+          <Button Classes="rail" Classes.selected="{Binding IsOverview}" Command="{Binding ShowOverviewCommand}"
+                  ToolTip.Tip="Overview (Ctrl+1)" AutomationProperties.Name="Overview">
+            <Panel>
+              <Border Classes="mark" />
+              <ic:SymbolIcon Symbol="GanttChart" />
+            </Panel>
+          </Button>
+          <Button Classes="rail" Classes.selected="{Binding IsDayReview}" Command="{Binding ShowDayReviewCommand}"
+                  ToolTip.Tip="Day review (Ctrl+2)" AutomationProperties.Name="Day review">
+            <Panel>
+              <Border Classes="mark" />
+              <ic:SymbolIcon Symbol="VideoClip" />
+            </Panel>
+          </Button>
+          <Button Classes="rail" Classes.selected="{Binding IsTimesheet}" Command="{Binding ShowTimesheetCommand}"
+                  ToolTip.Tip="Timesheet (Ctrl+3)" AutomationProperties.Name="Timesheet">
+            <Panel>
+              <Border Classes="mark" />
+              <ic:SymbolIcon Symbol="DocumentTable" />
+            </Panel>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- The views; only the current one is visible. -->
+    <Panel x:Name="Host" />
+  </DockPanel>
+</Window>

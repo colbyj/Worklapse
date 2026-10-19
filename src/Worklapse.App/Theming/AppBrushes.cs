@@ -18,6 +18,16 @@ public static class AppBrushes
     public static SolidColorBrush Recording { get; } = new();
     public static SolidColorBrush Inactive { get; } = new();
     public static SolidColorBrush Error { get; } = new();
+    public static SolidColorBrush Paused { get; } = new();
+
+    // Message bars under a view's tool bar (recording paused, not recording, deleted video still on disk), in the
+    // colours Windows 11 gives its info bars.
+    public static SolidColorBrush WarningBar { get; } = new();
+    public static SolidColorBrush WarningBarFrame { get; } = new();
+    public static SolidColorBrush WarningIcon { get; } = new();
+    public static SolidColorBrush ErrorBar { get; } = new();
+    public static SolidColorBrush ErrorBarFrame { get; } = new();
+    public static SolidColorBrush ErrorIcon { get; } = new();
 
     // The timeline's own parts, from the desktop's palette.
     public static SolidColorBrush TimelineTrack { get; } = new();
@@ -41,6 +51,14 @@ public static class AppBrushes
         Recording.Color = Marked.Color;
         Inactive.Color = NotRecorded.Color;
         Error.Color = Marked.Color;
+        Paused.Color = dark ? Color.Parse("#FCE100") : Color.Parse("#9D5D00");
+
+        WarningBar.Color = dark ? Color.Parse("#433519") : Color.Parse("#FFF4CE");
+        WarningBarFrame.Color = dark ? Color.Parse("#6B5420") : Color.Parse("#E8D48A");
+        WarningIcon.Color = Paused.Color;
+        ErrorBar.Color = dark ? Color.Parse("#442726") : Color.Parse("#FDE7E9");
+        ErrorBarFrame.Color = dark ? Color.Parse("#6E3030") : Color.Parse("#F1BBBF");
+        ErrorIcon.Color = dark ? Color.Parse("#FF99A4") : Color.Parse("#C42B1C");
 
         TimelineTrack.Color = palette.View;
         TimelineFrame.Color = palette.Frame;
