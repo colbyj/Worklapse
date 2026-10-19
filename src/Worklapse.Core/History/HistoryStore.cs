@@ -138,15 +138,18 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
     }
 
     /// <summary>
-    /// A day's captures without their frames, monitors or window titles: enough to total its time per project, for
-    /// views that sum many days.
+    /// The captures of the local days from <paramref name="from"/> up to (not including) <paramref name="to"/>, in
+    /// time order, as just what totals per project need (no names, titles or frames): one query for a week or a month.
+    /// Productive and the linked project are worked out as <see cref="CaptureRecord.Productive"/> and
+    /// <see cref="CaptureRecord.LinkedProjectId"/> do.
     /// </summary>
-    public IReadOnlyList<CaptureRecord> LoadActivity(DateOnly day)
+    public List<ActivitySample> LoadSamples(DateOnly from, DateOnly to)
     {
-        var (startMs, endMs) = DayBounds(day);
+        var startMs = DayBounds(from).Start;
+        var endMs = DayBounds(to).Start; // the end of the day before
         using var command = db.Command("""
-            SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, coalesce(a.productive, 0), c.pending_delete,
-                   s.domain, s.productive, a.project_id, s.project_id
+            SELECT c.ts_ms, c.utc_offset_min, c.kind, c.pending_delete,
+                   coalesce(s.productive, a.productive, 0), coalesce(s.project_id, a.project_id)
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
@@ -154,24 +157,15 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
         command.Parameters.AddWithValue("$start", startMs);
         command.Parameters.AddWithValue("$end", endMs);
         using var reader = command.ExecuteReader();
-        var captures = new List<CaptureRecord>();
+        var samples = new List<ActivitySample>();
         while (reader.Read())
-            captures.Add(new CaptureRecord(
-                reader.GetInt64(0),
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(2))),
-                (CaptureKind)reader.GetInt32(3),
-                AppName: reader.IsDBNull(4) ? null : reader.GetString(4),
-                Site: reader.IsDBNull(7) ? null : reader.GetString(7),
-                WindowTitle: null,
-                Window: null,
-                AppProductive: reader.GetInt64(5) != 0,
-                SiteProductive: reader.IsDBNull(8) ? null : reader.GetInt64(8) != 0,
-                PendingDelete: reader.GetInt64(6) != 0,
-                Frames: [],
-                MonitorIds: [],
-                AppProjectId: reader.IsDBNull(9) ? null : reader.GetInt64(9),
-                SiteProjectId: reader.IsDBNull(10) ? null : reader.GetInt64(10)));
-        return captures;
+            samples.Add(new ActivitySample(
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(1))),
+                (CaptureKind)reader.GetInt32(2),
+                Productive: reader.GetInt64(4) != 0,
+                PendingDelete: reader.GetInt64(3) != 0,
+                LinkedProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+        return samples;
     }
 
     /// <summary>Marks (or unmarks) every capture with start ≤ time &lt; end for deletion.</summary>

@@ -230,7 +230,7 @@ internal static class ProjectTimes
 public sealed partial class DayReviewViewModel
 {
     private ProjectStore? _projectStore;
-    private ProjectTime _projectTime = new([], new Dictionary<long, ProjectTotals>(), new UnassignedTotals(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero));
+    private ProjectTime _projectTime = ProjectTime.Empty;
     private List<ProjectSpan> _handSpans = [];
     private PlacedNotes _placedNotes = new([], []);
     private List<ProjectNote> _notes = [];

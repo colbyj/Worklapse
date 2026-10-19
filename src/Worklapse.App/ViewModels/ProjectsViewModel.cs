@@ -22,11 +22,6 @@ public sealed class PaletteColor(int rgb)
     public static PaletteColor? Find(int? rgb) => rgb is { } value ? All.FirstOrDefault(c => c.Rgb == value) : null;
 }
 
-internal static class ProjectColors
-{
-    public static IBrush Brush(int rgb) => new SolidColorBrush(Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
-}
-
 /// <summary>A line in the Projects tab's list: a category, a project, or the heading over projects without a category.</summary>
 public abstract partial class ProjectsEntry : ObservableObject
 {

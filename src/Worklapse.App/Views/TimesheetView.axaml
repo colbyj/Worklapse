@@ -10,12 +10,6 @@
     <Style Selector="ic|SymbolIcon">
       <Setter Property="FontSize" Value="16" />
     </Style>
-    <!-- Times line up on the right, in figures of one width. -->
-    <Style Selector="TextBlock.time">
-      <Setter Property="HorizontalAlignment" Value="Right" />
-      <Setter Property="Margin" Value="6,0" />
-      <Setter Property="FontFeatures" Value="+tnum" />
-    </Style>
     <Style Selector="Border.dayRow">
       <Setter Property="Background" Value="{DynamicResource UiWindowBrush}" />
     </Style>
@@ -90,7 +84,7 @@
           </Grid>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="200,*,64,76,72,76" Height="25" Margin="0,0,14,0">
-              <TextBlock Text="{Binding FooterTitle}" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Title}" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
               <TextBlock Grid.Column="2" Text="{Binding TotalActiveText}" Classes="strong time" VerticalAlignment="Center" />
               <TextBlock Grid.Column="3" Text="{Binding TotalProductiveText}" Classes="secondary time" VerticalAlignment="Center" />
               <TextBlock Grid.Column="4" Text="{Binding TotalAssignedText}" Classes="strong time" VerticalAlignment="Center" />

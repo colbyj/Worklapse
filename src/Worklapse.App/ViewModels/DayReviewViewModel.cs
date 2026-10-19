@@ -62,21 +62,22 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private bool _updatingChoices;
 
     /// <param name="capturesDeleted">Called after captures are deleted permanently, to remove their video from disk.</param>
-    public DayReviewViewModel(HistoryStore history, SettingsStore settings, TimeSpan captureInterval, Action<DeleteResult>? capturesDeleted = null)
+    /// <param name="day">The day to open at its first capture; by default the latest day recorded, at its last.</param>
+    public DayReviewViewModel(HistoryStore history, SettingsStore settings, Action<DeleteResult>? capturesDeleted = null,
+        DateOnly? day = null)
     {
         _history = history;
         _settings = settings;
         _focusOnApplication = settings.Current.ReviewFocusOnApplication;
         _capturesDeleted = capturesDeleted;
-        _maxCaptureLength = captureInterval * 1.5;
+        _maxCaptureLength = settings.Current.MaxCaptureLength;
         _playTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => PlayTick());
         Speeds = ["Slow", "Normal", "Fast", "Very fast"];
         _speed = "Normal";
         LoadDays();
-        var initial = _days.Count > 0 ? _days[^1] : DateOnly.FromDateTime(DateTime.Today);
-        LoadDay(initial);
+        LoadDay(day ?? (_days.Count > 0 ? _days[^1] : DateOnly.FromDateTime(DateTime.Today)));
         if (Captures.Count > 0)
-            MoveTo(Captures.Count - 1);
+            MoveTo(day is null ? Captures.Count - 1 : 0);
     }
 
     /// <summary>Raised when what the timeline shows changes (data, selection or playhead).</summary>

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Worklapse.Core.History;
+using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
 
 namespace Worklapse.App.ViewModels;
@@ -76,7 +77,8 @@ public sealed partial class ProgramsViewModel : ObservableObject
     private List<ProgramRow> _all = [];
     private int _loads;
 
-    public ProgramsViewModel(TimeSpan captureInterval) => _maxCaptureLength = captureInterval * 1.5;
+    /// <param name="maxCaptureLength">See <see cref="WorklapseSettings.MaxCaptureLength"/>.</param>
+    public ProgramsViewModel(TimeSpan maxCaptureLength) => _maxCaptureLength = maxCaptureLength;
 
     /// <summary>Raised when a row's checkbox or project changes.</summary>
     public event Action? Changed;

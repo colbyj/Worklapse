@@ -23,26 +23,28 @@ public static class Timesheet
     {
         var logged = projects.GetLogged(from, to).ToDictionary(l => (l.Day, l.ProjectId), l => l.Logged);
         var lines = new List<TimesheetLine>();
-        for (var day = from; day < to; day = day.AddDays(1))
-        {
-            var (start, end) = HistoryStore.DayRange(day);
-            var time = ProjectTimeline.Build(history.LoadActivity(day), projects.GetSpans(start, end), start, end, maxCaptureLength);
-            var notes = projects.GetNotes(start, end);
-
-            var order = time.Blocks.Select(b => b.ProjectId)
-                .Concat(notes.Select(n => n.ProjectId))
-                .Concat(logged.Keys.Where(k => k.Day == day).Select(k => k.ProjectId).Order())
-                .Distinct();
-            foreach (var project in order)
-            {
-                var totals = time.Totals.GetValueOrDefault(project);
-                lines.Add(new TimesheetLine(day, project,
-                    notes.Where(n => n.ProjectId == project).Select(n => n.Text).ToList(),
-                    totals?.Active ?? TimeSpan.Zero, totals?.Productive ?? TimeSpan.Zero, totals?.Assigned ?? TimeSpan.Zero,
-                    logged.TryGetValue((day, project), out var value) ? value : null));
-            }
-        }
+        foreach (var summary in DaySummaries.Build(history, projects, from, to, maxCaptureLength))
+            lines.AddRange(LinesOf(summary, logged));
         return lines;
+    }
+
+    /// <summary>A day's lines: projects in the order their first block starts, then those with only notes or logged time.</summary>
+    private static IEnumerable<TimesheetLine> LinesOf(DaySummary summary, IReadOnlyDictionary<(DateOnly Day, long ProjectId), TimeSpan> logged)
+    {
+        var day = summary.Day;
+        var time = summary.Time;
+        var order = time.Blocks.Select(b => b.ProjectId)
+            .Concat(summary.Notes.Select(n => n.ProjectId))
+            .Concat(logged.Keys.Where(k => k.Day == day).Select(k => k.ProjectId).Order())
+            .Distinct();
+        foreach (var project in order)
+        {
+            var totals = time.Totals.GetValueOrDefault(project);
+            yield return new TimesheetLine(day, project,
+                summary.Notes.Where(n => n.ProjectId == project).Select(n => n.Text).ToList(),
+                totals?.Active ?? TimeSpan.Zero, totals?.Productive ?? TimeSpan.Zero, totals?.Assigned ?? TimeSpan.Zero,
+                logged.TryGetValue((day, project), out var value) ? value : null);
+        }
     }
 }
 

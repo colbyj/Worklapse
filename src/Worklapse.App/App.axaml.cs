@@ -94,8 +94,7 @@ public partial class App : Application
 
         CreateTrayIcon(desktop);
         _recorder.Start();
-        // The Overview is to be the first view; until it's built, Day review is.
-        ShowMainWindow(MainView.DayReview);
+        ShowMainWindow(MainView.Overview);
     }
 
     /// <summary>
@@ -169,7 +168,7 @@ public partial class App : Application
     {
         if (_mainWindow is null)
         {
-            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, _settings!, view ?? MainView.DayReview);
+            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, _settings!, view ?? MainView.Overview);
             _mainWindow = new MainWindow(viewModel, _settings!, QuitAsync);
             _mainWindow.Closed += (_, _) =>
             {
@@ -189,19 +188,19 @@ public partial class App : Application
         return _mainWindow;
     }
 
-    /// <summary>Day review, reading the history in the data folder the settings name now.</summary>
-    private DayReviewViewModel CreateDayReview()
+    /// <summary>Day review on a day (or the latest recorded), reading the history in the data folder the settings name now.</summary>
+    private DayReviewViewModel CreateDayReview(DateOnly? day)
     {
         var settings = _settings!.Current;
         var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder));
         // The recorder's batch encoder (open even while paused or locked) removes the deleted video and images from
         // disk. Frames in the segments still being recorded go once those are closed and encoded.
-        return new DayReviewViewModel(history, _settings, TimeSpan.FromSeconds(settings.IntervalSeconds), result =>
+        return new DayReviewViewModel(history, _settings, result =>
         {
             _sink?.Encoder.RequestReclaim();
             if (result.StagedSegmentsAffected)
                 _recorder!.CloseSegmentsSoon();
-        });
+        }, day);
     }
 
     private async Task ShowSettingsAsync()
@@ -210,7 +209,10 @@ public partial class App : Application
         // The recording preview captures the primary monitor with a source of its own.
         var sampler = OperatingSystem.IsWindows() ? new PrimaryScreenSampler(new GdiScreenSource()) : null;
         var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler) };
-        await dialog.ShowDialog(ShowMainWindow());
+        var owner = ShowMainWindow();
+        await dialog.ShowDialog(owner);
+        // Projects and links may have changed (they live in the history, not the settings file).
+        owner.RefreshView();
         // The recording preview held a few screens of pixels.
         ReleaseMemory();
     }

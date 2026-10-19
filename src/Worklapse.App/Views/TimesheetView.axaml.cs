@@ -1,7 +1,9 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using Worklapse.App.ViewModels;
 
 namespace Worklapse.App.Views;
@@ -25,9 +27,11 @@ public partial class TimesheetView : UserControl
         Indicator.DataContext = recording;
     }
 
-    /// <summary>Double-clicking a day's heading opens it in Day review, like its date.</summary>
+    /// <summary>Double-clicking a day's heading opens it in Day review, like its date (whose own click already did).</summary>
     private void OnDayDoubleTapped(object? sender, TappedEventArgs e)
     {
+        if ((e.Source as Visual)?.FindAncestorOfType<Button>(includeSelf: true) is not null)
+            return;
         if (sender is Control { DataContext: TimesheetDayRow day })
             day.Open.Execute(null);
     }

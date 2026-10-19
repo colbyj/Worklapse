@@ -61,7 +61,7 @@ public sealed class WorklapseDatabase : IDisposable
         using var versionCommand = Command("PRAGMA user_version;");
         var version = Convert.ToInt32(versionCommand.ExecuteScalar());
         if (version > SchemaVersion)
-            throw new InvalidOperationException(
+            throw new DatabaseVersionException(
                 $"The database in '{DataFolder}' was created by a newer version of Worklapse (schema {version}).");
 
         if (version < 1)
@@ -316,3 +316,6 @@ public sealed class WorklapseDatabase : IDisposable
         }
     }
 }
+
+/// <summary>The database was made by a newer Worklapse, whose schema this one can't read.</summary>
+public sealed class DatabaseVersionException(string message) : InvalidOperationException(message);

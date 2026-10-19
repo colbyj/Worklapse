@@ -1,5 +1,7 @@
 # Handoff: the Timesheet and the Overview
 
+> **Done 2026-10-18:** phase 5 committed (b903c08), phase 6 built; see PROJECT.md *1a*. Kept for the record.
+
 Written 2026-10-18 for a new Claude session. Phases 1–4 of the projects work are built, committed and walked
 through by the developer; what's left is **phase 5 (Timesheet view)** and **phase 6 (Overview)**. Do them in that
 order; finish, verify and report each one before starting the next, and commit each when the developer asks (they

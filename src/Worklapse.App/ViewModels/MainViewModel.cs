@@ -17,15 +17,18 @@ public enum MainView
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
-    private readonly Func<DayReviewViewModel> _createDayReview;
+    private readonly Func<DateOnly?, DayReviewViewModel> _createDayReview;
     private readonly Func<Task> _openSettings;
+    private bool _dayReviewIsFresh; // just made or moved to a day: showing it needs no refresh
 
-    public MainViewModel(RecordingViewModel recording, Func<DayReviewViewModel> createDayReview, Func<Task> openSettings,
+    /// <param name="createDayReview">Makes Day review on a day, or on the latest day recorded (null).</param>
+    public MainViewModel(RecordingViewModel recording, Func<DateOnly?, DayReviewViewModel> createDayReview, Func<Task> openSettings,
         SettingsStore settings, MainView first)
     {
         Recording = recording;
         _createDayReview = createDayReview;
         _openSettings = openSettings;
+        Overview = new OverviewViewModel(settings, OpenDay);
         Timesheet = new TimesheetViewModel(settings, OpenDay);
         View = first;
         if (first == MainView.DayReview)
@@ -34,7 +37,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public RecordingViewModel Recording { get; }
 
-    /// <summary>Reads its data folder from the settings at each load, so it needs nothing after a folder change.</summary>
+    // These read their data folder from the settings at each load, so they need nothing after a folder change.
+    public OverviewViewModel Overview { get; }
     public TimesheetViewModel Timesheet { get; }
 
     [ObservableProperty]
@@ -68,12 +72,50 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private Task OpenSettings() => _openSettings();
 
-    /// <summary>Opens a day in Day review (from the Timesheet or the Overview).</summary>
+    /// <summary>Opens a day in Day review (from the Timesheet or the Overview), reading it once.</summary>
     public void OpenDay(DateOnly day)
     {
-        EnsureDayReview();
-        DayReview!.GoToDay(day);
+        if (DayReview is null)
+        {
+            EnsureDayReview(day);
+        }
+        else
+        {
+            DayReview.GoToDay(day);
+            _dayReviewIsFresh = true;
+        }
         View = MainView.DayReview;
+    }
+
+    /// <summary>
+    /// Brings the view shown up to date: when it's shown, when the window comes back to the front
+    /// (<paramref name="activated"/>) and after Settings closes. The views share the history: Day review changes the
+    /// logged time and notes the others show, Settings their projects, and recording adds to today.
+    /// </summary>
+    public void RefreshView(bool activated = false)
+    {
+        switch (View)
+        {
+            case MainView.DayReview:
+                // Day review that was just read needs no second read.
+                if (_dayReviewIsFresh)
+                    _dayReviewIsFresh = false;
+                else
+                    DayReview?.RefreshCommand.Execute(null);
+                break;
+            case MainView.Overview when activated:
+                Overview.RefreshIfCurrent();
+                break;
+            case MainView.Overview:
+                Overview.Refresh();
+                break;
+            case MainView.Timesheet when activated:
+                Timesheet.RefreshIfCurrent();
+                break;
+            case MainView.Timesheet:
+                Timesheet.Refresh();
+                break;
+        }
     }
 
     /// <summary>Makes Day review again, reading the history from where the settings now say (after a folder change).</summary>
@@ -89,15 +131,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         CloseDayReview();
+        Overview.Dispose();
         Timesheet.Dispose();
     }
 
-    private void EnsureDayReview()
+    private void EnsureDayReview(DateOnly? onDay = null)
     {
         if (DayReview is not null)
             return;
-        var day = _createDayReview();
+        var day = _createDayReview(onDay);
         day.PropertyChanged += OnDayReviewChanged;
+        _dayReviewIsFresh = true;
         DayReview = day;
     }
 

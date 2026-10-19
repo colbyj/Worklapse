@@ -184,6 +184,13 @@
   <Style Selector="Border.row TextBlock">
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
+  <!-- Times in a grid line up on the right, in figures of one width. -->
+  <Style Selector="TextBlock.time">
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="6,0" />
+    <Setter Property="FontFeatures" Value="+tnum" />
+  </Style>
   <!-- Cells you can type in: plain text until hovered or focused, as in a desktop grid. -->
   <Style Selector="TextBox.cell">
     <Setter Property="Background" Value="Transparent" />

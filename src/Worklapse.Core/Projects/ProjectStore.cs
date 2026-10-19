@@ -88,6 +88,14 @@ public sealed class ProjectStore(WorklapseDatabase db)
         return projects;
     }
 
+    /// <summary>Whether the project is still there (it may have been deleted in Settings meanwhile).</summary>
+    public bool ProjectExists(long id)
+    {
+        using var command = db.Command("SELECT EXISTS (SELECT 1 FROM projects WHERE id = $id);");
+        command.Parameters.AddWithValue("$id", id);
+        return (long)command.ExecuteScalar()! != 0;
+    }
+
     public long AddProject(string name, long? categoryId, int? color = null)
     {
         using var command = db.Command("INSERT INTO projects (name, category_id, color) VALUES ($name, $category, $color) RETURNING id;");

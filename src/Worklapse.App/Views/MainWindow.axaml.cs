@@ -16,8 +16,8 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel = null!;
     private readonly SettingsStore _settings = null!;
     private readonly Func<Task>? _quit;
-    private readonly PlaceholderView _overview = new();
-    private TimesheetView? _timesheet;
+    private readonly OverviewView _overview = null!;
+    private readonly TimesheetView _timesheet = null!;
     private DayReviewView? _dayView;
     private string _dataFolder = "";
 
@@ -33,7 +33,7 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         _dataFolder = settings.Current.DataFolder;
 
-        _overview.Show("Overview", "The week and month overview comes in a later step.", viewModel.Recording);
+        _overview = new OverviewView(viewModel.Overview, viewModel.Recording);
         _timesheet = new TimesheetView(viewModel.Timesheet, viewModel.Recording);
         Host.Children.Add(_overview);
         Host.Children.Add(_timesheet);
@@ -45,10 +45,12 @@ public partial class MainWindow : Window
 
         // Arrow keys step through frames wherever focus is (tool bar buttons would otherwise move focus).
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
-        Activated += (_, _) => RefreshCurrent();
+        Activated += (_, _) => viewModel.RefreshView(activated: true);
 
         SyncDayView();
         ShowCurrent();
+        // Not left to the first activation: a window shown from the tray isn't always brought to the front.
+        viewModel.RefreshView();
     }
 
 
@@ -68,10 +70,12 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainViewModel.DayReview))
             SyncDayView();
-        if (e.PropertyName is nameof(MainViewModel.View) or nameof(MainViewModel.DayReview))
+        // A new Day review (after a folder change) is shown at once if it's the view; one made by opening a day from
+        // another view is shown by the switch that follows.
+        if (e.PropertyName == nameof(MainViewModel.View) || (e.PropertyName == nameof(MainViewModel.DayReview) && _viewModel.IsDayReview))
         {
             ShowCurrent();
-            RefreshCurrent();
+            _viewModel.RefreshView();
         }
     }
 
@@ -94,22 +98,13 @@ public partial class MainWindow : Window
     private void ShowCurrent()
     {
         _overview.IsVisible = _viewModel.IsOverview;
-        _timesheet!.IsVisible = _viewModel.IsTimesheet;
+        _timesheet.IsVisible = _viewModel.IsTimesheet;
         if (_dayView is not null)
             _dayView.IsVisible = _viewModel.IsDayReview;
     }
 
-    /// <summary>
-    /// The day may have grown while the window was in the background, and the views share the history: Day review
-    /// changes the Timesheet's logged time and notes, Settings its projects.
-    /// </summary>
-    private void RefreshCurrent()
-    {
-        if (_viewModel.IsDayReview)
-            _viewModel.DayReview?.RefreshCommand.Execute(null);
-        else if (_viewModel.IsTimesheet)
-            _viewModel.Timesheet.Refresh();
-    }
+    /// <summary>Brings the view shown up to date (after Settings closes: its projects may have changed).</summary>
+    public void RefreshView() => _viewModel.RefreshView();
 
     private void OnSettingsChanged(object? sender, WorklapseSettings settings) => Dispatcher.UIThread.Post(() =>
     {
@@ -118,9 +113,9 @@ public partial class MainWindow : Window
             return;
         _dataFolder = settings.DataFolder;
         _viewModel.ReopenDayReview();
-        // The Timesheet reads the folder the settings name at each load.
-        if (_viewModel.IsTimesheet)
-            _viewModel.Timesheet.Refresh();
+        // The Overview and the Timesheet read the folder the settings name at each load.
+        if (!_viewModel.IsDayReview)
+            _viewModel.RefreshView();
     });
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)

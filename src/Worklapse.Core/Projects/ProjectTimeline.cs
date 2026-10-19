@@ -24,7 +24,26 @@ public sealed record ProjectTotals(TimeSpan Assigned, TimeSpan Active, TimeSpan 
 public sealed record UnassignedTotals(TimeSpan Productive, TimeSpan Other, TimeSpan Idle);
 
 /// <summary>A span of time (usually a day) worked out per project.</summary>
-public sealed record ProjectTime(IReadOnlyList<ProjectBlock> Blocks, IReadOnlyDictionary<long, ProjectTotals> Totals, UnassignedTotals Unassigned);
+/// <param name="Recorded">Time captured, active or idle (captures marked for deletion left out), project or not.</param>
+public sealed record ProjectTime(IReadOnlyList<ProjectBlock> Blocks, IReadOnlyDictionary<long, ProjectTotals> Totals, UnassignedTotals Unassigned,
+    TimeSpan Recorded)
+{
+    public static ProjectTime Empty { get; } = new([], new Dictionary<long, ProjectTotals>(),
+        new UnassignedTotals(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero), TimeSpan.Zero);
+
+    /// <summary>All time marked with a project.</summary>
+    public TimeSpan Assigned => Blocks.Aggregate(TimeSpan.Zero, (sum, b) => sum + b.Length);
+}
+
+public enum ActivityKind
+{
+    Productive,
+    Other,
+    Idle,
+}
+
+/// <summary>A stretch of recorded time of one kind (captures marked for deletion left out).</summary>
+public readonly record struct ActivityRun(DateTimeOffset Start, DateTimeOffset End, ActivityKind Kind);
 
 /// <summary>
 /// Works out which project each moment belongs to. A range set by hand decides inside it (its project, or none);
@@ -36,9 +55,18 @@ public static class ProjectTimeline
     /// <param name="spans">The ranges set by hand, in time order, not overlapping.</param>
     /// <param name="maxCaptureLength">As in <see cref="SpanSummary.For"/>: each capture lasts until the next, at most this.</param>
     public static ProjectTime Build(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans,
+        DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength) =>
+        Build(captures.Select(ActivitySample.Of).ToArray(), spans, start, end, maxCaptureLength);
+
+    /// <inheritdoc cref="Build(IReadOnlyList{CaptureRecord}, IReadOnlyList{ProjectSpan}, DateTimeOffset, DateTimeOffset, TimeSpan)"/>
+    public static ProjectTime Build(IReadOnlyList<ActivitySample> captures, IReadOnlyList<ProjectSpan> spans,
         DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
     {
         var pieces = Pieces(captures, start, end, maxCaptureLength);
+        var recordedTime = TimeSpan.Zero;
+        foreach (var piece in pieces)
+            if (piece.Kind != PieceKind.Marked)
+                recordedTime += piece.To - piece.From;
 
         // Every place where something changes, then walk the gaps between them.
         var cuts = new List<DateTimeOffset>(pieces.Count * 2 + spans.Count * 2 + 2) { start, end };
@@ -100,15 +128,35 @@ public static class ProjectTimeline
             var sum = totals.GetValueOrDefault(block.ProjectId) ?? new ProjectTotals(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
             totals[block.ProjectId] = new ProjectTotals(sum.Assigned + block.Length, sum.Active + block.Active, sum.Productive + block.Productive);
         }
-        return new ProjectTime(blocks, totals, new UnassignedTotals(unassignedProductive, unassignedOther, unassignedIdle));
+        return new ProjectTime(blocks, totals, new UnassignedTotals(unassignedProductive, unassignedOther, unassignedIdle), recordedTime);
+    }
+
+    /// <summary>
+    /// The recorded time in start..end as runs of productive, other and idle time, for an activity lane; time not
+    /// recorded and captures marked for deletion are gaps.
+    /// </summary>
+    public static List<ActivityRun> Activity(IReadOnlyList<ActivitySample> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
+    {
+        var runs = new List<ActivityRun>();
+        foreach (var piece in Pieces(captures, start, end, maxCaptureLength))
+        {
+            if (piece.Kind == PieceKind.Marked)
+                continue;
+            var kind = piece.Kind == PieceKind.Idle ? ActivityKind.Idle : piece.Productive ? ActivityKind.Productive : ActivityKind.Other;
+            if (runs.Count > 0 && runs[^1] is var last && last.Kind == kind && last.End == piece.From)
+                runs[^1] = last with { End = piece.To };
+            else
+                runs.Add(new ActivityRun(piece.From, piece.To, kind));
+        }
+        return runs;
     }
 
     private enum PieceKind { Active, Idle, Marked }
 
     /// <summary>The time one capture stands for, clipped to the span, and the project its links point to.</summary>
-    private sealed record Piece(DateTimeOffset From, DateTimeOffset To, PieceKind Kind, bool Productive, long? Link);
+    private readonly record struct Piece(DateTimeOffset From, DateTimeOffset To, PieceKind Kind, bool Productive, long? Link);
 
-    private static List<Piece> Pieces(IReadOnlyList<CaptureRecord> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
+    private static List<Piece> Pieces(IReadOnlyList<ActivitySample> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
     {
         var pieces = new List<Piece>(captures.Count);
         for (var i = 0; i < captures.Count; i++)

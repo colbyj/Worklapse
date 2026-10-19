@@ -6,8 +6,6 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Data.Sqlite;
-using Worklapse.App.Theming;
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Settings;
@@ -54,6 +52,7 @@ public sealed partial class TimesheetLineRow : ObservableObject
     private bool _hasNotes;
 
     public FontStyle NotesStyle => HasNotes ? FontStyle.Normal : FontStyle.Italic;
+
     [ObservableProperty] private string _activeText = "";
     [ObservableProperty] private string _productiveText = "";
     [ObservableProperty] private string _assignedText = "";
@@ -88,44 +87,18 @@ public sealed record TimesheetTotalRow(string Name, IBrush Brush, bool IsCategor
     public Thickness Indent => IsCategory ? default : new Thickness(16, 0, 0, 0);
 }
 
-public enum TimesheetRange
-{
-    Week,
-    Month,
-}
-
 /// <summary>
-/// The Timesheet view: a line per project per day for a week or a month, read off the UI thread with a connection of
-/// its own. Logged time is saved as it's typed. Reloads when shown (Day review may have changed logged time or notes).
+/// The Timesheet view: a line per project per day for a week or a month. Logged time is saved as it's typed. Reloads
+/// when shown (Day review may have changed logged time or notes).
 /// </summary>
-public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
+public sealed partial class TimesheetViewModel(SettingsStore settings, Action<DateOnly> openDay)
+    : PeriodViewModel<TimesheetData>(settings, openDay)
 {
-    private readonly SettingsStore _settings;
-    private readonly Action<DateOnly> _openDay;
-    private DateOnly _start;          // a Monday, or the first of a month
-    private int _generation;          // the newest load; older ones are dropped when they finish
-    private bool _disposed;
-    private TimesheetData? _data;
-
-    public TimesheetViewModel(SettingsStore settings, Action<DateOnly> openDay)
-    {
-        _settings = settings;
-        _openDay = openDay;
-        _start = WeekStart(Today);
-        ShowRange();
-    }
-
     /// <summary>Day headings (<see cref="TimesheetDayRow"/>) each followed by its lines (<see cref="TimesheetLineRow"/>).</summary>
     public ObservableCollection<object> Rows { get; } = [];
 
     public ObservableCollection<TimesheetTotalRow> Totals { get; } = [];
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsWeek), nameof(IsMonth), nameof(TodayText))]
-    private TimesheetRange _range = TimesheetRange.Week;
-
-    [ObservableProperty] private string _rangeText = "";
-    [ObservableProperty] private string _footerTitle = "";
     [ObservableProperty] private string _totalActiveText = "";
     [ObservableProperty] private string _totalProductiveText = "";
     [ObservableProperty] private string _totalAssignedText = "";
@@ -137,130 +110,6 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private bool _hasNoTotals = true;
 
-    public string TodayText => Range == TimesheetRange.Week ? "This Week" : "This Month";
-
-    // The Week and Month tool buttons (a radio pair: the one turned off by the other's click changes nothing).
-    public bool IsWeek
-    {
-        get => Range == TimesheetRange.Week;
-        set
-        {
-            if (value)
-                SetRange(TimesheetRange.Week);
-        }
-    }
-
-    public bool IsMonth
-    {
-        get => Range == TimesheetRange.Month;
-        set
-        {
-            if (value)
-                SetRange(TimesheetRange.Month);
-        }
-    }
-
-    /// <summary>The first day shown and the day after the last.</summary>
-    public (DateOnly From, DateOnly To) Span => (_start, Range == TimesheetRange.Week ? _start.AddDays(7) : _start.AddMonths(1));
-
-    private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
-
-    [RelayCommand]
-    private void Previous() => MoveTo(Range == TimesheetRange.Week ? _start.AddDays(-7) : _start.AddMonths(-1));
-
-    [RelayCommand]
-    private void Next() => MoveTo(Range == TimesheetRange.Week ? _start.AddDays(7) : _start.AddMonths(1));
-
-    [RelayCommand]
-    private void GoToToday() => MoveTo(Range == TimesheetRange.Week ? WeekStart(Today) : MonthStart(Today));
-
-    private void SetRange(TimesheetRange range)
-    {
-        if (range == Range)
-            return;
-        // A week becomes the month it starts in; a month becomes this week if it holds today, else its first week.
-        var (from, to) = Span;
-        _start = range == TimesheetRange.Month ? MonthStart(_start)
-            : Today >= from && Today < to ? WeekStart(Today) : WeekStart(_start);
-        Range = range;
-        MoveTo(_start);
-    }
-
-    private void MoveTo(DateOnly start)
-    {
-        _start = start;
-        ShowRange();
-        Refresh();
-    }
-
-    private void ShowRange()
-    {
-        var (from, to) = Span;
-        var last = to.AddDays(-1);
-        var culture = CultureInfo.CurrentCulture;
-        if (Range == TimesheetRange.Month)
-        {
-            RangeText = from.ToString("MMMM yyyy", culture);
-            FooterTitle = from.ToString("MMMM", culture);
-        }
-        else
-        {
-            RangeText = from.Month == last.Month ? $"{from.Day} – {last.ToString("d MMMM yyyy", culture)}"
-                : from.Year == last.Year ? $"{from.ToString("d MMM", culture)} – {last.ToString("d MMM yyyy", culture)}"
-                : $"{from.ToString("d MMM yyyy", culture)} – {last.ToString("d MMM yyyy", culture)}";
-            FooterTitle = $"Week {ISOWeek.GetWeekOfYear(from.ToDateTime(TimeOnly.MinValue))}";
-        }
-    }
-
-    /// <summary>Reads the range again in the background; what's shown stays until it's ready.</summary>
-    public async void Refresh()
-    {
-        if (_disposed)
-            return;
-        var generation = ++_generation;
-        var (from, to) = Span;
-        var folder = _settings.Current.DataFolder;
-        var maxCaptureLength = TimeSpan.FromSeconds(_settings.Current.IntervalSeconds * 1.5);
-        TimesheetData data;
-        try
-        {
-            data = await Task.Run(() => TimesheetData.Load(folder, from, to, maxCaptureLength));
-        }
-        catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException)
-        {
-            if (generation == _generation && !_disposed)
-                ShowError(ex.Message);
-            return;
-        }
-        // A newer load is on its way, or the window has closed.
-        if (generation != _generation || _disposed)
-            return;
-        _data = data;
-        Show();
-    }
-
-    /// <summary>Writes the range, read again so it's current, as CSV with decimal hours, to the file chosen.</summary>
-    public async Task ExportAsync(string fileName, Func<Task<Stream>> openFile)
-    {
-        ExportError = "";
-        var (from, to) = Span;
-        var folder = _settings.Current.DataFolder;
-        var maxCaptureLength = TimeSpan.FromSeconds(_settings.Current.IntervalSeconds * 1.5);
-        try
-        {
-            var data = await Task.Run(() => TimesheetData.Load(folder, from, to, maxCaptureLength));
-            // A spreadsheet holding the file open makes this fail; said so in the bar under the tool bar.
-            await using var stream = await openFile();
-            // With a byte order mark, so spreadsheets read names with accents correctly.
-            await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            TimesheetCsv.Write(writer, data.Lines, data.Projects, data.Categories);
-        }
-        catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException)
-        {
-            ExportError = $"Couldn't export {fileName}: {ex.Message}";
-        }
-    }
-
     /// <summary>Why the last export failed; empty when it didn't.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasExportError))]
@@ -268,74 +117,77 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
 
     public bool HasExportError => ExportError.Length > 0;
 
+    /// <summary>A file name for the export: "Timesheet 2026-10-12 to 2026-10-18.csv".</summary>
+    public string ExportFileName => $"Timesheet {Period.Start:yyyy-MM-dd} to {Period.End.AddDays(-1):yyyy-MM-dd}.csv";
+
     [RelayCommand]
     private void DismissExportError() => ExportError = "";
 
-    /// <summary>A file name for the export: "Timesheet 2026-10-12 to 2026-10-18.csv".</summary>
-    public string ExportFileName
+    /// <summary>Writes the range, read again so it's current, as CSV with decimal hours, to the file chosen.</summary>
+    public async Task ExportAsync(string fileName, Func<Task<Stream>> openFile)
     {
-        get
+        ExportError = "";
+        var (period, folder, maxCaptureLength) = (Period, Settings.Current.DataFolder, MaxCaptureLength);
+        try
         {
-            var (from, to) = Span;
-            return $"Timesheet {from:yyyy-MM-dd} to {to.AddDays(-1):yyyy-MM-dd}.csv";
+            var data = await Task.Run(() => Load(folder, period, maxCaptureLength));
+            // A spreadsheet holding the file open makes this fail; said so in the bar under the tool bar.
+            await using var stream = await openFile();
+            // With a byte order mark, so spreadsheets read names with accents correctly.
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            TimesheetCsv.Write(writer, data.Lines, data.Catalog.Projects, data.Catalog.Categories);
+        }
+        catch (Exception ex) when (IsReadError(ex))
+        {
+            ExportError = $"Couldn't export {fileName}: {ex.Message}";
         }
     }
 
-    public void Dispose() => _disposed = true;
+    protected override TimesheetData Load(string dataFolder, Period period, TimeSpan maxCaptureLength) =>
+        TimesheetData.Load(dataFolder, period.Start, period.End, maxCaptureLength);
 
-    private void ShowError(string message)
+    protected override void ShowError(string message)
     {
-        _data = null;
         Rows.Clear();
         Totals.Clear();
         HasNoTotals = true;
         TotalActiveText = TotalProductiveText = TotalAssignedText = TotalLoggedText = "";
-        EmptyText = "Couldn't read the history: " + message;
+        EmptyText = message;
         IsEmpty = true;
     }
 
     /// <summary>
-    /// Shows <see cref="_data"/>. When the same lines are there as before (only times changed: today grows while
-    /// recording), the rows are updated in place, so a cell being typed in keeps its text.
+    /// Shows a load. Rows are kept by day and project, so the ones still there are updated in place (today grows
+    /// while recording) and a cell being typed in keeps its text and its focus.
     /// </summary>
-    private void Show()
+    protected override void Show(TimesheetData data)
     {
-        var data = _data!;
+        var byDay = data.Lines.ToLookup(l => l.Day);
+        var lines = data.Lines.ToDictionary(l => (l.Day, l.ProjectId));
         var keys = new List<(DateOnly Day, long? Project)>();
         foreach (var day in data.Days())
         {
             keys.Add((day, null));
-            keys.AddRange(data.Lines.Where(l => l.Day == day).Select(l => (day, (long?)l.ProjectId)));
+            keys.AddRange(byDay[day].Select(l => (day, (long?)l.ProjectId)));
         }
-        var same = keys.Count == Rows.Count && keys.Select((k, i) => Rows[i] switch
-        {
-            TimesheetDayRow d => d.Day == k.Day && k.Project is null,
-            TimesheetLineRow l => l.Day == k.Day && l.ProjectId == k.Project,
-            _ => false,
-        }).All(x => x);
-        if (!same)
-        {
-            Rows.Clear();
-            foreach (var (day, project) in keys)
-                Rows.Add(project is { } id ? new TimesheetLineRow(day, id, SaveLogged) : new TimesheetDayRow(day, new RelayCommand(() => _openDay(day))));
-        }
+        SyncRows(keys);
 
         foreach (var row in Rows)
         {
             if (row is TimesheetDayRow dayRow)
             {
-                var lines = data.Lines.Where(l => l.Day == dayRow.Day).ToList();
+                var dayLines = byDay[dayRow.Day].ToList();
                 dayRow.NoteText = data.DayNotes.GetValueOrDefault(dayRow.Day, "");
-                dayRow.ActiveText = Hm(lines.Sum(l => l.Active));
-                dayRow.ProductiveText = Hm(lines.Sum(l => l.Productive));
-                dayRow.AssignedText = Hm(lines.Sum(l => l.Assigned));
-                dayRow.LoggedText = LoggedHm(lines);
+                dayRow.ActiveText = Hm(dayLines.SumTime(l => l.Active));
+                dayRow.ProductiveText = Hm(dayLines.SumTime(l => l.Productive));
+                dayRow.AssignedText = Hm(dayLines.SumTime(l => l.Assigned));
+                dayRow.LoggedText = LoggedHm(dayLines);
             }
             else if (row is TimesheetLineRow lineRow)
             {
-                var line = data.Lines.First(l => l.Day == lineRow.Day && l.ProjectId == lineRow.ProjectId);
-                lineRow.Name = data.NameOf(line.ProjectId);
-                lineRow.Brush = data.BrushOf(line.ProjectId);
+                var line = lines[(lineRow.Day, lineRow.ProjectId)];
+                lineRow.Name = data.Catalog.NameOf(line.ProjectId);
+                lineRow.Brush = data.Catalog.BrushOf(line.ProjectId);
                 lineRow.HasNotes = line.Notes.Count > 0;
                 lineRow.NotesText = lineRow.HasNotes ? line.NotesText : "No notes";
                 lineRow.ActiveText = Hm(line.Active);
@@ -345,14 +197,44 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
             }
         }
 
-        TotalActiveText = Hm(data.Lines.Sum(l => l.Active));
-        TotalProductiveText = Hm(data.Lines.Sum(l => l.Productive));
-        TotalAssignedText = Hm(data.Lines.Sum(l => l.Assigned));
+        TotalActiveText = Hm(data.Lines.SumTime(l => l.Active));
+        TotalProductiveText = Hm(data.Lines.SumTime(l => l.Productive));
+        TotalAssignedText = Hm(data.Lines.SumTime(l => l.Assigned));
         TotalLoggedText = LoggedHm(data.Lines);
         ShowTotals(data);
 
         IsEmpty = Rows.Count == 0;
-        EmptyText = Range == TimesheetRange.Week ? "Nothing recorded or logged this week." : "Nothing recorded or logged this month.";
+        EmptyText = Period.Kind == PeriodKind.Week ? "Nothing recorded or logged this week." : "Nothing recorded or logged this month.";
+    }
+
+    /// <summary>Makes <see cref="Rows"/> the rows for these keys, in order, keeping the row objects already there.</summary>
+    private void SyncRows(List<(DateOnly Day, long? Project)> keys)
+    {
+        var existing = Rows.ToDictionary(KeyOf);
+        var wanted = keys.Select(key => existing.TryGetValue(key, out var row) ? row
+            : key.Project is { } project ? new TimesheetLineRow(key.Day, project, SaveLogged)
+            : new TimesheetDayRow(key.Day, new RelayCommand(() => OpenDay(key.Day)))).ToList();
+        var keep = wanted.ToHashSet();
+        for (var i = Rows.Count - 1; i >= 0; i--)
+            if (!keep.Contains(Rows[i]))
+                Rows.RemoveAt(i);
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (i < Rows.Count && ReferenceEquals(Rows[i], wanted[i]))
+                continue;
+            var at = Rows.IndexOf(wanted[i]);
+            if (at >= 0)
+                Rows.Move(at, i);
+            else
+                Rows.Insert(i, wanted[i]);
+        }
+
+        static (DateOnly, long?) KeyOf(object row) => row switch
+        {
+            TimesheetDayRow d => (d.Day, null),
+            TimesheetLineRow l => (l.Day, l.ProjectId),
+            _ => throw new InvalidOperationException("Not a timesheet row."),
+        };
     }
 
     /// <summary>Assigned and logged per category, then per project inside it; projects without a category last.</summary>
@@ -360,21 +242,13 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
     {
         Totals.Clear();
         var byProject = data.Lines.GroupBy(l => l.ProjectId)
-            .ToDictionary(g => g.Key, g => (Assigned: g.Sum(l => l.Assigned), Logged: g.Sum(l => l.Logged ?? TimeSpan.Zero)));
-        var groups = byProject.Keys
-            .GroupBy(id => data.Projects.GetValueOrDefault(id)?.CategoryId is { } c && data.Categories.ContainsKey(c) ? c : (long?)null)
-            .OrderBy(g => g.Key is null)
-            .ThenBy(g => g.Key is { } c ? data.Categories[c].Name : "", StringComparer.CurrentCultureIgnoreCase);
-        foreach (var group in groups)
+            .ToDictionary(g => g.Key, g => (Assigned: g.SumTime(l => l.Assigned), Logged: g.SumTime(l => l.Logged ?? TimeSpan.Zero)));
+        foreach (var (category, projects) in data.Catalog.ByCategory(byProject.Keys))
         {
-            var projects = group.OrderBy(data.NameOf, StringComparer.CurrentCultureIgnoreCase).ToList();
-            var (name, brush) = group.Key is { } id
-                ? (data.Categories[id].Name, ProjectColors.Brush(data.Categories[id].Color))
-                : ("No category", ProjectColors.Brush(ProjectStore.DefaultColor));
-            Totals.Add(new TimesheetTotalRow(name, brush, true,
-                Hm(projects.Sum(p => byProject[p].Assigned)), Hm(projects.Sum(p => byProject[p].Logged))));
+            Totals.Add(new TimesheetTotalRow(category?.Name ?? "No category", ProjectCatalog.BrushOf(category), true,
+                Hm(projects.SumTime(p => byProject[p].Assigned)), Hm(projects.SumTime(p => byProject[p].Logged))));
             foreach (var project in projects)
-                Totals.Add(new TimesheetTotalRow(data.NameOf(project), data.BrushOf(project), false,
+                Totals.Add(new TimesheetTotalRow(data.Catalog.NameOf(project), data.Catalog.BrushOf(project), false,
                     Hm(byProject[project].Assigned), Hm(byProject[project].Logged)));
         }
         HasNoTotals = Totals.Count == 0;
@@ -383,7 +257,7 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
     /// <summary>Saves a line's logged time from what was typed (empty clears it); returns the text to show.</summary>
     private string SaveLogged(TimesheetLineRow row, string typed)
     {
-        if (_data is not { } data)
+        if (Data is not { } data)
             return row.LoggedText;
         var index = data.Lines.FindIndex(l => l.Day == row.Day && l.ProjectId == row.ProjectId);
         if (index < 0)
@@ -402,7 +276,7 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
         {
             var projects = new ProjectStore(db);
             // Deleted in Settings since this was read: show what's there now instead.
-            if (projects.GetProjects().All(p => p.Id != row.ProjectId))
+            if (!projects.ProjectExists(row.ProjectId))
             {
                 Dispatcher.UIThread.Post(Refresh);
                 return shown;
@@ -410,11 +284,14 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
             projects.SetLogged(row.Day, row.ProjectId, value);
         }
         data.Lines[index] = line with { Logged = value };
-        // Totals follow; the rows stay (a line whose logged time was all it had goes at the next reload).
+        // Totals follow; the rows stay (a line whose logged time was all it had goes at the next reload). A load
+        // started before the save would show the old value, so read again too.
         Dispatcher.UIThread.Post(() =>
         {
-            if (_data == data && !_disposed)
-                Show();
+            if (Data != data || IsDisposed)
+                return;
+            Show(data);
+            Refresh();
         });
         return value is { } saved ? Hm(saved) : "";
     }
@@ -425,23 +302,16 @@ public sealed partial class TimesheetViewModel : ObservableObject, IDisposable
     private static string LoggedHm(IEnumerable<TimesheetLine> lines)
     {
         var logged = lines.Where(l => l.Logged is not null).ToList();
-        return logged.Count == 0 ? "" : Hm(logged.Sum(l => l.Logged!.Value));
+        return logged.Count == 0 ? "" : Hm(logged.SumTime(l => l.Logged!.Value));
     }
-
-    private static DateOnly WeekStart(DateOnly day) => day.AddDays(-(((int)day.DayOfWeek + 6) % 7));
-
-    private static DateOnly MonthStart(DateOnly day) => new(day.Year, day.Month, 1);
 }
 
 /// <summary>A range of the timesheet as read from the history, with the projects and categories to name it.</summary>
-internal sealed record TimesheetData(
+public sealed record TimesheetData(
     string DataFolder,
-    DateOnly From,
-    DateOnly To,
     List<TimesheetLine> Lines,
     Dictionary<DateOnly, string> DayNotes,
-    Dictionary<long, Project> Projects,
-    Dictionary<long, Category> Categories)
+    ProjectCatalog Catalog)
 {
     /// <summary>Reads a range with a connection of its own (connections are single-thread); for a background thread.</summary>
     public static TimesheetData Load(string dataFolder, DateOnly from, DateOnly to, TimeSpan maxCaptureLength)
@@ -449,27 +319,12 @@ internal sealed record TimesheetData(
         using var db = WorklapseDatabase.Open(dataFolder);
         var history = new HistoryStore(db);
         var projects = new ProjectStore(db);
-        return new TimesheetData(dataFolder, from, to,
+        return new TimesheetData(dataFolder,
             Timesheet.Build(history, projects, from, to, maxCaptureLength),
             projects.GetDayNotes(from, to),
-            projects.GetProjects().ToDictionary(p => p.Id),
-            projects.GetCategories().ToDictionary(c => c.Id));
+            ProjectCatalog.Read(projects));
     }
 
     /// <summary>The days with lines or a day note, in order.</summary>
     public IEnumerable<DateOnly> Days() => Lines.Select(l => l.Day).Concat(DayNotes.Keys).Distinct().Order();
-
-    public string NameOf(long projectId) => Projects.TryGetValue(projectId, out var p)
-        ? p.Archived ? $"{p.Name} (archived)" : p.Name
-        : "Deleted project";
-
-    public IBrush BrushOf(long projectId) => Projects.TryGetValue(projectId, out var p)
-        ? ProjectColors.Brush(ProjectStore.ColorOf(p, Categories))
-        : AppBrushes.NotRecorded;
-}
-
-internal static class TimeSpanSums
-{
-    public static TimeSpan Sum<T>(this IEnumerable<T> items, Func<T, TimeSpan> selector) =>
-        items.Aggregate(TimeSpan.Zero, (sum, item) => sum + selector(item));
 }

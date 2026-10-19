@@ -48,6 +48,19 @@ public sealed record CaptureRecord(
     public long? LinkedProjectId => SiteProjectId ?? AppProjectId;
 }
 
+/// <summary>
+/// What a day's totals need of a capture: when, active or idle, productive, marked for deletion, and the project its
+/// links point to (<see cref="CaptureRecord.LinkedProjectId"/>). Read for many days at once
+/// (<see cref="HistoryStore.LoadSamples"/>) without names, titles or frames.
+/// </summary>
+public readonly record struct ActivitySample(DateTimeOffset Time, CaptureKind Kind, bool Productive, bool PendingDelete, long? LinkedProjectId)
+{
+    public bool IsActive => Kind == CaptureKind.Active;
+
+    public static ActivitySample Of(CaptureRecord capture) =>
+        new(capture.Time, capture.Kind, capture.Productive, capture.PendingDelete, capture.LinkedProjectId);
+}
+
 public enum ProgramKind
 {
     App,

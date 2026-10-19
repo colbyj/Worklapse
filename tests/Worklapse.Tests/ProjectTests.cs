@@ -168,7 +168,7 @@ public class ProjectTests
         history.SetProject(new ProgramKey(ProgramKind.App, "code.exe"), worklapse); // app names ignore case
         history.SetProject(new ProgramKey(ProgramKind.Site, "northwind.example"), client);
         Assert.Equal([worklapse, client], history.LoadDay(Day).Captures.Select(c => c.LinkedProjectId));
-        Assert.Equal([worklapse, client], history.LoadActivity(Day).Select(c => c.LinkedProjectId));
+        Assert.Equal([worklapse, client], history.LoadSamples(Day, Day.AddDays(1)).Select(c => c.LinkedProjectId));
 
         // Another copy of Code (another path) is linked too.
         recording.InsertCapture(Nine.AddSeconds(20), CaptureKind.Active, recording.GetOrAddApp("Code.exe", @"D:\Portable\Code.exe"), "t", null);
@@ -266,7 +266,7 @@ public class ProjectTests
         var interval = TimeSpan.FromMinutes(1);
         projects.SetSpan(Nine.AddHours(1), Nine.AddHours(1.5), client);
 
-        var time = ProjectTimeline.Build(history.LoadActivity(Day), projects.GetSpans(Nine.AddHours(-1), Nine.AddHours(2)),
+        var time = ProjectTimeline.Build(history.LoadSamples(Day, Day.AddDays(1)), projects.GetSpans(Nine.AddHours(-1), Nine.AddHours(2)),
             Nine.AddHours(-1), Nine.AddHours(2), interval);
         projects.AddNote(worklapse, time.Blocks[0].Middle, "Panning");
         projects.AddNote(worklapse, time.Blocks[0].Middle.AddSeconds(1), "Replug fix");
@@ -294,6 +294,108 @@ public class ProjectTests
 
         projects.SetLogged(Day, worklapse, null);
         Assert.Null(Timesheet.Build(history, projects, Day, Day.AddDays(1), interval)[0].Logged);
+    }
+
+    [Fact]
+    public void SamplesCarryWhatTotalsNeedAsAFullDayWouldForAWholeRange()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var recording = new RecordingStore(db);
+        var history = new HistoryStore(db);
+        var projects = new ProjectStore(db);
+        var worklapse = projects.AddProject("Worklapse", null);
+        var client = projects.AddProject("Northwind", null);
+        var code = recording.GetOrAddApp("Code.exe", null);
+        var firefox = recording.GetOrAddApp("firefox.exe", null);
+        var github = recording.GetOrAddSite("github.com");
+        var northwind = recording.GetOrAddSite("northwind.example");
+        history.SetProject(new ProgramKey(ProgramKind.App, "firefox.exe"), worklapse);
+        history.SetProject(new ProgramKey(ProgramKind.Site, "northwind.example"), client);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "firefox.exe"), true);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "Code.exe"), true);
+
+        for (var day = 0; day < 3; day++)
+        {
+            var at = Nine.AddDays(day);
+            recording.InsertCapture(at, CaptureKind.Active, code, "t", null);
+            recording.InsertCapture(at.AddSeconds(10), CaptureKind.Active, firefox, "t", null, github);    // site not productive, browser's link
+            recording.InsertCapture(at.AddSeconds(20), CaptureKind.Active, firefox, "t", null, northwind); // the site's link
+            recording.InsertCapture(at.AddSeconds(30), CaptureKind.Active, firefox, "t", null);            // no site: the browser decides
+            recording.InsertCapture(at.AddSeconds(40), CaptureKind.Idle, null, null, null);
+        }
+        history.SetPendingDelete(Nine.AddSeconds(30), Nine.AddSeconds(31), true);
+
+        var expected = new[] { Day, Day.AddDays(1) }
+            .SelectMany(d => history.LoadDay(d).Captures.Select(ActivitySample.Of)).ToList();
+        Assert.Equal(expected, history.LoadSamples(Day, Day.AddDays(2)));
+        Assert.Equal(
+            [(true, (long?)null), (false, worklapse), (false, client), (true, worklapse), (false, null)],
+            expected.Take(5).Select(s => (s.Productive, s.LinkedProjectId)));
+        Assert.True(expected[3].PendingDelete);
+    }
+
+    [Fact]
+    public void DaySummariesWorkOutEachDayOnItsOwn()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var recording = new RecordingStore(db);
+        var history = new HistoryStore(db);
+        var projects = new ProjectStore(db);
+        var worklapse = projects.AddProject("Worklapse", null);
+        var client = projects.AddProject("Northwind", null);
+        var code = recording.GetOrAddApp("Code.exe", null);
+        var other = recording.GetOrAddApp("game.exe", null);
+        history.SetProject(new ProgramKey(ProgramKind.App, "Code.exe"), worklapse);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "Code.exe"), true);
+
+        // Day 1: Code for a minute, then a game, idle, and a capture marked for deletion; one more just before midnight.
+        for (var s = 0; s < 60; s += 10)
+            recording.InsertCapture(Nine.AddSeconds(s), CaptureKind.Active, code, "t", null);
+        recording.InsertCapture(Nine.AddSeconds(60), CaptureKind.Active, other, "t", null);
+        recording.InsertCapture(Nine.AddSeconds(70), CaptureKind.Idle, null, null, null);
+        recording.InsertCapture(Nine.AddSeconds(80), CaptureKind.Active, code, "t", null);
+        history.SetPendingDelete(Nine.AddSeconds(80), Nine.AddSeconds(81), true);
+        var (_, midnight) = HistoryStore.DayRange(Day);
+        recording.InsertCapture(midnight.AddSeconds(-5), CaptureKind.Active, code, "t", null);
+        projects.AddNote(worklapse, Nine.AddSeconds(30), "Panning");
+
+        // Day 2: nothing recorded, only a call set by hand in the evening, with a note. Day 3: nothing at all.
+        var (dayTwo, _) = HistoryStore.DayRange(Day.AddDays(1));
+        projects.SetSpan(dayTwo.AddHours(18), dayTwo.AddHours(18.5), client);
+        projects.AddNote(client, dayTwo.AddHours(18.25), "Call");
+
+        var days = DaySummaries.Build(history, projects, Day, Day.AddDays(3), Max, withActivity: true);
+        Assert.Equal([Day, Day.AddDays(1), Day.AddDays(2)], days.Select(d => d.Day));
+
+        // The same totals as Day review works out from the full day.
+        var (start, end) = HistoryStore.DayRange(Day);
+        var full = ProjectTimeline.Build(history.LoadDay(Day).Captures, projects.GetSpans(start, end), start, end, Max);
+        var one = days[0];
+        Assert.Equal(full.Blocks, one.Time.Blocks);
+        Assert.Equal(full.Unassigned, one.Time.Unassigned);
+        Assert.Equal(TimeSpan.FromSeconds(80 + 5), one.Time.Recorded);             // the marked capture left out; the last one ends at midnight
+        Assert.Equal((Nine, midnight), one.Extent);
+        Assert.Equal(
+            [(0, 60, ActivityKind.Productive), (60, 70, ActivityKind.Other), (70, 80, ActivityKind.Idle)],
+            one.Activity.Take(3).Select(r => ((int)(r.Start - Nine).TotalSeconds, (int)(r.End - Nine).TotalSeconds, r.Kind)));
+        Assert.Equal(["Panning"], one.PlacedNotes.PerBlock[0].Select(n => n.Text));
+
+        var two = days[1];
+        Assert.Equal((dayTwo.AddHours(18), dayTwo.AddHours(18.5)), two.Extent);
+        Assert.Equal(TimeSpan.FromMinutes(30), two.Time.Assigned);
+        Assert.Equal(TimeSpan.Zero, two.Time.Recorded);
+        Assert.Empty(two.Activity);
+        Assert.Equal(["Call"], two.PlacedNotes.PerBlock.Single().Select(n => n.Text));
+
+        Assert.Null(days[2].Extent);
+        Assert.Empty(days[2].Time.Blocks);
+        Assert.Empty(DaySummaries.Build(history, projects, Day, Day.AddDays(1), Max)[0].Activity); // only when asked for
+
+        // Captures marked for deletion don't stretch the day: with the last one marked it ends where the idle capture does.
+        history.SetPendingDelete(midnight.AddSeconds(-5), midnight, true);
+        Assert.Equal((Nine, Nine.AddSeconds(80)), DaySummaries.Build(history, projects, Day, Day.AddDays(1), Max)[0].Extent);
     }
 
     [Fact]

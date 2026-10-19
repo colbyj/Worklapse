@@ -31,7 +31,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
 | Excluded apps and sites | Marked on Settings → Programs (Excluded column, next to Productive). While an excluded app (by exe name) or site has the focus, **nothing is recorded** (no capture at all), so that time shows as *Not recorded*; once the idle limit passes it is recorded as idle as usual (an idle capture has no app or frames). Excluded if the app or the site is (a browser excluded covers all its pages). A browser tick whose site can't be read (private window, too slow) is recorded as the browser. Recorded history is left as it is. Kept in the database like the productive marks; an excluded app or site keeps its row when its captures are deleted. | Developer, 2026-10-18: nothing kept rather than time-and-name; the Programs list only (something must be recorded once before it can be excluded); no browser-specific handling for now. |
-| Projects and the main window | **Designed 2026-10-18, being built** (phases 1–5 done) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
+| Projects and the main window | **Designed and built 2026-10-18** (phases 1–6; 6 not yet reviewed) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
@@ -107,7 +107,7 @@ src/
   Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
                               frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
-  Worklapse.App/              Avalonia app: tray icon, main window (rail; Day review, Timesheet; Overview to come), settings dialog
+  Worklapse.App/              Avalonia app: tray icon, main window (rail; Overview, Day review, Timesheet), settings dialog
 tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts, images)
 docs/PROJECT.md               this file
 docs/HANDOFF.md               briefs for the next tasks, for a new session
@@ -278,7 +278,7 @@ dotnet test tests/Worklapse.Tests
 dotnet run --project src/Worklapse.App
 ```
 
-Worklapse starts with its main window (Day review for now) and a tray icon; closing the window keeps it recording.
+Worklapse starts with its main window on the Overview and a tray icon; closing the window keeps it recording.
 Quit from the tray menu. Only one instance runs at a time.
 
 Testing without touching real data: set `WORKLAPSE_CONFIG_DIR` to a folder containing a `settings.json`
@@ -404,7 +404,7 @@ Still open, if the peak matters:
 - After 15 s idle the first step costs ~0.7 s while decoders reopen and decode from the key frame; stepping
   back costs ~0.3–1 s every third step for the same reason.
 
-### 1a. Projects, timesheet and a main window — designed 2026-10-18, approved, next to build
+### 1a. Projects, timesheet and a main window — designed and built 2026-10-18
 
 Mockups (four rounds; "Round 4" is the approved one): https://claude.ai/artifact/2HyWXXPGWRR6bJR232Nomx
 (private to the developer). Agreed with the developer over the design rounds:
@@ -462,7 +462,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    project blocks and per-project Active/Productive/Assigned; CSV export. Most of the tests go here.
    **Built 2026-10-18, not yet reviewed or committed** (153 tests pass). Code: `Worklapse.Core/Projects/`
    (`ProjectStore` — categories, projects, ranges set by hand, notes, day notes, logged time; `ProjectTimeline` —
-   blocks and totals, `NotePlacement`; `Timesheet`, `TimesheetCsv`), `HistoryStore.SetProject`/`LoadActivity`/
+   blocks and totals, `NotePlacement`; `Timesheet`, `TimesheetCsv`), `HistoryStore.SetProject`/`LoadSamples` (was `LoadActivity`, replaced in phase 6)/
    `DayRange`, `CaptureRecord.LinkedProjectId`. Choices made while building, to confirm: a site without a link
    leaves it to its browser's link (unlike Productive, where the site always decides); a note whose block no
    longer contains its moment goes on the nearest block of its project that day before becoming an orphan; deleting
@@ -508,7 +508,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    commands are on the Edit menu and the timeline's right-click menu. Code: `DayReviewViewModel.Projects.cs`,
    `DayReviewView.axaml`, `TimelineControl` (`ProjectLaneBlock`). Checked with a headless harness on a scratch day.
 5. Timesheet view. (Phases 5–6 are handed off in `docs/HANDOFF.md`, 2026-10-18.)
-   **Built 2026-10-18, not yet reviewed or committed.** `TimesheetView` / `TimesheetViewModel`: tool bar ‹ range ›,
+   **Built 2026-10-18, committed (b903c08) after the developer looked at it.** `TimesheetView` / `TimesheetViewModel`: tool bar ‹ range ›,
    This Week (This Month), Week / Month (a radio pair drawn as toggle tool buttons, so clicking the one that's on
    leaves it on), Export CSV… (a save dialog; the range read again, written by `TimesheetCsv` as UTF-8 with a byte
    order mark for spreadsheets; a failure, such as the file open in a spreadsheet, shows in a bar under the tool
@@ -519,14 +519,74 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    Logged; projects without a category under "No category"). Loaded off the UI thread with a connection of its own
    (`TimesheetData.Load`; a newer load wins, a load finishing after the window closed is dropped), when the view is
    shown, when the window is activated (Day review and Settings share the database) and after a data folder change;
-   when the same lines come back (today growing while recording) the rows are updated in place so a cell being typed
-   in keeps its text. Logged time typed for a project deleted meanwhile isn't saved; the view reloads. Shared grid
+   rows are kept by day and project, so those still there are updated in place (today growing while recording) and a
+   cell being typed in keeps its text (refresh rules and row keeping revised after review, see phase 6). Logged time typed for a project deleted meanwhile isn't saved; the view reloads. Shared grid
    styles (`Grid.gridHeader`, `Border.row`, `TextBox.cell`) and a `Button.link` style moved to `Styles/Breeze.axaml`.
    Measured: a month (30 days × 8 h at 10 s, 86,400 captures) loads in 140–190 ms with ~50 MB of short-lived
    allocations. Checked with a headless harness on a scratch October (screenshots light and dark, week, month, an
    empty month; toggles clicked; typing, clearing and invalid logged time; a project deleted while open; export and
    export to a locked file; opening a day). Not seen: the save dialog (headless can't show it).
 6. Overview (week, month; month totals need a lighter query than loading every capture).
+   **Built 2026-10-18, not yet reviewed or committed.** The app opens on it (and so does the tray's Show Worklapse
+   when the window was closed). `OverviewView` / `OverviewViewModel`: tool bar ‹ range ›, This Week (This Month),
+   Week / Month (the radio pair as in the Timesheet). Week: a row per day (date and first–last time, a `DayStrip`
+   — projects lane above a thin activity lane in the timeline's colours, on one axis for the week in whole hours,
+   with today's time marked — and the day's Assigned · recorded); clicking a row opens the day in Day review.
+   Month: a calendar of whole weeks, each day of the month with Assigned · recorded and a `ShareBar` of its time by
+   category, time without a project hatched; days of the neighbouring months only show their number; clicking a day
+   opens it. Below: the totals tree (category → project, then "No category", then **No project** with Productive and
+   Other; categories expand and collapse and stay so across reloads), a column per day or per ISO week (only the
+   month's days counted), then Assigned and Logged; footer rows Assigned and Recorded (time captured, active or idle).
+   Beside it: the days with a day note or block notes, each expanding to its block notes (project, block time,
+   note; notes whose block is gone, without a time). Status bar: recording, then the period's assigned, logged and
+   active-without-a-project totals. Month cells show Assigned · recorded, as the week rows and the board do (the
+   handoff said "logged and recorded"; the board's numbers were assigned time). **The lighter path:** measured
+   first — building every day from `LoadActivity` took 140–190 ms and ~50 MB of short-lived allocations for a month
+   (30 × 8 h at 10 s). Now `HistoryStore.LoadSamples(from, to)` reads the whole range in one query as small
+   `ActivitySample` structs (time, kind, productive and linked project resolved in SQL, no names or titles) and
+   `DaySummaries.Build` runs the same `ProjectTimeline.Build` per day on them, plus `ProjectTimeline.Activity` (runs
+   for the lane) when asked: 90–140 ms and ~26 MB for a month, most of it the query itself, so no cache. The
+   Timesheet uses the same path. `ProjectTime` gained `Recorded` and `Assigned`. Shared with the Timesheet: `Period`
+   (week/month stepping and titles), `ProjectCatalog` (names with "(archived)", colours, categories). Loads like the
+   Timesheet (own connection, newest wins, dropped after the window closes; on show, on activation, after a folder
+   change). Checked with tests (samples equal the full day's captures; per-day summaries, extent, recorded,
+   activity runs, a day with only a range set by hand, an empty day) and the headless harness (week, month, empty
+   month, light, dark, recording paused; collapsing a category across Week → Month; clicking a month day and a week
+   row opens the right day — this caught every month day opening the grid's last day, a loop variable captured
+   by the commands).
+   **Reviewed 2026-10-18** by two separate reviewers (correctness against this brief; engineering), then changed:
+   - Opening a day from the Overview or Timesheet read it two or three times on the UI thread (Day review made on the
+     latest day, then the day, then the refresh on show). Now Day review can be made on a day, and `MainViewModel`
+     (`RefreshView`) skips the refresh of a Day review just read; the window only refreshes on a change of view (not
+     when opening a day makes Day review in the background), and once when it's made (a window shown from the tray
+     isn't always activated).
+   - Refreshing: on show and after a folder change as before; after the Settings dialog closes (`App` asks the
+     window; projects live in the history, not the settings file); on window activation only when the period holds
+     today (a month was ~100 ms and ~26 MB of garbage per Alt-Tab; past periods change only through Day review and
+     Settings, which refresh on their own).
+   - `PeriodViewModel<TData>`: the stepping, Week/Month pair, background load (newest wins, dropped after close) and
+     error handling the two views had twice. Read errors are SQLite, file and access errors and the new
+     `DatabaseVersionException` (a data folder from a newer Worklapse used to throw a plain `InvalidOperationException`,
+     which would have crashed the app from the views' `async void` refresh). A failed load clears what the view showed
+     (the Overview kept the previous period's figures under the new title).
+   - `Period` and the tree's arithmetic moved to Core and are tested (`PeriodTests`): `Period.ColumnOf`/`ColumnStart`/
+     `GridStart`/`GridEnd`, `PeriodTotals.Build` (assigned per project per column, logged, no-project productive and
+     other, recorded). Switching Week ↔ Month now keeps to the same time: the period holding today becomes the one
+     holding today; otherwise a week becomes the month its Thursday is in and a month the week of its first Thursday,
+     so switching back returns to where it was (before, a week straddling two months gave the earlier month even
+     when today was in the later one, and March 2026 → week → month gave February).
+   - Timesheet: a save starts a fresh load (a load begun before the save would have shown the old value); rows are
+     synced by key with Insert/Remove/Move instead of rebuilt; `ProjectStore.ProjectExists` instead of listing
+     projects; double-clicking the date link opens the day once.
+   - `WorklapseSettings.MaxCaptureLength` (one and a half intervals) replaces five copies of the rule. A day's extent
+     leaves out captures marked for deletion. The week's axis can reach 25 h (the day the clocks go back) and strips
+     clip rather than squeeze what's outside it; hour labels are spaced by their measured width; project brushes are
+     made once per colour; `ThemedControl` holds the theme subscription the custom controls shared.
+   - Left as they are, for the developer: the Timesheet's day and footer totals add up the project lines only
+     (active time without a project isn't in them; the Overview shows it); Logged cells save when they lose the focus,
+     as on Day review's Time Log (Enter doesn't commit); on a day the clocks change, the timelines measure elapsed time
+     from midnight, as Day review does, so that day's strip is an hour off the week's hour labels.
+   160 tests pass.
 
 ### 1. Make it usable day to day
 

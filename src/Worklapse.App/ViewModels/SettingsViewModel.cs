@@ -45,7 +45,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         Projects = new ProjectsViewModel();
-        Programs = new ProgramsViewModel(TimeSpan.FromSeconds(store.Current.IntervalSeconds)) { ProjectChoices = Projects.ProjectChoices };
+        Programs = new ProgramsViewModel(store.Current.MaxCaptureLength) { ProjectChoices = Projects.ProjectChoices };
         Programs.Changed += () =>
         {
             MarkDirty();

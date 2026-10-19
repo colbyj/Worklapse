@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.Settings;
@@ -42,6 +43,13 @@ public sealed record WorklapseSettings
     public IReadOnlyList<string> SelectedMonitors { get; init; } = [];
 
     public int IntervalSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// How long a capture counts for when totalling time: until the next one, at most one and a half intervals (so a
+    /// gap, such as a pause, isn't counted as recorded).
+    /// </summary>
+    [JsonIgnore]
+    public TimeSpan MaxCaptureLength => TimeSpan.FromSeconds(IntervalSeconds * 1.5);
 
     /// <summary>Capturing stops after this long without keyboard or mouse input.</summary>
     public int IdleMinutes { get; init; } = 5;

@@ -24,7 +24,7 @@ public readonly record struct ProjectLaneBlock(double Start, double End, IBrush 
 /// The day as two lanes: projects above, activity (coloured runs) below, with hour labels, a selection,
 /// marked-for-deletion ranges and the playhead across both. Click to move the playhead; drag to select.
 /// </summary>
-public sealed class TimelineControl : Control
+public sealed class TimelineControl : ThemedControl
 {
     private const double Gutter = 58;          // lane names on the left
     private const double ProjectHeight = 20;
@@ -34,7 +34,7 @@ public sealed class TimelineControl : Control
     private const double DragThreshold = 3;
     private const double TrackTop = ProjectHeight + LaneGap;
 
-    // The brushes are recoloured in place when the OS theme changes (see OnAttachedToVisualTree).
+    // The brushes are recoloured in place when the OS theme changes (see ThemedControl).
     private static readonly IBrush TrackBrush = AppBrushes.TimelineTrack;
     private static readonly IPen TrackBorder = new Pen(AppBrushes.TimelineFrame);
     private static readonly IPen HourLine = new Pen(AppBrushes.TimelineHourLine);
@@ -89,18 +89,6 @@ public sealed class TimelineControl : Control
         Selection = selection;
         Playhead = playhead;
         InvalidateVisual();
-    }
-
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-        ThemeManager.Changed += InvalidateVisual;
-    }
-
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnDetachedFromVisualTree(e);
-        ThemeManager.Changed -= InvalidateVisual;
     }
 
     public override void Render(DrawingContext context)
@@ -253,7 +241,7 @@ public sealed class TimelineControl : Control
     private double Time(double x) => ViewStart + Math.Clamp((x - Gutter) / LaneWidth, 0, 1) * (ViewEnd - ViewStart);
 
     /// <summary>"9 AM" or "09:00", following the user's clock format.</summary>
-    private static string HourLabel(int hour)
+    internal static string HourLabel(int hour)
     {
         var time = DateTime.Today.AddHours(hour % 24);
         var culture = CultureInfo.CurrentCulture;
