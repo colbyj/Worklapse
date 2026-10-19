@@ -38,6 +38,9 @@ public sealed partial class MarkedRange : ObservableObject
     public required string LengthText { get; init; }
     public required IRelayCommand GoTo { get; init; }
     public required IRelayCommand Restore { get; init; }
+
+    /// <summary>Inside the selection.</summary>
+    [ObservableProperty] private bool _isPicked;
 }
 
 /// <summary>
@@ -71,6 +74,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         _history = history;
         _settings = settings;
         _focusOnApplication = settings.Current.ReviewFocusOnApplication;
+        _panelWidth = settings.Current.ReviewPanelWidth;
         _capturesDeleted = capturesDeleted;
         _maxCaptureLength = settings.Current.MaxCaptureLength;
         // Not the constructor taking a callback: that one starts the timer, and Day review would play from the moment it
@@ -116,7 +120,6 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _frameTime = "";
     [ObservableProperty] private string _frameState = "";
     [ObservableProperty] private IBrush _frameStateBrush = AppBrushes.NotRecorded;
-    [ObservableProperty] private string _frameApp = "";
     [ObservableProperty] private string _summaryTitle = "";
     [ObservableProperty] private string _summaryRange = "";
     [ObservableProperty] private string _markedTotalText = "";
@@ -202,6 +205,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             _anchor = anchor;
         }
         SetSelection(Math.Min(anchor, next), Math.Max(anchor, next));
+        ShowSelectionPanel(true);
         MoveTo(next);
     }
 
@@ -228,6 +232,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         if (end <= start)
             return;
         SetRange((start, end));
+        ShowSelectionPanel(true);
 
         if (HasCaptureSelection)
         {
@@ -291,6 +296,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     public void ClearSelection()
     {
         _anchor = null;
+        _pickAnchor = null;
         SetSelection(null, null);
     }
 
@@ -343,14 +349,18 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private void MarkSelection()
     {
-        if (!HasSelection)
-            return;
-        var (start, end) = SelectionTimes();
-        _history.SetPendingDelete(start, end, pending: true);
-        _anchor = null;
+        if (_range is { } range)
+            MarkForDeletion(range);
+    }
+
+    /// <summary>Marks the captures in a stretch of time for deletion; marking the selection also clears it.</summary>
+    public void MarkForDeletion((DateTimeOffset Start, DateTimeOffset End) range)
+    {
+        _history.SetPendingDelete(range.Start, range.End, pending: true);
         ConfirmMessage = "";
         var keepId = Current >= 0 && Current < Captures.Count ? Captures[Current].Id : (long?)null;
-        SetSelection(null, null);
+        if (_range == range)
+            ClearSelection();
         Reload(keepId);
     }
 
@@ -489,10 +499,12 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         SetDay(_history.LoadDay(day));
         ConfirmMessage = "";
         _anchor = null;
+        _pickAnchor = null;
         _range = null;
         SelectionStart = SelectionEnd = null;
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasCaptureSelection));
+        ShowSelectionPanel(false);
         Current = -1;
         RebuildDerived();
         UpdateMonitorChoices();
@@ -629,6 +641,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         SelectionEnd = last;
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasCaptureSelection));
+        if (range is null)
+            ShowSelectionPanel(false);
+        OnPropertyChanged(nameof(ShowsDay));
+        OnPropertyChanged(nameof(ShowsSelection));
         MarkSelectionCommand.NotifyCanExecuteChanged();
         ClearSelectionCommand.NotifyCanExecuteChanged();
         UpdateSummary();
@@ -638,11 +654,12 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     private void UpdateFrameText()
     {
+        UpdateFrameSegment();
         if (Current < 0 || Current >= Captures.Count)
         {
             FrameTime = "No captures";
             FrameState = "";
-            FrameApp = "";
+            FrameStateBrush = AppBrushes.NotRecorded;
             return;
         }
         var c = Captures[Current];
@@ -651,8 +668,6 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             : !c.IsActive ? ("Idle", AppBrushes.Idle)
             : c.Productive ? ("Productive", AppBrushes.Productive)
             : ("Other", AppBrushes.Other);
-        FrameApp = !c.IsActive ? "No keyboard or mouse input"
-            : string.Join(" — ", new[] { c.AppName, c.Site, c.WindowTitle }.Where(s => !string.IsNullOrEmpty(s)));
     }
 
     private void UpdateSummary()

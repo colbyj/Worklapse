@@ -86,6 +86,11 @@ public sealed record WorklapseSettings
     /// </summary>
     public bool ReviewFocusOnApplication { get; init; }
 
+    /// <summary>The width of Day review's side panel, as last dragged (device-independent pixels).</summary>
+    public double ReviewPanelWidth { get; init; } = DefaultReviewPanelWidth;
+
+    public const double DefaultReviewPanelWidth = 440, MinReviewPanelWidth = 360, MaxReviewPanelWidth = 720;
+
     /// <summary>
     /// The look of the windows: the desktop's own by default, or another desktop's (which also lets each be tried on
     /// one machine).
@@ -113,6 +118,8 @@ public sealed record WorklapseSettings
         Quality = Math.Clamp(Quality, 0, 63),
         JpegQuality = Math.Clamp(JpegQuality, 1, 100),
         WebPQuality = Math.Clamp(WebPQuality, 0, 100),
+        ReviewPanelWidth = double.IsFinite(ReviewPanelWidth)
+            ? Math.Clamp(ReviewPanelWidth, MinReviewPanelWidth, MaxReviewPanelWidth) : DefaultReviewPanelWidth,
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,
     };
 }

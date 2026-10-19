@@ -679,6 +679,26 @@ grids with editable cells rather than a text box per row, no accent buttons in t
   - Double-clicking a project block or an activity run selects it.
 - *Resizable panel.* Drag its left edge. The mockup allows 360–720 px; the width is to be remembered.
 
+**Built 2026-10-19** (commits after 3a41ae3).
+- *Notes:* `ProjectStore.GetNotes(from, to)` / `SetNote(day, project, text)` on `project_notes` (schema 10; the
+  `notes` table is dropped). `TimesheetLine.Note` is one string; the Timesheet's Notes cells are typed in and saved like
+  Logged. The Overview lists a day's project notes under its day note.
+- *Reach:* `MarkReach.Productive` / `MarkReach.Link` in Core (tested).
+- *Panel:* `DayReviewViewModel.Panel.cs` holds the scope, the frame slice (`FrameSegment`, a `SegmentRow` worked out
+  when the playhead leaves the one shown), picking, the row menu's actions and the reach.
+- *Timeline:* `TimelineControl` raises `Clicked(seconds, shift)`, `EdgeDragged` and `DoubleClicked`; the view model
+  decides (`Click`, `DragEdge`, `DoubleClick`). It's 5 px taller, for the bars under the time reached.
+- *Width:* `WorklapseSettings.ReviewPanelWidth`, saved when a drag of the edge ends.
+
+Choices made while building, to confirm:
+- Only segment rows have a right-click menu. App, Time Log and Marked rows show their reach on pointing, and Marked
+  rows can be picked, but nothing more was asked for them.
+- Highlights follow the pointer, Tab focus and an open row menu; not focus from a click (it would outstay the pointer).
+- Double-clicking where nothing was recorded selects that gap.
+- Idle and Not recorded frames show no marks in the slice, as their rows have none.
+- The Project column in the Applications and segment lists grows with the panel (136 px at its narrowest).
+- With the status bar's frame line gone, the window title isn't shown anywhere.
+
 ### 1. Make it usable day to day
 
 Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history); both are built (2026-10-17).

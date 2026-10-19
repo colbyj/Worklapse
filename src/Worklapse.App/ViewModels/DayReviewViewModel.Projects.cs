@@ -82,23 +82,38 @@ public sealed class DayAppRow(ProgramKey program, TimeSpan active, bool producti
 }
 
 /// <summary>
-/// A recorded segment: one app or site in a row, or idle, or not recorded (in a selection, or on the Recorded Segments
-/// tab). Its Project is the project of that stretch of time only (set by hand); Productive is the app's or site's.
+/// A recorded segment: one app or site in a row, or idle, or not recorded (in a selection, on the Recorded Segments
+/// tab, or the one the playhead is in). Its Project is the project of that stretch of time only (set by hand);
+/// Productive is the app's or site's.
 /// </summary>
-public sealed class SegmentRow(string range, string name, TimeSpan length, ProgramKey? program, bool productive, ProjectOption? project,
-    Action<ProgramKey, bool> setProductive, Action<ProgramKey, ProjectOption> setProject)
+public sealed class SegmentRow(DateTimeOffset from, DateTimeOffset to, string range, string name, ProgramKey? program, bool productive,
+    ProjectOption? project, Action<ProgramKey, bool> setProductive, Action<ProgramKey, ProjectOption> setProject)
     : ProgramMarksRow(program, productive, project, setProductive, setProject)
 {
+    private bool _isPicked;
+
+    public DateTimeOffset From => from;
+    public DateTimeOffset To => to;
     public string RangeText => range;
     public string Name => name;
 
+    /// <summary>Inside the selection (on the day's list).</summary>
+    public bool IsPicked
+    {
+        get => _isPicked;
+        set => SetProperty(ref _isPicked, value);
+    }
+
     /// <summary>h:mm, as on the Projects tab; seconds for a segment under a minute.</summary>
-    public string LengthText => length < TimeSpan.FromMinutes(1) ? DurationText.Of(length) : ProjectTimes.Hm(length);
+    public string LengthText => to - from < TimeSpan.FromMinutes(1) ? DurationText.Of(to - from) : ProjectTimes.Hm(to - from);
     public FontStyle NameStyle => HasProgram ? FontStyle.Normal : FontStyle.Italic;
 }
 
 /// <summary>A project's time inside the selection; <see cref="IsNone"/> for the time with no project.</summary>
-public sealed record SelectionProjectRow(string Name, IBrush Brush, string LengthText, bool IsNone);
+public sealed record SelectionProjectRow(long? ProjectId, string Name, IBrush Brush, string LengthText)
+{
+    public bool IsNone => ProjectId is null;
+}
 
 /// <summary>
 /// A project's time on the day, on the Time Log tab, with its note for the day. Logged is typed (h:mm); both are saved
@@ -227,7 +242,7 @@ public sealed partial class DayReviewViewModel
 
     [ObservableProperty] private bool _isSidePanelOpen = true;
 
-    /// <summary>The side panel's tab with no selection: 0 Applications, 1 Recorded Segments, 2 Time Log, 3 Marked.</summary>
+    /// <summary>The day's tab: 0 Applications, 1 Recorded Segments, 2 Time Log, 3 Marked.</summary>
     [ObservableProperty] private int _panelTab;
 
     public ObservableCollection<DayAppRow> AppRows { get; } = [];
@@ -252,18 +267,26 @@ public sealed partial class DayReviewViewModel
     [ObservableProperty] private string _selectionNotRecordedText = "";
     [ObservableProperty] private string _selectionProductiveText = "";
 
-    /// <summary>The selection's active, idle and unrecorded parts as fractions, for its bar.</summary>
+    /// <summary>The selection's active, idle and unrecorded parts as fractions, for its bar (as wide as the panel).</summary>
     [ObservableProperty] private (double Active, double Idle, double NotRecorded) _selectionShares;
 
     public double SelectionActiveWidth => SelectionShares.Active * SelectionBarWidth;
     public double SelectionIdleWidth => SelectionShares.Idle * SelectionBarWidth;
     public double SelectionNotRecordedWidth => SelectionShares.NotRecorded * SelectionBarWidth;
-    private const double SelectionBarWidth = 420;
+    private double SelectionBarWidth => Math.Max(0, PanelWidth - 18);
+
+    /// <summary>The apps and sites used in the selection, with their marks (which apply to every day).</summary>
+    public ObservableCollection<DayAppRow> SelectionApps { get; } = [];
+    [ObservableProperty] private string _selectionAppsTotalText = "";
 
     public ObservableCollection<SegmentRow> SelectionRuns { get; } = [];
     public ObservableCollection<SelectionProjectRow> SelectionProjects { get; } = [];
 
-    partial void OnSelectionSharesChanged((double Active, double Idle, double NotRecorded) value)
+    partial void OnSelectionSharesChanged((double Active, double Idle, double NotRecorded) value) => ShowSelectionBar();
+
+    partial void OnPanelWidthChanged(double value) => ShowSelectionBar();
+
+    private void ShowSelectionBar()
     {
         OnPropertyChanged(nameof(SelectionActiveWidth));
         OnPropertyChanged(nameof(SelectionIdleWidth));
@@ -299,20 +322,16 @@ public sealed partial class DayReviewViewModel
     [RelayCommand]
     private void SetSelectionProject(long projectId)
     {
-        if (_range is not { } range)
-            return;
-        Projects.SetSpan(range.Start, range.End, projectId);
-        RebuildProjects();
+        if (_range is { } range)
+            SetProject(range, projectId);
     }
 
     /// <summary>The selection ends up with no project, whatever its apps are linked to.</summary>
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private void ClearSelectionProject()
     {
-        if (_range is not { } range)
-            return;
-        Projects.SetSpan(range.Start, range.End, null);
-        RebuildProjects();
+        if (_range is { } range)
+            SetProject(range, null);
     }
 
     partial void OnDayNoteChanged(string value)
@@ -353,13 +372,17 @@ public sealed partial class DayReviewViewModel
             .ToList();
         WidenViewForHandSpans();
 
-        BuildAppRows(dayStart, dayEnd);
+        BuildAppRows(AppRows, dayStart, dayEnd);
+        AppsTotalText = DurationText.Of(SpanSummary.For(Captures, dayStart, dayEnd, _maxCaptureLength).Active);
         BuildDaySegments();
         BuildTimeLog();
         _loadingDayNote = true;
         DayNote = Projects.GetDayNote(Day.Day);
         _loadingDayNote = false;
 
+        // The rows pointed at are new ones now; what they reached may have changed.
+        _reach.Clear();
+        UpdateFrameSegment(force: true);
         SelectionChanged();
         TimelineChanged?.Invoke();
     }
@@ -376,16 +399,15 @@ public sealed partial class DayReviewViewModel
         View = (start, end);
     }
 
-    private void BuildAppRows(DateTimeOffset dayStart, DateTimeOffset dayEnd)
+    /// <summary>The apps and sites used from start to end, longest first.</summary>
+    private void BuildAppRows(ICollection<DayAppRow> rows, DateTimeOffset start, DateTimeOffset end)
     {
-        AppRows.Clear();
-        var byProgram = SpanSummary.ByProgram(Captures, dayStart, dayEnd, _maxCaptureLength);
-        foreach (var (program, time) in byProgram)
+        rows.Clear();
+        foreach (var (program, time) in SpanSummary.ByProgram(Captures, start, end, _maxCaptureLength))
         {
             var (productive, projectId) = MarksOf(program);
-            AppRows.Add(new DayAppRow(program, time, productive, OptionOf(projectId), SetProductiveSoon, SetProjectSoon));
+            rows.Add(new DayAppRow(program, time, productive, OptionOf(projectId), SetProductiveSoon, SetProjectSoon));
         }
-        AppsTotalText = DurationText.Of(SpanSummary.For(Captures, dayStart, dayEnd, _maxCaptureLength).Active);
     }
 
     /// <summary>The whole day's segments, from the first capture to the end of the last.</summary>
@@ -457,12 +479,17 @@ public sealed partial class DayReviewViewModel
         return false;
     }
 
-    /// <summary>Fills the selection panel from the selection, if there is one.</summary>
+    /// <summary>Fills the selection panel from the selection, if there is one, and marks the day's rows inside it.</summary>
     private void SelectionChanged()
     {
+        SelectionApps.Clear();
         SelectionRuns.Clear();
         SelectionProjects.Clear();
         ClearSelectionProjectCommand.NotifyCanExecuteChanged();
+        foreach (var row in DaySegments)
+            row.IsPicked = _range is { } picked && row.From >= picked.Start && row.To <= picked.End;
+        foreach (var marked in MarkedRanges)
+            marked.IsPicked = _range is { } picked && marked.Start >= picked.Start && marked.End <= picked.End;
         if (_range is not { } range)
             return;
 
@@ -478,6 +505,8 @@ public sealed partial class DayReviewViewModel
         SelectionShares = (summary.Active.TotalSeconds / total, summary.Idle.TotalSeconds / total,
             Math.Max(0, 1 - (summary.Active + summary.Idle).TotalSeconds / total));
 
+        BuildAppRows(SelectionApps, range.Start, range.End);
+        SelectionAppsTotalText = DurationText.Of(summary.Active);
         BuildSegments(range, SelectionRuns);
 
         // Each project's time inside the selection, in the order they come; then the time with none.
@@ -490,10 +519,10 @@ public sealed partial class DayReviewViewModel
                 perProject[block.ProjectId] = perProject.GetValueOrDefault(block.ProjectId) + (to - from);
         }
         foreach (var (id, time) in perProject)
-            SelectionProjects.Add(new SelectionProjectRow(NameOf(id), BrushOf(id), ProjectTimes.Hm(time), false));
+            SelectionProjects.Add(new SelectionProjectRow(id, NameOf(id), BrushOf(id), ProjectTimes.Hm(time)));
         var none = length - perProject.Values.Aggregate(TimeSpan.Zero, (sum, t) => sum + t);
         if (none >= TimeSpan.FromSeconds(1))
-            SelectionProjects.Add(new SelectionProjectRow("No project", Brushes.Transparent, ProjectTimes.Hm(none), true));
+            SelectionProjects.Add(new SelectionProjectRow(null, "No project", Brushes.Transparent, ProjectTimes.Hm(none)));
     }
 
     /// <summary>Shows the selection's ends in the boxes, without that counting as typing.</summary>
@@ -519,22 +548,14 @@ public sealed partial class DayReviewViewModel
         void Gap(DateTimeOffset to)
         {
             if (to - cursor >= TimeSpan.FromSeconds(1))
-                segments.Add(new SegmentRow(RangeText(cursor, to), "Not recorded", to - cursor, null, false, OptionOf(null), SetProductiveSoon, (_, _) => { }));
+                segments.Add(Segment(cursor, to, null));
         }
 
         void Flush()
         {
             if (run is not { } r)
                 return;
-            var c = r.Capture;
-            ProgramKey? program = !c.IsActive || c.PendingDelete ? null
-                : c.Site is { } site ? new ProgramKey(ProgramKind.Site, site)
-                : c.AppName is { } app ? new ProgramKey(ProgramKind.App, app) : null;
-            var name = c.PendingDelete ? "Marked for deletion" : !c.IsActive ? "Idle" : program?.Name ?? "Unknown";
-            var productive = program is { } p && MarksOf(p).Productive;
-            var (from, to) = (r.From, r.To);
-            segments.Add(new SegmentRow(RangeText(from, to), name, to - from, program, productive, ProjectOfSpan(from, to),
-                SetProductiveSoon, (_, project) => SetSpanProjectSoon(from, to, project)));
+            segments.Add(Segment(r.From, r.To, r.Capture));
             cursor = r.To;
             run = null;
         }
@@ -561,11 +582,26 @@ public sealed partial class DayReviewViewModel
         }
         Flush();
         Gap(range.End);
-
-        static bool SameRun(CaptureRecord a, CaptureRecord b) =>
-            a.IsActive == b.IsActive && a.PendingDelete == b.PendingDelete
-            && (!a.IsActive || (string.Equals(a.AppName, b.AppName, StringComparison.OrdinalIgnoreCase) && a.Site == b.Site));
     }
+
+    /// <summary>A segment from..to of what a capture shows, or of time not recorded (no capture).</summary>
+    private SegmentRow Segment(DateTimeOffset from, DateTimeOffset to, CaptureRecord? capture)
+    {
+        if (capture is not { } c)
+            return new SegmentRow(from, to, RangeText(from, to), "Not recorded", null, false, OptionOf(null), SetProductiveSoon, (_, _) => { });
+        ProgramKey? program = !c.IsActive || c.PendingDelete ? null
+            : c.Site is { } site ? new ProgramKey(ProgramKind.Site, site)
+            : c.AppName is { } app ? new ProgramKey(ProgramKind.App, app) : null;
+        var name = c.PendingDelete ? "Marked for deletion" : !c.IsActive ? "Idle" : program?.Name ?? "Unknown";
+        var productive = program is { } p && MarksOf(p).Productive;
+        return new SegmentRow(from, to, RangeText(from, to), name, program, productive, ProjectOfSpan(from, to),
+            SetProductiveSoon, (_, project) => SetSpanProjectSoon(from, to, project));
+    }
+
+    /// <summary>Two captures in the same segment: the same app or site, or both idle, or both marked for deletion.</summary>
+    private static bool SameRun(CaptureRecord a, CaptureRecord b) =>
+        a.IsActive == b.IsActive && a.PendingDelete == b.PendingDelete
+        && (!a.IsActive || (string.Equals(a.AppName, b.AppName, StringComparison.OrdinalIgnoreCase) && a.Site == b.Site));
 
     /// <summary>A program's marks as the day's captures carry them (Productive, and its own project link).</summary>
     private (bool Productive, long? ProjectId) MarksOf(ProgramKey program)

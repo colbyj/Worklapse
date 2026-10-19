@@ -1,5 +1,7 @@
 # Handoff: designing how Day review assigns time to projects
 
+**Done 2026-10-19:** agreed (canvas Round 5) and built; see PROJECT.md *1a*, "Day review side panel, redesigned".
+
 Written 2026-10-19 for a new Claude session. The projects work (PROJECT.md *Next steps → 1a*, phases 1–6) is built
 and committed. Using it, the developer found that Day review's **side panel** doesn't yet feel right for the job it
 exists for: saying which project each stretch of the day belongs to. In their words: *"I suspect we're going to have to

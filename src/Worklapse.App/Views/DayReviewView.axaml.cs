@@ -31,6 +31,7 @@ public partial class DayReviewView : UserControl
     private bool _updatingBars;
     private FrameRef? _reloadedFor;
     private bool _closed;
+    private (double X, double Width)? _resizingFrom;   // where a drag of the panel's edge started
 
     // Needed by the XAML loader; the app always uses the other constructor.
     public DayReviewView() : this(null!, null!, null!) { }
@@ -45,13 +46,15 @@ public partial class DayReviewView : UserControl
         Messages.DataContext = recording;
         Indicator.DataContext = recording;
 
-        Timeline.Clicked += viewModel.Seek;
+        Timeline.Clicked += viewModel.Click;
         Timeline.Dragged += viewModel.DragSelect;
+        Timeline.EdgeDragged += viewModel.DragEdge;
+        Timeline.DoubleClicked += viewModel.DoubleClick;
         Frames.ViewChanged += UpdateView;
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
         FillWhenOpening((MenuFlyout)MonitorButton.Flyout!, MonitorMenuItems);
-        FillWhenOpening((MenuFlyout)SetProjectButton.Flyout!, ProjectMenuItems);
+        FillWhenOpening((MenuFlyout)SetProjectButton.Flyout!, () => ProjectMenuItems(viewModel.SetSelectionProjectCommand.Execute));
 
         // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, set the
         // selection's project or mark it for deletion, and mark what it contains (or the frame's, without one).
@@ -166,10 +169,10 @@ public partial class DayReviewView : UserControl
     }
 
     /// <summary>
-    /// The projects to set the selection to, each in its colour; for the Set Project button and the timeline's
-    /// right-click menu.
+    /// The projects to set some time to, each in its colour; for the Set Project button and the timeline's and the
+    /// rows' right-click menus.
     /// </summary>
-    private List<Control> ProjectMenuItems()
+    private List<Control> ProjectMenuItems(Action<long> choose)
     {
         var items = new List<Control>();
         foreach (var project in _viewModel.AssignableProjects)
@@ -178,10 +181,9 @@ public partial class DayReviewView : UserControl
             {
                 Header = project.Category.Length > 0 ? $"{project.Name}  ({project.Category})" : project.Name,
                 Icon = new Avalonia.Controls.Shapes.Rectangle { Width = 10, Height = 10, RadiusX = 2, RadiusY = 2, Fill = project.Brush },
-                IsEnabled = _viewModel.HasSelection,
             };
             var id = project.Id!.Value;
-            item.Click += (_, _) => _viewModel.SetSelectionProjectCommand.Execute(id);
+            item.Click += (_, _) => choose(id);
             items.Add(item);
         }
         if (items.Count == 0)
@@ -199,7 +201,7 @@ public partial class DayReviewView : UserControl
             var items = new List<Control>();
             if (forSelection && _viewModel.HasSelection)
             {
-                items.Add(new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems() });
+                items.Add(new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(_viewModel.SetSelectionProjectCommand.Execute) });
                 items.Add(new MenuItem { Header = "Clear Project", Command = _viewModel.ClearSelectionProjectCommand });
                 items.Add(new MenuItem { Header = "Mark for Deletion", Command = _viewModel.MarkSelectionCommand });
                 if (choices.Count > 0)
@@ -232,6 +234,122 @@ public partial class DayReviewView : UserControl
         Timeline.SetData(_viewModel.Spans, _viewModel.View.Start, _viewModel.View.End);
         Timeline.SetProjects(_viewModel.ProjectLane);
         Timeline.SetMarkers(_viewModel.SelectionSeconds, _viewModel.PlayheadSeconds);
+        Timeline.SetReach(_viewModel.ReachSeconds);
+    }
+
+    // --- the side panel ---------------------------------------------------------------------------
+
+    // Pointing at a row's mark (or tabbing to it) shows on the timeline the time it decides; the control's Tag says
+    // which mark ("productive", "project"), or "row" for the whole row.
+    private void OnReachEnter(object? sender, PointerEventArgs e)
+    {
+        if (sender is Control control)
+            _viewModel.ShowReach(ReachSource.Pointer, control.DataContext, control.Tag as string);
+    }
+
+    private void OnReachExit(object? sender, PointerEventArgs e)
+    {
+        // Choosing in its list moves the pointer off the combo box; it's still the one being changed.
+        if (sender is ComboBox { IsDropDownOpen: true })
+            return;
+        _viewModel.ShowReach(ReachSource.Pointer, null, null);
+    }
+
+    private void OnReachDropDownClosed(object? sender, EventArgs e)
+    {
+        if (sender is ComboBox { IsPointerOver: false })
+            _viewModel.ShowReach(ReachSource.Pointer, null, null);
+    }
+
+    private void OnReachFocus(object? sender, FocusChangedEventArgs e)
+    {
+        // Only from the keyboard: a click focuses too, and its highlight would outstay the pointer.
+        if (sender is Control control && e.NavigationMethod is NavigationMethod.Tab or NavigationMethod.Directional)
+            _viewModel.ShowReach(ReachSource.Keyboard, control.DataContext, control.Tag as string);
+    }
+
+    private void OnReachBlur(object? sender, RoutedEventArgs e) => _viewModel.ShowReach(ReachSource.Keyboard, null, null);
+
+    /// <summary>A segment on the day's list clicked: selects its time; Shift or Ctrl extends from the row picked before.</summary>
+    private void OnSegmentPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Control { DataContext: SegmentRow row } control || !e.GetCurrentPoint(control).Properties.IsLeftButtonPressed
+            || !_viewModel.DaySegments.Contains(row))
+            return;
+        _viewModel.Pick(row.From, row.To, Extends(e));
+    }
+
+    private void OnMarkedPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Control { DataContext: MarkedRange marked } control && e.GetCurrentPoint(control).Properties.IsLeftButtonPressed)
+            _viewModel.Pick(marked.Start, marked.End, Extends(e));
+    }
+
+    private static bool Extends(PointerPressedEventArgs e) =>
+        e.KeyModifiers.HasFlag(KeyModifiers.Shift) || e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+    /// <summary>
+    /// A segment's right-click menu, made for the row when asked for: changing the selection's scope, then what to do
+    /// with the selection (when the row is inside it) or the row; what it acts on shows on the timeline meanwhile.
+    /// </summary>
+    private void OnSegmentContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not Control { DataContext: SegmentRow row } control)
+            return;
+        e.Handled = true;
+        var target = _viewModel.MenuTarget(row);
+        var items = new List<Control>
+        {
+            Item("Select", () => _viewModel.Pick(row.From, row.To, extend: false)),
+            Item("Extend Selection to Here", () => _viewModel.ExtendSelectionTo(row), _viewModel.CanExtendSelectionTo(row)),
+            Item("Start Selection Here", () => _viewModel.StartSelectionAt(row), _viewModel.CanStartSelectionAt(row)),
+            Item("End Selection Here", () => _viewModel.EndSelectionAt(row), _viewModel.CanEndSelectionAt(row)),
+            new Separator(),
+            new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(id => _viewModel.SetProject(target, id)) },
+            Item("Clear Project", () => _viewModel.SetProject(target, null)),
+            Item("Mark for Deletion", () => _viewModel.MarkForDeletion(target)),
+            new Separator(),
+        };
+        if (row.Program is { } program)
+            items.Add(Item($"Mark {program.Name} as {(row.Productive ? "Other" : "Productive")}",
+                () => _viewModel.SetProductive(program, !row.Productive)));
+        items.Add(Item("Go To", () => _viewModel.GoTo(row.From)));
+        var menu = new ContextMenu { ItemsSource = items };
+        menu.Closed += (_, _) => _viewModel.ShowReach(ReachSource.Menu, range: null);
+        _viewModel.ShowReach(ReachSource.Menu, target);
+        menu.Open(control);
+
+        static MenuItem Item(string header, Action run, bool enabled = true)
+        {
+            var item = new MenuItem { Header = header, IsEnabled = enabled };
+            item.Click += (_, _) => run();
+            return item;
+        }
+    }
+
+    // The panel's left edge, dragged to resize it; the width is remembered when the drag ends.
+    private void OnPanelEdgePressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+        _resizingFrom = (e.GetPosition(this).X, _viewModel.PanelWidth);
+        e.Pointer.Capture(PanelEdge);
+        e.Handled = true;
+    }
+
+    private void OnPanelEdgeMoved(object? sender, PointerEventArgs e)
+    {
+        if (_resizingFrom is { } from)
+            _viewModel.ResizePanel(from.Width - (e.GetPosition(this).X - from.X));
+    }
+
+    private void OnPanelEdgeReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_resizingFrom is null)
+            return;
+        _resizingFrom = null;
+        e.Pointer.Capture(null);
+        _viewModel.SavePanelWidth();
     }
 
     /// <summary>

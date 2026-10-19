@@ -38,6 +38,12 @@ public static class AppBrushes
     public static SolidColorBrush SelectionFill { get; } = new();
     public static SolidColorBrush SelectionEdge { get; } = new();
 
+    /// <summary>Laid over the time a control in Day review's side panel doesn't reach, while it's pointed at.</summary>
+    public static SolidColorBrush ReachVeil { get; } = new();
+
+    /// <summary>Drawn under the time it does reach.</summary>
+    public static SolidColorBrush ReachBar { get; } = new();
+
     static AppBrushes() => Apply(ThemeManager.Current);
 
     internal static void Apply(UiPalette palette)
@@ -67,5 +73,7 @@ public static class AppBrushes
         MarkedFill.Color = UiPalette.WithAlpha(Marked.Color, 56);
         SelectionFill.Color = UiPalette.WithAlpha(palette.Accent, 46);
         SelectionEdge.Color = palette.Accent;
+        ReachVeil.Color = UiPalette.WithAlpha(palette.View, 190);
+        ReachBar.Color = palette.Accent;
     }
 }
