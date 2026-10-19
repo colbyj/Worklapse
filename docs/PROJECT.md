@@ -639,6 +639,46 @@ grids with editable cells rather than a text box per row, no accent buttons in t
      labels; the developer's province (Saskatchewan) doesn't change its clocks.
    160 tests pass.
 
+**Day review side panel, redesigned 2026-10-19 (agreed with the developer, not yet built).** Mockups: the canvas's
+**Round 5** page. Agreed:
+- *Scopes.* Two radio tool buttons at the top of the panel, **Day** and **Selection**. Selection is disabled without a
+  selection. A selection made on the timeline switches the panel to Selection. Clearing it goes back to the scope
+  shown before. Switching to Day keeps the selection on the timeline.
+- *Day tabs:* Applications, Recorded Segments, Time Log, Marked; the day note underneath. The Projects tab goes, and
+  with it the Join spots (selecting the gap and choosing Set Project does the same). Time Log and Marked exist only
+  at day level.
+- *Selection:* start and end boxes, the bar, then tabs Applications, Recorded Segments (clipped to the selection) and
+  Projects (each project's time inside the selection, no notes). The action bar is underneath: Set Project ▾,
+  Clear Project, Mark for Deletion.
+- *Frame:* always shown as a slice of the panel rather than a scope (developer's call: "always visible, as a small
+  slice"). It shows the frame's time, app or site, its segment's range and length, Productive (the app, every day)
+  and Project (that segment only). At the top of the panel. The status bar's frame line goes (the slice says it).
+- *Notes:* one note per project per day, plus the day note. Block notes and `NotePlacement` go (schema 10; there are
+  no notes in real data to migrate). On the Time Log, a note line under each project. In the Timesheet, the Notes
+  column becomes editable.
+- *Productive stays per app or site.* The developer never meant per stretch.
+- *Highlighting.* Pointing at (or focusing) a control lights up on the timeline exactly the time it would change on
+  this day: the rest of the lanes dim and a bar runs under each affected stretch.
+  - Productive: the app's or site's own time. A browser's flag doesn't reach pages with a known site.
+  - An app's link: its active time not set by hand, plus, for a browser, sites without a link of their own.
+  - A segment's Project: that stretch.
+  - A Time Log row: that project's time.
+  - An open row menu: what it acts on.
+- *Picking rows.* Click a segment row (Idle and Not recorded too) or a Marked row to select its time; Shift or
+  Ctrl+click extends the range to cover everything between. **One range only**: the developer considered several and
+  chose one. App rows and Time Log rows stand for scattered time, so they highlight but don't select. Picking rows in
+  Day doesn't switch the panel to Selection.
+- *Row menu (right-click).* Acts on the selection when the row is inside it, else on the row. Items: Select, Extend
+  Selection to Here, Start Selection Here, End Selection Here, Set Project ▸, Clear Project, Mark for Deletion,
+  Mark ‹app› as Productive/Other, Go To.
+- *Timeline.*
+  - A click inside the selection moves the playhead; a click outside also clears the selection.
+  - Dragging near an edge moves that edge (↔ cursor).
+  - Shift+click moves the nearer edge.
+  - A drag elsewhere starts a new selection; Esc clears.
+  - Double-clicking a project block or an activity run selects it.
+- *Resizable panel.* Drag its left edge. The mockup allows 360–720 px; the width is to be remembered.
+
 ### 1. Make it usable day to day
 
 Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history); both are built (2026-10-17).
