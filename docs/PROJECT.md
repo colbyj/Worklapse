@@ -101,16 +101,20 @@ native/
   src/av1.c                   C wrapper around libaom (encode I420, decode to I420 or BGRA, set options)
   src/image.c                 JPEG (libjpeg-turbo) and WebP (libwebp): encode I420, decode to I420 or BGRA
   src/color.c                 colour conversions (I420 is BT.709 full range; JPEG/WebP files BT.601)
-  worklapse_native.targets    MSBuild: builds native/win-x64/worklapse_native.dll (libraries static, via VS vcpkg) when needed
+  worklapse_native.targets    MSBuild: builds the native library when needed, libraries static via vcpkg:
+                              native/win-x64/worklapse_native.dll (Windows), native/linux-x64/worklapse_native.so (Linux)
 src/
   Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading
   Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
                               frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
+  Worklapse.Capture.Linux/    KDE Plasma (Wayland): KWin screenshots over D-Bus, a KWin script for the screens and the
+                              active window, idle from the Wayland compositor, lock from the screen saver service
   Worklapse.App/              Avalonia app: tray icon, main window (rail; Overview, Day review, Timesheet), settings dialog
 tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts, images)
 docs/PROJECT.md               this file
 docs/HANDOFF.md               briefs for the next tasks, for a new session
+docs/HANDOFF-LINUX.md         the Linux port's brief: smoke testing and finishing it on Kubuntu
 ```
 
 ### How recording works
@@ -168,6 +172,37 @@ internationalized names, no port, no leading `www.`; browser pages, files, exten
 Private windows give none: Firefox and Edge say so in the window title ("Private Browsing", "[InPrivate]");
 Chrome only in its top view's UI Automation name ("(Incognito)"), read once per window. These are English
 labels; a browser in another language needs its words added.
+
+### How capture works on KDE Plasma (Linux; built 2026-10-19, not yet run on a real desktop)
+
+Plasma Wayland only so far (`KdePlatform.Create`). Anywhere else, or when it can't start, the app runs on
+`PlatformServices.Unavailable`: nothing is recorded, the status bar and message bar say why, and Day review, the
+timesheet and Settings work as usual (decided 2026-10-19; this applies on Windows too). Avalonia 12 has no Wayland
+backend, so the UI itself runs under XWayland; capture goes through KWin instead.
+
+- **Permission.** KWin only answers `org.kde.KWin.ScreenShot2` for an executable named by the `Exec` of an
+  installed desktop file that lists the interface under `X-KDE-DBUS-Restricted-Interfaces` (it compares canonical
+  paths). `DesktopEntry` writes `~/.local/share/applications/worklapse.desktop` for the running executable at every
+  start (only when it changed) and runs `kbuildsycoca6`. So run the `Worklapse` executable, not `dotnet Worklapse.dll`.
+  The file also puts Worklapse in the application menu.
+- **Screens and the active window.** `KWinSession` connects to the session bus and loads `KWinScript.js` into KWin
+  (`org.kde.kwin.Scripting`), which reports the screens and the active window (pid, caption, class, frame) as JSON to
+  Worklapse whenever they change; reports are only accepted from KWin's bus name. The program's name is the file name
+  of `/proc/<pid>/exe` (`firefox`, `code`), or the window's class for programs that host others (python3, java,
+  electron…).
+- **Coordinates.** KWin works in logical units (a 150 % screen is smaller than its pixels). `ScreenLayout` places
+  each screen at its logical position times the largest scale and gives it its own pixel size, so monitors never
+  overlap and a window converts exactly within the screen showing most of it. The first capture of a screen fixes
+  its exact pixel size. KWin doesn't tell scripts which screen is primary, so none is marked primary (monitors are
+  just numbered) and Settings doesn't offer "Primary monitor" (`PlatformServices.KnowsPrimaryMonitor`; the
+  developer's choice 2026-10-19: don't pretend to know).
+- **Pixels.** `KWinScreenSource` calls `CaptureScreen(name, {native-resolution, no cursor}, pipe)`; KWin replies
+  with the size, stride and format, then writes the image into the pipe, which is read a strip at a time (with a
+  deadline), hashed and converted into the shared I420 frame like the GDI capture. KWin only takes screenshots
+  while compositing with OpenGL.
+- **Idle** from the compositor (`ext-idle-notify-v1` over a minimal managed Wayland client, version 2's input-only
+  notifications when offered, as KWin 6.7 does); **lock** from `org.freedesktop.ScreenSaver` (KWin provides it).
+- Not done: browser sites (Windows uses UI Automation; Linux would need AT-SPI), X11 sessions, GNOME and others.
 
 ### How images are stored
 
@@ -268,9 +303,9 @@ SQLite schema (version 8, migrations in `WorklapseDatabase`):
 
 ## Building, running, testing
 
-Requirements: .NET 10 SDK; Visual Studio 2026 or its Build Tools with the C++ workload (for the native
-library, which `dotnet build` builds when needed: ≈7 min the first time, see `native/README.md`). From the
-repository root:
+Requirements: .NET 10 SDK, plus what the native library needs, which `dotnet build` builds when needed (several
+minutes the first time; see `native/README.md`): on Windows, Visual Studio 2026 or its Build Tools with the C++
+workload; on Linux, gcc, nasm, pkg-config and a vcpkg clone (`VCPKG_ROOT`). From the repository root:
 
 ```sh
 dotnet build
@@ -668,14 +703,17 @@ plus the UI's ~100–150 MB only while a window is open; a UI crash would no lon
 AOT for the recorder could save another 10–20 MB. On Linux the recorder's tray icon needs a
 StatusNotifierItem implementation.
 
-### 2. Linux (Kubuntu first)
+### 2. Linux (Kubuntu first) — built 2026-10-19, needs a smoke test on Kubuntu
 
-KDE Wayland capture through KWin's `org.kde.KWin.ScreenShot2` D-Bus interface (needs a `.desktop` file
-declaring `X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2`), the focused window from a small
-KWin script, idle from `ext-idle-notify-v1`, and lock from `org.freedesktop.ScreenSaver`. X11 (XFCE, Mint,
-MATE) is simpler: `_NET_ACTIVE_WINDOW`, `XGetImage`/XShm, XScreenSaver idle. The native library needs a
-Linux build (static libaom, or the distro's `libaom` with a matching ABI check). Shared history with
-Windows needs a decision on where the data lives.
+Built from Windows (WSL and containers) while the developer was away; see *How capture works on KDE Plasma* and
+`docs/HANDOFF-LINUX.md`, which has what was verified, what wasn't, and what to do next on Kubuntu. In short: the native
+library builds on Linux with the same pinned static libraries (the developer chose static over the distro's), the
+whole solution builds and all tests pass on Linux, and against a real KWin 6.7 (headless) the script, the screens,
+the active window, idle, lock and the screenshot permission all work and the app starts; only a real screenshot
+couldn't be taken there (no GPU). The C code was also rewritten for readability, with output checked byte-identical.
+
+Later: X11 (XFCE, Mint, MATE) is simpler: `_NET_ACTIVE_WINDOW`, `XGetImage`/XShm, XScreenSaver idle. Shared history
+with Windows needs a decision on where the data lives.
 
 ### 3. Experiments (after the app is usable)
 
