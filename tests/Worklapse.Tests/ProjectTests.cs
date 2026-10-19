@@ -95,6 +95,38 @@ public class ProjectTests
     }
 
     [Fact]
+    public void AMarkReachesTheTimeItDecides()
+    {
+        CaptureRecord Of(int seconds, string? app, string? site = null, long? siteProject = null, bool marked = false) =>
+            new(seconds, Nine.AddSeconds(seconds), app is null ? CaptureKind.Idle : CaptureKind.Active, app, site, "Title", null,
+                false, site is null ? null : false, marked, [], [], null, siteProject);
+        CaptureRecord[] captures = [
+            Of(0, "code.exe"),
+            Of(10, "firefox.exe"),
+            Of(20, "firefox.exe", "github.com", siteProject: 3),   // a site with its own link
+            Of(30, "firefox.exe", "docs.example"),                 // a site without one follows the browser's
+            Of(40, null),                                          // idle
+            Of(50, "Code.exe"),                                    // app names ignore case
+            Of(60, "firefox.exe", marked: true),                   // marked for deletion: counts for nothing
+            Of(70, "code.exe"),                                    // the last capture lasts the maximum
+        ];
+        (int, int)[] Seconds(List<(DateTimeOffset Start, DateTimeOffset End)> ranges) =>
+            ranges.Select(r => ((int)(r.Start - Nine).TotalSeconds, (int)(r.End - Nine).TotalSeconds)).ToArray();
+        var (code, firefox, github) = (new ProgramKey(ProgramKind.App, "Code.exe"), new ProgramKey(ProgramKind.App, "firefox.exe"),
+            new ProgramKey(ProgramKind.Site, "github.com"));
+
+        // Productive: a site always decides for its pages, so a browser's mark reaches only pages without one.
+        Assert.Equal([(0, 10), (50, 60), (70, 85)], Seconds(MarkReach.Productive(captures, code, Max)));
+        Assert.Equal([(10, 20)], Seconds(MarkReach.Productive(captures, firefox, Max)));
+        Assert.Equal([(20, 30)], Seconds(MarkReach.Productive(captures, github, Max)));
+
+        // A link: not where time is set by hand; a browser's also reaches sites without a link of their own.
+        Assert.Equal([(10, 12), (15, 20), (30, 40)], Seconds(MarkReach.Link(captures, [Span(12, 15, null)], firefox, Max)));
+        Assert.Equal([(20, 30)], Seconds(MarkReach.Link(captures, [], github, Max)));
+        Assert.Equal([(0, 10), (70, 85)], Seconds(MarkReach.Link(captures, [Span(50, 60, 2)], code, Max)));
+    }
+
+    [Fact]
     public void ProductiveTimeIsCountedPerProjectAndForTimeWithoutOne()
     {
         var time = Build([Capture(0, appProject: 1, productive: true), Capture(10, appProject: 1), Capture(20, productive: true), Capture(30)]);
