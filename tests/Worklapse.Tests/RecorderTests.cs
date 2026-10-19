@@ -1,6 +1,8 @@
 using Worklapse.Core.Platform;
 using Worklapse.Core.Recording;
 using Worklapse.Core.Settings;
+using Worklapse.Core.Storage;
+using Worklapse.Video;
 
 namespace Worklapse.Tests;
 
@@ -11,6 +13,31 @@ public class RecorderTests
     private static readonly MonitorInfo Main = new(@"\\.\DISPLAY1", new PixelRect(0, 0, 3440, 1440), IsPrimary: true) { StableId = "main" };
     private static readonly MonitorInfo Right = new(@"\\.\DISPLAY3", new PixelRect(3440, 0, 2560, 1600), IsPrimary: false) { StableId = RightId };
     private static readonly MonitorInfo[] All = [Left, Main, Right];
+
+    [Fact]
+    public async Task WhereRecordingCantWorkTheRecorderSaysWhyAndRecordsNothing()
+    {
+        using var folder = new TempFolder();
+        var settings = new SettingsStore(Path.Combine(folder.Path, "settings.json"));
+        settings.Save(new WorklapseSettings { DataFolder = folder.Path, IdleMinutes = 120 });
+        var platform = PlatformServices.Unavailable("Worklapse records only in a KDE Plasma Wayland session so far.");
+        await using (var recorder = new Recorder(settings, platform, store => new FrameSink(store, () => (FrameFormat.Video, 30))))
+        {
+            recorder.Tick();
+            Assert.Equal((RecorderState.Error, "Worklapse records only in a KDE Plasma Wayland session so far."),
+                (recorder.Status.State, recorder.Status.Error));
+
+            // Paused or not, it says so.
+            recorder.IsPaused = true;
+            recorder.Tick();
+            Assert.Equal(RecorderState.Error, recorder.Status.State);
+        }
+
+        // The history is still opened (Day review and reclaiming deleted video need it), but nothing went in.
+        using var db = WorklapseDatabase.Open(folder.Path);
+        using var count = db.Command("SELECT COUNT(*) FROM captures;");
+        Assert.Equal(0L, (long)count.ExecuteScalar()!);
+    }
 
     [Fact]
     public void AllMonitorsCapturesEveryMonitor()

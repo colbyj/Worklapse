@@ -40,11 +40,44 @@ public sealed record PlatformServices(
     /// </summary>
     public Func<IScreenSource>? CreateScreenSource { get; init; }
 
+    /// <summary>Why nothing can be recorded here (a sentence for the user); null when recording works.</summary>
+    public string? CannotRecord { get; init; }
+
+    /// <summary>
+    /// A platform that records nothing, for when the real one can't start: the app still opens, so the history can be
+    /// reviewed and the settings changed, and the recorder reports <paramref name="reason"/> instead of capturing.
+    /// </summary>
+    public static PlatformServices Unavailable(string reason) =>
+        new(new NoScreens(), new NoForeground(), new NoIdle(), new NeverLocked()) { CannotRecord = reason };
+
     public void Dispose()
     {
         Screen.Dispose();
         Session.Dispose();
         (Idle as IDisposable)?.Dispose();
         (Foreground as IDisposable)?.Dispose();
+    }
+
+    private sealed class NoScreens : IScreenSource
+    {
+        public IReadOnlyList<MonitorInfo> GetMonitors() => [];
+        public ScreenCapture? Capture(MonitorInfo monitor) => null;
+        public void Dispose() { }
+    }
+
+    private sealed class NoForeground : IForegroundWindowProbe
+    {
+        public ForegroundWindow? GetForegroundWindow() => null;
+    }
+
+    private sealed class NoIdle : IIdleDetector
+    {
+        public TimeSpan GetIdleTime() => TimeSpan.Zero;
+    }
+
+    private sealed class NeverLocked : ISessionStateMonitor
+    {
+        public bool IsLocked => false;
+        public void Dispose() { }
     }
 }

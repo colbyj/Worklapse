@@ -120,16 +120,27 @@ public partial class App : Application
         return sink;
     }
 
+    /// <summary>
+    /// The platform's capture services; when they can't start (a desktop Worklapse can't record on yet, KWin missing),
+    /// one that records nothing and says why, so the rest of the app still works.
+    /// </summary>
     private static PlatformServices CreatePlatform()
     {
-        if (OperatingSystem.IsWindows())
-            return WindowsPlatform.Create();
-        if (OperatingSystem.IsLinux())
+        try
         {
-            var icon = Path.Combine(AppContext.BaseDirectory, "worklapse.png");
-            return KdePlatform.Create(File.Exists(icon) ? icon : null);
+            if (OperatingSystem.IsWindows())
+                return WindowsPlatform.Create();
+            if (OperatingSystem.IsLinux())
+            {
+                var icon = Path.Combine(AppContext.BaseDirectory, "worklapse.png");
+                return KdePlatform.Create(File.Exists(icon) ? icon : null);
+            }
+            return PlatformServices.Unavailable("Worklapse can't record on this operating system yet.");
         }
-        throw new PlatformNotSupportedException("Screen capture is only implemented for Windows and KDE Plasma so far.");
+        catch (Exception ex)
+        {
+            return PlatformServices.Unavailable(ex.Message);
+        }
     }
 
     private void CreateTrayIcon(IClassicDesktopStyleApplicationLifetime desktop)

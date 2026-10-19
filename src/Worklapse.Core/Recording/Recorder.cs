@@ -136,6 +136,13 @@ public sealed class Recorder : IAsyncDisposable
             CloseSegments();
         }
 
+        // Said every tick, paused or not: nothing will be recorded until Worklapse runs where it can record.
+        if (_platform.CannotRecord is { } reason)
+        {
+            SetStatus(Status with { State = RecorderState.Error, Error = reason });
+            return;
+        }
+
         if (_paused)
         {
             CloseSegments();
