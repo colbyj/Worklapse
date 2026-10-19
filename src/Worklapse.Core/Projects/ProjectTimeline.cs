@@ -30,6 +30,9 @@ public sealed record ProjectTime(IReadOnlyList<ProjectBlock> Blocks, IReadOnlyDi
 
     /// <summary>All time marked with a project.</summary>
     public TimeSpan Assigned => Blocks.Aggregate(TimeSpan.Zero, (sum, b) => sum + b.Length);
+
+    /// <summary>All time with input, marked with a project or not.</summary>
+    public TimeSpan Active => Totals.Values.Aggregate(Unassigned.Productive + Unassigned.Other, (sum, t) => sum + t.Active);
 }
 
 public enum ActivityKind

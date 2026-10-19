@@ -283,6 +283,33 @@ public sealed partial class DayReviewViewModel
         RebuildProjects();
     }
 
+    /// <summary>Sets what has no project in stretches of time to one, by hand: idle and unrecorded gaps too, so blocks join.</summary>
+    public void SetUnassigned(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges, long projectId) =>
+        SetProject(UnassignedIn(ranges), projectId);
+
+    public bool HasUnassigned(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges) => UnassignedIn(ranges).Count > 0;
+
+    /// <summary>The parts of stretches of time with no project block over them.</summary>
+    private List<(DateTimeOffset Start, DateTimeOffset End)> UnassignedIn(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges)
+    {
+        var gaps = new List<(DateTimeOffset Start, DateTimeOffset End)>();
+        foreach (var (start, end) in ranges)
+        {
+            var from = start;
+            foreach (var block in _projectTime.Blocks)
+            {
+                if (block.End <= from || block.Start >= end)
+                    continue;
+                if (block.Start > from)
+                    gaps.Add((from, block.Start));
+                from = block.End;
+            }
+            if (from < end)
+                gaps.Add((from, end));
+        }
+        return gaps;
+    }
+
     /// <summary>
     /// What an Applications row's menu acts on: all of the app's (or site's) time on the day; on the selection's list,
     /// the part of it inside the selection.
@@ -290,12 +317,7 @@ public sealed partial class DayReviewViewModel
     public List<(DateTimeOffset Start, DateTimeOffset End)> AppTime(DayAppRow row)
     {
         var time = row.Program is { } program ? MarkReach.TimeOf(Captures, program, _maxCaptureLength) : [];
-        if (!SelectionApps.Contains(row) || _range is not { } range)
-            return time;
-        return time
-            .Select(t => (Start: t.Start > range.Start ? t.Start : range.Start, End: t.End < range.End ? t.End : range.End))
-            .Where(t => t.End > t.Start)
-            .ToList();
+        return SelectionApps.Contains(row) && _range is { } range ? Clip(time, range) : time;
     }
 
     /// <summary>Moves the playhead to the first capture kept at or after a moment.</summary>
@@ -351,10 +373,17 @@ public sealed partial class DayReviewViewModel
         (DayAppRow { Program: { } program }, "project") => MarkReach.Link(Captures, _handSpans, program, _maxCaptureLength),
         (SegmentRow segment, _) => [(segment.From, segment.To)],
         (TimeLogRow log, _) => BlocksOf(log.ProjectId, null),
+        (SelectionProjectRow { ProjectId: null }, _) when _range is { } range => Clip(MarkReach.Unassigned(Captures, _projectTime.Blocks, _maxCaptureLength), range),
         (SelectionProjectRow selected, _) when _range is { } range => BlocksOf(selected.ProjectId, range),
         (MarkedRange marked, _) => [(marked.Start, marked.End)],
         _ => null,
     };
+
+    private static List<(DateTimeOffset Start, DateTimeOffset End)> Clip(IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> ranges,
+        (DateTimeOffset Start, DateTimeOffset End) within) =>
+        ranges.Select(r => (Start: r.Start > within.Start ? r.Start : within.Start, End: r.End < within.End ? r.End : within.End))
+            .Where(r => r.End > r.Start)
+            .ToList();
 
     /// <summary>A project's blocks (or, for null, the time with none), within a range if one is given.</summary>
     private List<(DateTimeOffset Start, DateTimeOffset End)> BlocksOf(long? projectId, (DateTimeOffset Start, DateTimeOffset End)? within)

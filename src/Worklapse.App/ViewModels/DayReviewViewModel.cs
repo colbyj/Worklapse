@@ -716,6 +716,9 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     public (double, double)? SelectionSeconds => _range is { } r ? (SecondsOf(r.Start), SecondsOf(r.End)) : null;
 
+    /// <summary>The selection's time, if there is one.</summary>
+    public (DateTimeOffset Start, DateTimeOffset End)? SelectionRange => _range;
+
     private (DateTimeOffset Start, DateTimeOffset End) SelectionTimes() => _range!.Value;
 
     /// <summary>Seconds after the day's local midnight.</summary>

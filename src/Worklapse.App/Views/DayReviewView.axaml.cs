@@ -54,7 +54,7 @@ public partial class DayReviewView : UserControl
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
         FillWhenOpening((MenuFlyout)MonitorButton.Flyout!, MonitorMenuItems);
-        FillWhenOpening((MenuFlyout)SetProjectButton.Flyout!, () => ProjectMenuItems(viewModel.SetSelectionProjectCommand.Execute));
+        FillWhenOpening((MenuFlyout)SetProjectButton.Flyout!, SetProjectButtonItems);
 
         // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, set the
         // selection's project or mark it for deletion, and mark what it contains (or the frame's, without one).
@@ -202,6 +202,7 @@ public partial class DayReviewView : UserControl
             if (forSelection && _viewModel.HasSelection)
             {
                 items.Add(new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(_viewModel.SetSelectionProjectCommand.Execute) });
+                items.Add(SetUnassignedItem(SelectionRanges()));
                 items.Add(new MenuItem { Header = "Clear Project", Command = _viewModel.ClearSelectionProjectCommand });
                 items.Add(new MenuItem { Header = "Mark for Deletion", Command = _viewModel.MarkSelectionCommand });
                 if (choices.Count > 0)
@@ -306,6 +307,7 @@ public partial class DayReviewView : UserControl
             MenuEntry("End Selection Here", () => _viewModel.EndSelectionAt(row), _viewModel.CanEndSelectionAt(row)),
             new Separator(),
             new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(id => _viewModel.SetProject(target, id)) },
+            SetUnassignedItem([target]),
             MenuEntry("Clear Project", () => _viewModel.SetProject(target, null)),
             MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(target)),
             new Separator(),
@@ -332,6 +334,7 @@ public partial class DayReviewView : UserControl
         List<Control> items =
         [
             new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(id => _viewModel.SetProject(time, id)) },
+            SetUnassignedItem(time),
             MenuEntry("Clear Project", () => _viewModel.SetProject(time, null)),
             MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(time)),
             new Separator(),
@@ -340,6 +343,26 @@ public partial class DayReviewView : UserControl
         ];
         OpenRowMenu(control, items, time);
     }
+
+    /// <summary>The Set Project button's menu: the projects to set the selection to, then the same for what has none.</summary>
+    private List<Control> SetProjectButtonItems()
+    {
+        var items = ProjectMenuItems(_viewModel.SetSelectionProjectCommand.Execute);
+        items.Add(new Separator());
+        items.Add(SetUnassignedItem(SelectionRanges()));
+        return items;
+    }
+
+    private IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> SelectionRanges() =>
+        _viewModel.SelectionRange is { } range ? [range] : [];
+
+    /// <summary>"Set Unassigned to ▸": the projects to set what has none in some time to; off when all of it has one.</summary>
+    private MenuItem SetUnassignedItem(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges) => new()
+    {
+        Header = "Set Unassigned to",
+        ItemsSource = ProjectMenuItems(id => _viewModel.SetUnassigned(ranges, id)),
+        IsEnabled = _viewModel.HasUnassigned(ranges),
+    };
 
     /// <summary>Opens a row's menu, showing on the timeline what it acts on until it closes.</summary>
     private void OpenRowMenu(Control row, List<Control> items, IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> actsOn)

@@ -709,6 +709,13 @@ Changed after the developer used it (2026-10-19):
   Project ▸, Clear Project, Mark for Deletion, Mark as Productive/Other, Go To, acting on all of the app's time (a
   browser's pages of every site included, `MarkReach.TimeOf`) on the day, or inside the selection on its list. The
   selection's own items don't apply: an app's time is scattered, and the selection is one range.
+- The Overview's week rows and month cells show Active · Assigned (was Assigned · recorded; idle time isn't wanted
+  there), from `ProjectTime.Active`.
+- The selection's "No project" counts active time only (`MarkReach.Unassigned`), not idle or unrecorded time.
+- **Set Unassigned to ▸** (Set Project button, the timeline's and the rows' menus): sets everything without a
+  project in what it acts on to one by hand, idle and unrecorded gaps included, so blocks join (what Join did).
+- Fixed: the monitor menu laid its items out in a row; the tool buttons' horizontal layout reached into the menu that
+  drops from one (`:is(Button).tool > StackPanel` now).
 - Day review's last capture lasts the maximum, as in Core's totals and project blocks (it lasted one interval, so a
   block ran 5 s past the end of the segments and the gap after it read "Mixed").
 

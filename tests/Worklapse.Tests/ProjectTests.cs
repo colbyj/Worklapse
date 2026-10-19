@@ -129,6 +129,11 @@ public class ProjectTests
         Assert.Equal([(10, 40)], Seconds(MarkReach.TimeOf(captures, firefox, Max)));
         Assert.Equal([(20, 30)], Seconds(MarkReach.TimeOf(captures, github, Max)));
         Assert.Equal([(0, 10), (50, 60), (70, 85)], Seconds(MarkReach.TimeOf(captures, code, Max)));
+
+        // Active time with no project: around the blocks; idle and marked time aren't counted.
+        var blocks = new[] { (5, 15), (25, 55) }
+            .Select(b => new ProjectBlock(Nine.AddSeconds(b.Item1), Nine.AddSeconds(b.Item2), 1, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero)).ToList();
+        Assert.Equal([(0, 5), (15, 25), (55, 60), (70, 85)], Seconds(MarkReach.Unassigned(captures, blocks, Max)));
     }
 
     [Fact]
@@ -387,6 +392,7 @@ public class ProjectTests
         Assert.Equal(full.Unassigned, one.Time.Unassigned);
         Assert.Equal(TimeSpan.FromSeconds(80 + 5), one.Time.Recorded);             // the marked capture left out; the last one ends at midnight
         Assert.Equal((Nine, midnight), one.Extent);
+        Assert.Equal(TimeSpan.FromSeconds(60 + 10 + 5), one.Time.Active);                // Code, the game, the last one; not idle or marked
         Assert.Equal(
             [(0, 60, ActivityKind.Productive), (60, 70, ActivityKind.Other), (70, 80, ActivityKind.Idle)],
             one.Activity.Take(3).Select(r => ((int)(r.Start - Nine).TotalSeconds, (int)(r.End - Nine).TotalSeconds, r.Kind)));

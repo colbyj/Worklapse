@@ -95,7 +95,9 @@
   <Style Selector="RadioButton.tool">
     <Setter Property="Theme" Value="{StaticResource {x:Type ToggleButton}}" />
   </Style>
-  <Style Selector=":is(Button).tool StackPanel">
+  <!-- Only the button's own content: a menu dropping down from a tool button counts as inside it, and would lay its
+       items out in a row. -->
+  <Style Selector=":is(Button).tool > StackPanel">
     <Setter Property="Orientation" Value="Horizontal" />
     <Setter Property="Spacing" Value="5" />
   </Style>

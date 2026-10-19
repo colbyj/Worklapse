@@ -40,6 +40,11 @@ public static class MarkReach
         ProgramKey program, TimeSpan maxCaptureLength) =>
         Ranges(captures, maxCaptureLength, c => Same(program.Kind == ProgramKind.Site ? c.Site : c.AppName, program.Name));
 
+    /// <summary>Active time marked with no project: outside the blocks (a selection's "No project").</summary>
+    public static List<(DateTimeOffset Start, DateTimeOffset End)> Unassigned(IReadOnlyList<CaptureRecord> captures,
+        IReadOnlyList<ProjectBlock> blocks, TimeSpan maxCaptureLength) =>
+        Without(Ranges(captures, maxCaptureLength, _ => true), blocks.Select(b => new ProjectSpan(b.Start, b.End, b.ProjectId)).ToList());
+
     /// <summary>The time of the active captures that match, each lasting until the next (at most the maximum), joined up.</summary>
     private static List<(DateTimeOffset Start, DateTimeOffset End)> Ranges(IReadOnlyList<CaptureRecord> captures,
         TimeSpan maxCaptureLength, Func<CaptureRecord, bool> match)

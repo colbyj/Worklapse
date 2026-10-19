@@ -26,8 +26,8 @@ public sealed record OverviewDayRow(
     IReadOnlyList<ProjectLaneBlock> Blocks,
     IReadOnlyList<TimelineSpan> Activity,
     double? Now,
+    string ActiveText,
     string AssignedText,
-    string RecordedText,
     IRelayCommand Open);
 
 /// <summary>A day of the month grid; days of the neighbouring months only show their number.</summary>
@@ -36,8 +36,8 @@ public sealed record OverviewMonthCell(
     string NumberText,
     bool InMonth,
     bool IsToday,
+    string ActiveText,
     string AssignedText,
-    string RecordedText,
     IReadOnlyList<BarSegment> Bar,
     IRelayCommand Open);
 
@@ -199,7 +199,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
             var span = summary.Extent is { } extent ? $"{Clock(extent.First)} – {Clock(extent.Last)}" : "";
             double? now = day == today ? Seconds(midnight, DateTimeOffset.Now) : null;
             Days.Add(new OverviewDayRow(day, day.ToString("ddd d", CultureInfo.CurrentCulture), span, AxisStart, AxisEnd, blocks, activity, now,
-                HmOrDash(summary.Time.Assigned), HmOrDash(summary.Time.Recorded), new RelayCommand(() => OpenDay(day))));
+                HmOrDash(summary.Time.Active), HmOrDash(summary.Time.Assigned), new RelayCommand(() => OpenDay(day))));
         }
     }
 
@@ -225,9 +225,9 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
                 .Append(new BarSegment((time.Unassigned.Productive + time.Unassigned.Other).TotalSeconds, AppBrushes.NotRecorded, Hatched: true))
                 .Where(s => s.Value > 0)
                 .ToList();
-            var empty = time.Assigned == TimeSpan.Zero && time.Recorded == TimeSpan.Zero;
+            var empty = time.Assigned == TimeSpan.Zero && time.Active == TimeSpan.Zero;
             MonthCells.Add(new OverviewMonthCell(day, number, true, day == today,
-                empty ? "" : Hm(time.Assigned), empty ? "" : Hm(time.Recorded), bar, new RelayCommand(() => OpenDay(day))));
+                empty ? "" : Hm(time.Active), empty ? "" : Hm(time.Assigned), bar, new RelayCommand(() => OpenDay(day))));
         }
     }
 

@@ -146,8 +146,8 @@
                                          AxisStart="{Binding AxisStart}" AxisEnd="{Binding AxisEnd}"
                                          Blocks="{Binding Blocks}" Activity="{Binding Activity}" Now="{Binding Now}" />
                       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="14,0,0,0">
-                        <TextBlock Text="{Binding AssignedText}" Classes="strong" MinWidth="36" FontFeatures="+tnum" />
-                        <TextBlock Text="{Binding RecordedText}" Classes="secondary" FontFeatures="+tnum" />
+                        <TextBlock Text="{Binding ActiveText}" Classes="strong" MinWidth="36" FontFeatures="+tnum" ToolTip.Tip="Active" />
+                        <TextBlock Text="{Binding AssignedText}" Classes="secondary" FontFeatures="+tnum" ToolTip.Tip="Assigned to projects" />
                       </StackPanel>
                     </Grid>
                   </Border>
@@ -190,8 +190,8 @@
                           <TextBlock Text="{Binding NumberText}" Classes="strong" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center">
-                          <TextBlock Text="{Binding AssignedText}" Classes="strong" FontFeatures="+tnum" ToolTip.Tip="Assigned" />
-                          <TextBlock Text="{Binding RecordedText}" Classes="secondary" FontSize="11" FontFeatures="+tnum" ToolTip.Tip="Recorded"
+                          <TextBlock Text="{Binding ActiveText}" Classes="strong" FontFeatures="+tnum" ToolTip.Tip="Active" />
+                          <TextBlock Text="{Binding AssignedText}" Classes="secondary" FontSize="11" FontFeatures="+tnum" ToolTip.Tip="Assigned to projects"
                                      VerticalAlignment="Center" />
                         </StackPanel>
                       </DockPanel>
@@ -291,12 +291,12 @@
         </DockPanel>
       </Border>
 
-      <!-- The days' notes; each opens to its block notes. -->
+      <!-- The days' notes; each opens to its projects' notes. -->
       <Border Grid.Column="1" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" Background="{DynamicResource UiViewBrush}">
         <DockPanel>
           <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,Auto">
             <TextBlock Text="Notes" />
-            <TextBlock Grid.Column="1" Text="Expand a day for its block notes" />
+            <TextBlock Grid.Column="1" Text="Expand a day for its projects' notes" />
           </Grid>
           <Panel>
             <ScrollViewer>
@@ -307,7 +307,7 @@
                       <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="22,50,*">
                           <Button Classes="tool chevron" Command="{Binding ToggleCommand}" IsVisible="{Binding HasEntries}" VerticalAlignment="Top"
-                                  AutomationProperties.Name="{Binding DayText, StringFormat='Block notes of {0}'}">
+                                  AutomationProperties.Name="{Binding DayText, StringFormat='Project notes of {0}'}">
                             <Panel>
                               <ic:SymbolIcon Symbol="ChevronDown" IsVisible="{Binding IsExpanded}" />
                               <ic:SymbolIcon Symbol="ChevronRight" IsVisible="{Binding !IsExpanded}" />

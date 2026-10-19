@@ -114,7 +114,7 @@ public sealed class SegmentRow(DateTimeOffset from, DateTimeOffset to, string ra
     public FontStyle NameStyle => HasProgram ? FontStyle.Normal : FontStyle.Italic;
 }
 
-/// <summary>A project's time inside the selection; <see cref="IsNone"/> for the time with no project.</summary>
+/// <summary>A project's time inside the selection; <see cref="IsNone"/> for the active time with no project.</summary>
 public sealed record SelectionProjectRow(long? ProjectId, string Name, IBrush Brush, string LengthText)
 {
     public bool IsNone => ProjectId is null;
@@ -530,7 +530,7 @@ public sealed partial class DayReviewViewModel
         SelectionAppsTotalText = DurationText.Of(summary.Active);
         BuildSegments(range, SelectionRuns);
 
-        // Each project's time inside the selection, in the order they come; then the time with none.
+        // Each project's time inside the selection, in the order they come; then the active time with none.
         var perProject = new Dictionary<long, TimeSpan>();
         foreach (var block in _projectTime.Blocks)
         {
@@ -541,7 +541,8 @@ public sealed partial class DayReviewViewModel
         }
         foreach (var (id, time) in perProject)
             SelectionProjects.Add(new SelectionProjectRow(id, NameOf(id), BrushOf(id), ProjectTimes.Hm(time)));
-        var none = length - perProject.Values.Aggregate(TimeSpan.Zero, (sum, t) => sum + t);
+        var unassigned = ProjectTimeline.Build(Captures, _handSpans, range.Start, range.End, _maxCaptureLength).Unassigned;
+        var none = unassigned.Productive + unassigned.Other;
         if (none >= TimeSpan.FromSeconds(1))
             SelectionProjects.Add(new SelectionProjectRow(null, "No project", Brushes.Transparent, ProjectTimes.Hm(none)));
     }
