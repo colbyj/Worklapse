@@ -582,10 +582,11 @@ grids with editable cells rather than a text box per row, no accent buttons in t
      leaves out captures marked for deletion. The week's axis can reach 25 h (the day the clocks go back) and strips
      clip rather than squeeze what's outside it; hour labels are spaced by their measured width; project brushes are
      made once per colour; `ThemedControl` holds the theme subscription the custom controls shared.
-   - Left as they are, for the developer: the Timesheet's day and footer totals add up the project lines only
-     (active time without a project isn't in them; the Overview shows it); Logged cells save when they lose the focus,
-     as on Day review's Time Log (Enter doesn't commit); on a day the clocks change, the timelines measure elapsed time
-     from midnight, as Day review does, so that day's strip is an hour off the week's hour labels.
+   - Confirmed by the developer (2026-10-19): the Timesheet's day and footer totals add up the project lines only
+     (time without a project is the Overview's business); Logged cells save when they lose the focus, as on Day
+     review's Time Log; month cells show Assigned · recorded. Not handled: on a day the clocks change, the timelines
+     measure elapsed time from midnight (as Day review does), so that day's strip is an hour off the week's hour
+     labels; the developer's province (Saskatchewan) doesn't change its clocks.
    160 tests pass.
 
 ### 1. Make it usable day to day
