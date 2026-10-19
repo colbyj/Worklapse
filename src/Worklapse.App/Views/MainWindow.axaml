@@ -69,6 +69,11 @@
         <MenuItem Header="_Quit Worklapse" Click="OnQuit" InputGesture="Ctrl+Q" HotKey="Ctrl+Q" />
       </MenuItem>
       <MenuItem Header="_Edit" IsVisible="{Binding IsDayReview}">
+        <MenuItem x:Name="SetProjectMenu" Header="Set _Project" SubmenuOpened="OnSetProjectMenuOpened">
+          <MenuItem.Icon><ic:SymbolIcon Symbol="Tag" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="Clea_r Project" Command="{Binding DayReview.ClearSelectionProjectCommand}" />
+        <Separator />
         <MenuItem Header="_Mark Selection for Deletion" Command="{Binding DayReview.MarkSelectionCommand}">
           <MenuItem.Icon><ic:SymbolIcon Symbol="Delete" /></MenuItem.Icon>
         </MenuItem>

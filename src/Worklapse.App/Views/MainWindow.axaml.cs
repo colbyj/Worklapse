@@ -37,6 +37,8 @@ public partial class MainWindow : Window
         _timesheet.Show("Timesheet", "The timesheet comes in a later step.", viewModel.Recording);
         Host.Children.Add(_overview);
         Host.Children.Add(_timesheet);
+        // Filled when it opens; one entry now so it shows as a submenu.
+        SetProjectMenu.ItemsSource = new[] { new MenuItem { Header = "…", IsEnabled = false } };
 
         viewModel.PropertyChanged += OnViewModelChanged;
         _settings.Changed += OnSettingsChanged;
@@ -117,6 +119,13 @@ public partial class MainWindow : Window
     {
         if (_viewModel.IsDayReview)
             _dayView?.HandleKey(e);
+    }
+
+    /// <summary>The projects, listed when the submenu opens (they can change in Settings meanwhile).</summary>
+    private void OnSetProjectMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (_dayView is not null && ReferenceEquals(e.Source, SetProjectMenu))
+            SetProjectMenu.ItemsSource = _dayView.ProjectMenuItems();
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => _dayView?.ZoomIn();

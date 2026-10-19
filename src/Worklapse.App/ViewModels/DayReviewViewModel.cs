@@ -39,8 +39,10 @@ public sealed partial class MarkedRange : ObservableObject
 }
 
 /// <summary>
-/// State of the Day review window. Positions are indexes into the day's captures; the playhead is always
-/// on a capture, and a selection covers whole captures.
+/// State of Day review. Positions are indexes into the day's captures and the playhead is always on a capture. A
+/// selection is a range of time: dragging snaps it to whole captures where something was recorded and to whole
+/// minutes where nothing was, and its ends can be typed, so time with no recording can be given a project too.
+/// <see cref="SelectionStart"/> and <see cref="SelectionEnd"/> are the captures inside it, if any.
 /// </summary>
 public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 {
@@ -53,6 +55,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _playTimer;
     private IReadOnlyList<DateOnly> _days = [];
     private int? _anchor;
+    private (DateTimeOffset Start, DateTimeOffset End)? _range;
     private Dictionary<long, MonitorRecord> _monitorsById = [];
     private IReadOnlyList<long>? _choicesFor;   // the monitors MonitorChoices lists
     private MonitorRecord? _chosenMonitor;      // picked by the user (null: all); kept while it isn't attached
@@ -118,7 +121,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         ? Captures[Current].MonitorIds.Select(id => _monitorsById[id]).ToList()
         : [];
 
-    public bool HasSelection => SelectionStart is not null && SelectionEnd is not null;
+    public bool HasSelection => _range is not null;
+
+    /// <summary>The selection has captures in it (to play, or to look at what was recorded).</summary>
+    public bool HasCaptureSelection => SelectionStart is not null && SelectionEnd is not null;
     public bool HasMarked => MarkedRanges.Count > 0;
     public bool HasNoMarked => MarkedRanges.Count == 0;
     public bool CanGoNextDay => _days.Any(d => d > Day.Day);
@@ -198,29 +204,76 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             MoveTo(index);
     }
 
-    /// <summary>A drag on the timeline: selects the captures between the two times; the playhead follows the pointer.</summary>
+    /// <summary>
+    /// A drag on the timeline: selects the time between the two points, each end snapped to the capture it falls in, or
+    /// to the minute where nothing was recorded. The playhead follows the pointer when there are captures to show.
+    /// </summary>
     public void DragSelect(double anchorSeconds, double pointerSeconds, bool finished)
     {
         Stop();
         var (from, to) = anchorSeconds <= pointerSeconds ? (anchorSeconds, pointerSeconds) : (pointerSeconds, anchorSeconds);
-        var first = Captures.Count;
-        var last = -1;
+        var start = SnapStart(from);
+        var end = SnapEnd(to);
+        if (end <= start)
+            return;
+        SetRange((start, end));
+
+        if (HasCaptureSelection)
+        {
+            var (first, last) = (SelectionStart!.Value, SelectionEnd!.Value);
+            MoveTo(pointerSeconds >= anchorSeconds ? last : first);
+            if (finished)
+                _anchor = pointerSeconds >= anchorSeconds ? first : last;
+        }
+    }
+
+    /// <summary>Selects a range typed in (or set otherwise); nothing when it doesn't end after it starts.</summary>
+    public void SelectRange(DateTimeOffset start, DateTimeOffset end)
+    {
+        if (end <= start)
+            return;
+        Stop();
+        _anchor = null;
+        SetRange((start, end));
+        if (HasCaptureSelection && (Current < SelectionStart || Current > SelectionEnd))
+            MoveTo(SelectionStart!.Value);
+    }
+
+    /// <summary>A selection's start at a timeline position: the start of the capture there, else that minute.</summary>
+    private DateTimeOffset SnapStart(double seconds)
+    {
+        if (CaptureAtSeconds(seconds) is { } i)
+            return Captures[i].Time;
+        return TimeAt(Math.Floor(seconds / 60) * 60);
+    }
+
+    /// <summary>A selection's end at a timeline position: the end of the capture there, else the next minute.</summary>
+    private DateTimeOffset SnapEnd(double seconds)
+    {
+        if (CaptureAtSeconds(seconds) is { } i)
+            return Captures[i].Time + CaptureLength(i);
+        return TimeAt(Math.Ceiling(seconds / 60) * 60);
+    }
+
+    /// <summary>The capture whose time covers a timeline position, if one does.</summary>
+    private int? CaptureAtSeconds(double seconds)
+    {
         for (var i = 0; i < Captures.Count; i++)
         {
-            var t = Seconds(Captures[i]);
-            if (t < from || t > to)
-                continue;
-            first = Math.Min(first, i);
-            last = Math.Max(last, i);
+            var start = Seconds(Captures[i]);
+            if (start > seconds)
+                break;
+            if (seconds < start + CaptureLength(i).TotalSeconds)
+                return i;
         }
-        if (last < first)
-            return;
+        return null;
+    }
 
-        SetSelection(first, last);
-        var pointerIndex = pointerSeconds >= anchorSeconds ? last : first;
-        MoveTo(pointerIndex);
-        if (finished)
-            _anchor = pointerSeconds >= anchorSeconds ? first : last;
+    /// <summary>The moment at a timeline position (seconds after the day's local midnight).</summary>
+    public DateTimeOffset TimeAt(double seconds)
+    {
+        var local = Day.Day.ToDateTime(TimeOnly.MinValue).AddSeconds(seconds);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
@@ -243,7 +296,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         if (Captures.Count == 0)
             return;
         // With a selection, play it from its start unless the playhead is already inside it.
-        if (HasSelection && (Current < SelectionStart || Current >= SelectionEnd))
+        if (HasCaptureSelection && (Current < SelectionStart || Current >= SelectionEnd))
             MoveTo(SelectionStart!.Value);
         IsPlaying = true;
         _playTimer.Start();
@@ -258,7 +311,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private void PlayTick()
     {
         var step = SpeedSteps[Math.Max(0, Speeds.ToList().IndexOf(Speed))];
-        var end = HasSelection && Current <= SelectionEnd ? SelectionEnd!.Value : Captures.Count - 1;
+        var end = HasCaptureSelection && Current <= SelectionEnd ? SelectionEnd!.Value : Captures.Count - 1;
         var next = Current;
         for (var i = 0; i < step && next >= 0 && next < end; i++)
             next = NextVisible(next + 1, 1);
@@ -285,7 +338,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         _history.SetPendingDelete(start, end, pending: true);
         _anchor = null;
         ConfirmMessage = "";
-        var keepId = Captures[Current].Id;
+        var keepId = Current >= 0 && Current < Captures.Count ? Captures[Current].Id : (long?)null;
         SetSelection(null, null);
         Reload(keepId);
     }
@@ -322,6 +375,8 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     {
         if (forSelection && HasSelection)
         {
+            if (!HasCaptureSelection)
+                return new ClassificationMenu([], 0);
             var (start, end) = SelectionTimes();
             var inSelection = Captures.Skip(SelectionStart!.Value).Take(SelectionEnd!.Value - SelectionStart.Value + 1).ToList();
             var times = SpanSummary.ByProgram(Captures, start, end, _maxCaptureLength);
@@ -422,7 +477,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     {
         SetDay(_history.LoadDay(day));
         _anchor = null;
+        _range = null;
         SelectionStart = SelectionEnd = null;
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasCaptureSelection));
         Current = -1;
         RebuildDerived();
         UpdateMonitorChoices();
@@ -442,17 +500,13 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     /// <summary>Reloads the current day after an edit, keeping the playhead on the same capture if it still exists.</summary>
     private void Reload(long? keepCaptureId)
     {
-        var selected = (SelectionStart, SelectionEnd) is (int s, int e) ? (Captures[s].Id, Captures[e].Id) : ((long, long)?)null;
         SetDay(_history.LoadDay(Day.Day));
 
-        // The selection and playhead are indexes into the old list, which a delete makes longer than the new
-        // one: map them to the reloaded day (by capture) before anything is rebuilt from them.
+        // The playhead and the selection's captures are indexes into the old list, which a delete makes longer than
+        // the new one: find them again in the reloaded day before anything is rebuilt from them.
         Current = -1;
         int Find(long id) => Captures.ToList().FindIndex(c => c.Id == id);
-        if (selected is { } sel && Find(sel.Item1) is >= 0 and var a && Find(sel.Item2) is >= 0 and var b)
-            SetSelection(a, b);
-        else
-            SetSelection(null, null);
+        SetRange(_range);
         RebuildDerived();
 
         var index = keepCaptureId is { } id ? Find(id) : -1;
@@ -524,6 +578,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasMarked));
         OnPropertyChanged(nameof(HasNoMarked));
         UpdateSummary();
+        RebuildProjects();
     }
 
     // --- derived text -------------------------------------------------------------------------
@@ -539,14 +594,31 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         FrameChanged?.Invoke();
     }
 
-    private void SetSelection(int? start, int? end)
+    /// <summary>Selects the captures from <paramref name="start"/> to <paramref name="end"/> (the time they cover), or nothing.</summary>
+    private void SetSelection(int? start, int? end) =>
+        SetRange(start is int s && end is int e ? (Captures[s].Time, Captures[e].Time + CaptureLength(e)) : null);
+
+    /// <summary>Selects a range of time, or nothing; the captures in it become <see cref="SelectionStart"/>..<see cref="SelectionEnd"/>.</summary>
+    private void SetRange((DateTimeOffset Start, DateTimeOffset End)? range)
     {
-        SelectionStart = start;
-        SelectionEnd = end;
+        _range = range;
+        int? first = null, last = null;
+        if (range is { } r)
+            for (var i = 0; i < Captures.Count; i++)
+            {
+                if (Captures[i].Time < r.Start || Captures[i].Time >= r.End)
+                    continue;
+                first ??= i;
+                last = i;
+            }
+        SelectionStart = first;
+        SelectionEnd = last;
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasCaptureSelection));
         MarkSelectionCommand.NotifyCanExecuteChanged();
         ClearSelectionCommand.NotifyCanExecuteChanged();
         UpdateSummary();
+        SelectionChanged();
         TimelineChanged?.Invoke();
     }
 
@@ -606,12 +678,12 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     public double? PlayheadSeconds => Current >= 0 && Current < Captures.Count ? Seconds(Captures[Current]) : null;
 
-    public (double, double)? SelectionSeconds => HasSelection
-        ? (Seconds(Captures[SelectionStart!.Value]), Seconds(Captures[SelectionEnd!.Value]) + CaptureLength(SelectionEnd.Value).TotalSeconds)
-        : null;
+    public (double, double)? SelectionSeconds => _range is { } r ? (SecondsOf(r.Start), SecondsOf(r.End)) : null;
 
-    private (DateTimeOffset Start, DateTimeOffset End) SelectionTimes() =>
-        (Captures[SelectionStart!.Value].Time, Captures[SelectionEnd!.Value].Time + CaptureLength(SelectionEnd.Value));
+    private (DateTimeOffset Start, DateTimeOffset End) SelectionTimes() => _range!.Value;
+
+    /// <summary>Seconds after the day's local midnight.</summary>
+    public double SecondsOf(DateTimeOffset time) => (time.ToLocalTime().DateTime - Day.Day.ToDateTime(TimeOnly.MinValue)).TotalSeconds;
 
     private TimeSpan CaptureLength(int index)
     {

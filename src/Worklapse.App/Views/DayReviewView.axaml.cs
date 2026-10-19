@@ -50,9 +50,11 @@ public partial class DayReviewView : UserControl
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
         MonitorMenu.Opening += (_, _) => FillMonitorMenu();
+        var setProject = (MenuFlyout)SetProjectButton.Flyout!;
+        setProject.Opening += (_, _) => setProject.ItemsSource = ProjectMenuItems();
 
-        // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, what
-        // the selection contains (or the frame's, without a selection).
+        // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, set the
+        // selection's project or mark it for deletion, and mark what it contains (or the frame's, without one).
         Frames.ContextMenu = ClassificationMenu(forSelection: false);
         Timeline.ContextMenu = ClassificationMenu(forSelection: true);
 
@@ -148,6 +150,30 @@ public partial class DayReviewView : UserControl
         MonitorMenu.ItemsSource = items;
     }
 
+    /// <summary>
+    /// The projects to set the selection to, each in its colour; for the Set Project button, the Edit menu and the
+    /// timeline's right-click menu.
+    /// </summary>
+    public List<Control> ProjectMenuItems()
+    {
+        var items = new List<Control>();
+        foreach (var project in _viewModel.AssignableProjects)
+        {
+            var item = new MenuItem
+            {
+                Header = project.Category.Length > 0 ? $"{project.Name}  ({project.Category})" : project.Name,
+                Icon = new Avalonia.Controls.Shapes.Rectangle { Width = 10, Height = 10, RadiusX = 2, RadiusY = 2, Fill = project.Brush },
+                IsEnabled = _viewModel.HasSelection,
+            };
+            var id = project.Id!.Value;
+            item.Click += (_, _) => _viewModel.SetSelectionProjectCommand.Execute(id);
+            items.Add(item);
+        }
+        if (items.Count == 0)
+            items.Add(new MenuItem { Header = "No projects yet: add them in Settings → Projects", IsEnabled = false });
+        return items;
+    }
+
     /// <summary>A menu filled when it opens, from the capture or selection at that moment; empty means none.</summary>
     private ContextMenu ClassificationMenu(bool forSelection)
     {
@@ -155,13 +181,21 @@ public partial class DayReviewView : UserControl
         menu.Opening += (_, e) =>
         {
             var (choices, more) = _viewModel.ClassificationChoices(forSelection && _viewModel.HasSelection);
-            if (choices.Count == 0)
+            var items = new List<Control>();
+            if (forSelection && _viewModel.HasSelection)
+            {
+                items.Add(new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems() });
+                items.Add(new MenuItem { Header = "Clear Project", Command = _viewModel.ClearSelectionProjectCommand });
+                items.Add(new MenuItem { Header = "Mark for Deletion", Command = _viewModel.MarkSelectionCommand });
+                if (choices.Count > 0)
+                    items.Add(new Separator());
+            }
+            if (items.Count == 0 && choices.Count == 0)
             {
                 e.Cancel = true;
                 return;
             }
 
-            var items = new List<Control>();
             foreach (var choice in choices)
             {
                 var item = new MenuItem { Header = choice.Label };
@@ -181,6 +215,7 @@ public partial class DayReviewView : UserControl
     private void UpdateTimeline()
     {
         Timeline.SetData(_viewModel.Spans, _viewModel.View.Start, _viewModel.View.End);
+        Timeline.SetProjects(_viewModel.ProjectLane);
         Timeline.SetMarkers(_viewModel.SelectionSeconds, _viewModel.PlayheadSeconds);
     }
 
