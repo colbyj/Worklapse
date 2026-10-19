@@ -247,7 +247,7 @@ public sealed partial class DayReviewViewModel
 
     [ObservableProperty] private bool _isSidePanelOpen = true;
 
-    /// <summary>The day's tab: 0 Applications, 1 Recorded Segments, 2 Time Log, 3 Marked.</summary>
+    /// <summary>The day's tab: 0 Recorded Segments, 1 Applications, 2 Time Log, 3 Marked.</summary>
     [ObservableProperty] private int _panelTab;
 
     public ObservableCollection<DayAppRow> AppRows { get; } = [];

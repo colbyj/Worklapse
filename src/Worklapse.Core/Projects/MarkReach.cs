@@ -32,6 +32,14 @@ public static class MarkReach
         return Without(linked, spans);
     }
 
+    /// <summary>
+    /// All of an app's time (a browser's pages of every site included, as its Active time counts them) or a site's: what
+    /// Day review's menu on an Applications row acts on.
+    /// </summary>
+    public static List<(DateTimeOffset Start, DateTimeOffset End)> TimeOf(IReadOnlyList<CaptureRecord> captures,
+        ProgramKey program, TimeSpan maxCaptureLength) =>
+        Ranges(captures, maxCaptureLength, c => Same(program.Kind == ProgramKind.Site ? c.Site : c.AppName, program.Name));
+
     /// <summary>The time of the active captures that match, each lasting until the next (at most the maximum), joined up.</summary>
     private static List<(DateTimeOffset Start, DateTimeOffset End)> Ranges(IReadOnlyList<CaptureRecord> captures,
         TimeSpan maxCaptureLength, Func<CaptureRecord, bool> match)

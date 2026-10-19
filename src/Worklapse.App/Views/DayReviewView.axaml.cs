@@ -300,31 +300,61 @@ public partial class DayReviewView : UserControl
         var target = _viewModel.MenuTarget(row);
         var items = new List<Control>
         {
-            Item("Select", () => _viewModel.Pick(row.From, row.To, extend: false)),
-            Item("Extend Selection to Here", () => _viewModel.ExtendSelectionTo(row), _viewModel.CanExtendSelectionTo(row)),
-            Item("Start Selection Here", () => _viewModel.StartSelectionAt(row), _viewModel.CanStartSelectionAt(row)),
-            Item("End Selection Here", () => _viewModel.EndSelectionAt(row), _viewModel.CanEndSelectionAt(row)),
+            MenuEntry("Select", () => _viewModel.Pick(row.From, row.To, extend: false)),
+            MenuEntry("Extend Selection to Here", () => _viewModel.ExtendSelectionTo(row), _viewModel.CanExtendSelectionTo(row)),
+            MenuEntry("Start Selection Here", () => _viewModel.StartSelectionAt(row), _viewModel.CanStartSelectionAt(row)),
+            MenuEntry("End Selection Here", () => _viewModel.EndSelectionAt(row), _viewModel.CanEndSelectionAt(row)),
             new Separator(),
             new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(id => _viewModel.SetProject(target, id)) },
-            Item("Clear Project", () => _viewModel.SetProject(target, null)),
-            Item("Mark for Deletion", () => _viewModel.MarkForDeletion(target)),
+            MenuEntry("Clear Project", () => _viewModel.SetProject(target, null)),
+            MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(target)),
             new Separator(),
         };
         if (row.Program is { } program)
-            items.Add(Item($"Mark {program.Name} as {(row.Productive ? "Other" : "Productive")}",
+            items.Add(MenuEntry($"Mark {program.Name} as {(row.Productive ? "Other" : "Productive")}",
                 () => _viewModel.SetProductive(program, !row.Productive)));
-        items.Add(Item("Go To", () => _viewModel.GoTo(row.From)));
-        var menu = new ContextMenu { ItemsSource = items };
-        menu.Closed += (_, _) => _viewModel.ShowReach(ReachSource.Menu, range: null);
-        _viewModel.ShowReach(ReachSource.Menu, target);
-        menu.Open(control);
+        items.Add(MenuEntry("Go To", () => _viewModel.GoTo(row.From)));
+        OpenRowMenu(control, items, [target]);
+    }
 
-        static MenuItem Item(string header, Action run, bool enabled = true)
-        {
-            var item = new MenuItem { Header = header, IsEnabled = enabled };
-            item.Click += (_, _) => run();
-            return item;
-        }
+    /// <summary>
+    /// An app's or site's right-click menu on the Applications tab: what to do with all its time there (the day's, or
+    /// the selection's on the selection's list), which shows on the timeline meanwhile.
+    /// </summary>
+    private void OnAppContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not Control { DataContext: DayAppRow { Program: { } program } row } control)
+            return;
+        e.Handled = true;
+        var time = _viewModel.AppTime(row);
+        if (time.Count == 0)
+            return;
+        List<Control> items =
+        [
+            new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(id => _viewModel.SetProject(time, id)) },
+            MenuEntry("Clear Project", () => _viewModel.SetProject(time, null)),
+            MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(time)),
+            new Separator(),
+            MenuEntry($"Mark {program.Name} as {(row.Productive ? "Other" : "Productive")}", () => _viewModel.SetProductive(program, !row.Productive)),
+            MenuEntry("Go To", () => _viewModel.GoTo(time[0].Start)),
+        ];
+        OpenRowMenu(control, items, time);
+    }
+
+    /// <summary>Opens a row's menu, showing on the timeline what it acts on until it closes.</summary>
+    private void OpenRowMenu(Control row, List<Control> items, IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> actsOn)
+    {
+        var menu = new ContextMenu { ItemsSource = items };
+        menu.Closed += (_, _) => _viewModel.ShowReach(ReachSource.Menu, ranges: null);
+        _viewModel.ShowReach(ReachSource.Menu, actsOn);
+        menu.Open(row);
+    }
+
+    private static MenuItem MenuEntry(string header, Action run, bool enabled = true)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled };
+        item.Click += (_, _) => run();
+        return item;
     }
 
     // The panel's left edge, dragged to resize it; the width is remembered when the drag ends.

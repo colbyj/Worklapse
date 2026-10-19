@@ -51,7 +51,7 @@ public sealed partial class DayReviewViewModel
     /// <summary>The day's first capture to the end of its last, beside the Day button.</summary>
     [ObservableProperty] private string _daySpanText = "";
 
-    /// <summary>The selection's tab: 0 Applications, 1 Recorded Segments, 2 Projects. The first two follow the day's.</summary>
+    /// <summary>The selection's tab: 0 Recorded Segments, 1 Applications, 2 Projects. The first two follow the day's.</summary>
     [ObservableProperty] private int _selectionTab;
 
     partial void OnPanelTabChanged(int value)
@@ -273,10 +273,29 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>Sets a stretch of time to a project by hand, or to no project (null).</summary>
-    public void SetProject((DateTimeOffset Start, DateTimeOffset End) range, long? projectId)
+    public void SetProject((DateTimeOffset Start, DateTimeOffset End) range, long? projectId) => SetProject([range], projectId);
+
+    /// <summary>Sets stretches of time (an app's, say) to a project by hand, or to no project (null).</summary>
+    public void SetProject(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges, long? projectId)
     {
-        Projects.SetSpan(range.Start, range.End, projectId);
+        foreach (var (start, end) in ranges)
+            Projects.SetSpan(start, end, projectId);
         RebuildProjects();
+    }
+
+    /// <summary>
+    /// What an Applications row's menu acts on: all of the app's (or site's) time on the day; on the selection's list,
+    /// the part of it inside the selection.
+    /// </summary>
+    public List<(DateTimeOffset Start, DateTimeOffset End)> AppTime(DayAppRow row)
+    {
+        var time = row.Program is { } program ? MarkReach.TimeOf(Captures, program, _maxCaptureLength) : [];
+        if (!SelectionApps.Contains(row) || _range is not { } range)
+            return time;
+        return time
+            .Select(t => (Start: t.Start > range.Start ? t.Start : range.Start, End: t.End < range.End ? t.End : range.End))
+            .Where(t => t.End > t.Start)
+            .ToList();
     }
 
     /// <summary>Moves the playhead to the first capture kept at or after a moment.</summary>
@@ -313,10 +332,14 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>Shows a stretch of time as reached (what a row's menu acts on), or stops showing it (null).</summary>
-    public void ShowReach(ReachSource source, (DateTimeOffset Start, DateTimeOffset End)? range)
+    public void ShowReach(ReachSource source, (DateTimeOffset Start, DateTimeOffset End)? range) =>
+        ShowReach(source, range is { } r ? [r] : (IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)>?)null);
+
+    /// <summary>Shows stretches of time as reached, or stops showing them (null).</summary>
+    public void ShowReach(ReachSource source, IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)>? ranges)
     {
-        if (range is { } r)
-            _reach[source] = [r];
+        if (ranges is not null)
+            _reach[source] = ranges;
         else
             _reach.Remove(source);
         TimelineChanged?.Invoke();

@@ -356,11 +356,18 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     /// <summary>Marks the captures in a stretch of time for deletion; marking the selection also clears it.</summary>
     public void MarkForDeletion((DateTimeOffset Start, DateTimeOffset End) range)
     {
-        _history.SetPendingDelete(range.Start, range.End, pending: true);
-        ConfirmMessage = "";
-        var keepId = Current >= 0 && Current < Captures.Count ? Captures[Current].Id : (long?)null;
         if (_range == range)
             ClearSelection();
+        MarkForDeletion([range]);
+    }
+
+    /// <summary>Marks the captures in stretches of time (an app's, say) for deletion.</summary>
+    public void MarkForDeletion(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges)
+    {
+        var keepId = Current >= 0 && Current < Captures.Count ? Captures[Current].Id : (long?)null;
+        foreach (var (start, end) in ranges)
+            _history.SetPendingDelete(start, end, pending: true);
+        ConfirmMessage = "";
         Reload(keepId);
     }
 

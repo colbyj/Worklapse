@@ -17,10 +17,10 @@
 
     <!--
       An app or site, with its two marks; both apply to every day. Pointing at a mark (or tabbing to it) shows on the
-      timeline the time it decides.
+      timeline the time it decides. Right-click for what to do with all its time in the list's day or selection.
     -->
     <DataTemplate x:Key="AppTemplate" x:DataType="vm:DayAppRow">
-      <Border Classes="row">
+      <Border Classes="row" Background="Transparent" ContextRequested="OnAppContextRequested">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -305,7 +305,7 @@
         </Border>
 
         <Panel>
-          <!-- The day: from what was recorded to what's billed, then what's marked for removal; the day note under them. -->
+          <!-- The day: what was recorded, by segment and by app, to what's billed, then what's marked for removal; the day note under them. -->
           <DockPanel IsVisible="{Binding ShowsDay}">
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}"
                     BorderThickness="0,1,0,0" Padding="8,6,8,8">
@@ -317,33 +317,6 @@
             </Border>
 
             <TabControl Classes="panel" SelectedIndex="{Binding PanelTab}" Padding="0" Margin="6,4,6,0">
-              <TabItem Header="Applications">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="58" />
-                      <ColumnDefinition Width="74" />
-                      <ColumnDefinition Width="0.6*" MinWidth="120" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Application or site" />
-                    <TextBlock Grid.Column="1" Text="Active" HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="2" Text="Productive" />
-                    <TextBlock Grid.Column="3" Text="Project" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <DockPanel>
-                      <TextBlock DockPanel.Dock="Left" Text="Active" Classes="strong" />
-                      <TextBlock DockPanel.Dock="Left" Text="{Binding AppsTotalText}" Classes="strong" Margin="8,0,0,0" />
-                      <TextBlock Text="Changes apply to the app on every day" Classes="hint" HorizontalAlignment="Right" />
-                    </DockPanel>
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding AppRows}" ItemTemplate="{StaticResource AppTemplate}" />
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-
               <TabItem Header="Recorded Segments">
                 <DockPanel>
                   <Grid DockPanel.Dock="Top" Classes="gridHeader">
@@ -371,6 +344,33 @@
                         </ItemsPanelTemplate>
                       </ItemsControl.ItemsPanel>
                     </ItemsControl>
+                  </ScrollViewer>
+                </DockPanel>
+              </TabItem>
+
+              <TabItem Header="Applications">
+                <DockPanel>
+                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="58" />
+                      <ColumnDefinition Width="74" />
+                      <ColumnDefinition Width="0.6*" MinWidth="120" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Application or site" />
+                    <TextBlock Grid.Column="1" Text="Active" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="2" Text="Productive" />
+                    <TextBlock Grid.Column="3" Text="Project" />
+                  </Grid>
+                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Left" Text="Active" Classes="strong" />
+                      <TextBlock DockPanel.Dock="Left" Text="{Binding AppsTotalText}" Classes="strong" Margin="8,0,0,0" />
+                      <TextBlock Text="Changes apply to the app on every day" Classes="hint" HorizontalAlignment="Right" />
+                    </DockPanel>
+                  </Border>
+                  <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding AppRows}" ItemTemplate="{StaticResource AppTemplate}" />
                   </ScrollViewer>
                 </DockPanel>
               </TabItem>
@@ -516,6 +516,31 @@
             </Border>
 
             <TabControl Classes="panel" SelectedIndex="{Binding SelectionTab}" Padding="0" Margin="6,6,6,0">
+              <TabItem Header="Recorded Segments">
+                <DockPanel>
+                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="122" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="40" />
+                      <ColumnDefinition Width="28" />
+                      <ColumnDefinition Width="0.6*" MinWidth="120" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Time" />
+                    <TextBlock Grid.Column="1" Text="Application or site" />
+                    <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+                    <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
+                    <TextBlock Grid.Column="4" Text="Project" />
+                  </Grid>
+                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
+                    <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
+                  </Border>
+                  <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding SelectionRuns}" ItemTemplate="{StaticResource SegmentTemplate}" />
+                  </ScrollViewer>
+                </DockPanel>
+              </TabItem>
+
               <TabItem Header="Applications">
                 <DockPanel>
                   <Grid DockPanel.Dock="Top" Classes="gridHeader">
@@ -539,31 +564,6 @@
                   </Border>
                   <ScrollViewer>
                     <ItemsControl ItemsSource="{Binding SelectionApps}" ItemTemplate="{StaticResource AppTemplate}" />
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-
-              <TabItem Header="Recorded Segments">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="122" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="40" />
-                      <ColumnDefinition Width="28" />
-                      <ColumnDefinition Width="0.6*" MinWidth="120" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Time" />
-                    <TextBlock Grid.Column="1" Text="Application or site" />
-                    <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
-                    <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
-                    <TextBlock Grid.Column="4" Text="Project" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding SelectionRuns}" ItemTemplate="{StaticResource SegmentTemplate}" />
                   </ScrollViewer>
                 </DockPanel>
               </TabItem>

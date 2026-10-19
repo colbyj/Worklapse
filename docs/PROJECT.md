@@ -644,10 +644,11 @@ grids with editable cells rather than a text box per row, no accent buttons in t
 - *Scopes.* Two radio tool buttons at the top of the panel, **Day** and **Selection**. Selection is disabled without a
   selection. A selection made on the timeline switches the panel to Selection. Clearing it goes back to the scope
   shown before. Switching to Day keeps the selection on the timeline.
-- *Day tabs:* Applications, Recorded Segments, Time Log, Marked; the day note underneath. The Projects tab goes, and
+- *Day tabs:* Recorded Segments, Applications, Time Log, Marked (Recorded Segments first since 2026-10-19, "that
+  seems to be where I'm living"); the day note underneath. The Projects tab goes, and
   with it the Join spots (selecting the gap and choosing Set Project does the same). Time Log and Marked exist only
   at day level.
-- *Selection:* start and end boxes, the bar, then tabs Applications, Recorded Segments (clipped to the selection) and
+- *Selection:* start and end boxes, the bar, then tabs Recorded Segments (clipped to the selection), Applications and
   Projects (each project's time inside the selection, no notes). The action bar is underneath: Set Project ▾,
   Clear Project, Mark for Deletion.
 - *Frame:* always shown as a slice of the panel rather than a scope (developer's call: "always visible, as a small
@@ -691,8 +692,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
 - *Width:* `WorklapseSettings.ReviewPanelWidth`, saved when a drag of the edge ends.
 
 Choices made while building, to confirm:
-- Only segment rows have a right-click menu. App, Time Log and Marked rows show their reach on pointing, and Marked
-  rows can be picked, but nothing more was asked for them.
+- Time Log and Marked rows have no right-click menu; they show their reach on pointing, and Marked rows can be picked.
 - Highlights follow the pointer, Tab focus and an open row menu; not focus from a click (it would outstay the pointer).
 - Double-clicking where nothing was recorded selects that gap.
 - Idle and Not recorded frames show no marks in the slice, as their rows have none.
@@ -705,6 +705,10 @@ Changed after the developer used it (2026-10-19):
   day's span, or the selection's typeable ends, length and Clear (no longer a row of their own).
 - Time set to a project while nothing was recorded is a row of its own on Recorded Segments, with its project shown
   (no list to change it in); the day's list, and its span, reach out to such time beyond the recording (an evening call).
+- Applications rows have a right-click menu too (the developer wanted to remove all of a game's captures): Set
+  Project ▸, Clear Project, Mark for Deletion, Mark as Productive/Other, Go To, acting on all of the app's time (a
+  browser's pages of every site included, `MarkReach.TimeOf`) on the day, or inside the selection on its list. The
+  selection's own items don't apply: an app's time is scattered, and the selection is one range.
 - Day review's last capture lasts the maximum, as in Core's totals and project blocks (it lasted one interval, so a
   block ran 5 s past the end of the segments and the gap after it read "Mixed").
 

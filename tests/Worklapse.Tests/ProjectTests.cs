@@ -124,6 +124,11 @@ public class ProjectTests
         Assert.Equal([(10, 12), (15, 20), (30, 40)], Seconds(MarkReach.Link(captures, [Span(12, 15, null)], firefox, Max)));
         Assert.Equal([(20, 30)], Seconds(MarkReach.Link(captures, [], github, Max)));
         Assert.Equal([(0, 10), (70, 85)], Seconds(MarkReach.Link(captures, [Span(50, 60, 2)], code, Max)));
+
+        // All of an app's time: a browser's pages of every site too (not what's marked for deletion); a site's own.
+        Assert.Equal([(10, 40)], Seconds(MarkReach.TimeOf(captures, firefox, Max)));
+        Assert.Equal([(20, 30)], Seconds(MarkReach.TimeOf(captures, github, Max)));
+        Assert.Equal([(0, 10), (50, 60), (70, 85)], Seconds(MarkReach.TimeOf(captures, code, Max)));
     }
 
     [Fact]
