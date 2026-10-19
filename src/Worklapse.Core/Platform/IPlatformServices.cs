@@ -40,6 +40,12 @@ public sealed record PlatformServices(
     /// </summary>
     public Func<IScreenSource>? CreateScreenSource { get; init; }
 
+    /// <summary>
+    /// Whether the desktop says which monitor is primary. KDE Plasma doesn't tell Worklapse, so there no monitor is
+    /// marked primary (they're just numbered) and the "Primary monitor" capture mode isn't offered.
+    /// </summary>
+    public bool KnowsPrimaryMonitor { get; init; } = true;
+
     /// <summary>Why nothing can be recorded here (a sentence for the user); null when recording works.</summary>
     public string? CannotRecord { get; init; }
 

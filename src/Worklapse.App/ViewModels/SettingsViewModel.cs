@@ -24,9 +24,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     private IReadOnlyList<string> _unpluggedSelected = []; // selected monitors not attached now: kept as they are
 
     /// <param name="sampler">Captures the primary monitor for the recording preview, which takes it over; null for none.</param>
-    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, PrimaryScreenSampler? sampler = null)
+    /// <param name="knowsPrimaryMonitor">
+    /// Whether the desktop says which monitor is primary (KDE Plasma doesn't tell Worklapse); without it there's no
+    /// "Primary monitor" choice.
+    /// </param>
+    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, PrimaryScreenSampler? sampler = null,
+        bool knowsPrimaryMonitor = true)
     {
         _store = store;
+        // Still shown if it's the setting (from another desktop's settings file), so the dialog shows what is set.
+        ShowsPrimaryMonitor = knowsPrimaryMonitor || store.Current.CaptureMode == CaptureMode.PrimaryMonitor;
         // Captured before the dialog shows, so it isn't in the picture.
         if (sampler?.Capture() is { } screen)
             Preview = new RecordingPreviewViewModel(sampler, screen);
@@ -97,6 +104,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private bool _isActiveApplication;
     [ObservableProperty] private bool _isPrimaryMonitor;
+
+    public bool ShowsPrimaryMonitor { get; }
+
     [ObservableProperty] private bool _isSelectedMonitors;
     [ObservableProperty] private bool _isAllMonitors;
     [ObservableProperty] private decimal? _intervalSeconds;

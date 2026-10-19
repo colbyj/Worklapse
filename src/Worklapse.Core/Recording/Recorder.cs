@@ -157,6 +157,17 @@ public sealed class Recorder : IAsyncDisposable
             return;
         }
 
+        // Only possible with a settings file from another desktop; Settings doesn't offer the mode here.
+        if (settings.CaptureMode == CaptureMode.PrimaryMonitor && !_platform.KnowsPrimaryMonitor)
+        {
+            SetStatus(Status with
+            {
+                State = RecorderState.Error,
+                Error = "This desktop doesn't say which monitor is primary: choose another capture mode in Settings.",
+            });
+            return;
+        }
+
         var now = _time.GetLocalNow();
         var idleFor = _platform.Idle.GetIdleTime();
 

@@ -30,6 +30,7 @@ public static class KdePlatform
             return new PlatformServices(new KWinScreenSource(session), foreground, WaylandIdleDetector.Connect(), locks)
             {
                 CreateScreenSource = () => new KWinScreenSource(session),
+                KnowsPrimaryMonitor = false,
             };
         }
         catch

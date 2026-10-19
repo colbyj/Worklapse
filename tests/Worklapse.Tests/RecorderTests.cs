@@ -40,6 +40,24 @@ public class RecorderTests
     }
 
     [Fact]
+    public async Task PrimaryMonitorModeOnADesktopThatDoesntSayWhichIsPrimaryIsReportedNotRecordedEmpty()
+    {
+        using var folder = new TempFolder();
+        var settings = new SettingsStore(Path.Combine(folder.Path, "settings.json"));
+        settings.Save(new WorklapseSettings { DataFolder = folder.Path, IdleMinutes = 120, CaptureMode = CaptureMode.PrimaryMonitor });
+        var platform = PlatformServices.Unavailable("") with { CannotRecord = null, KnowsPrimaryMonitor = false };
+        await using var recorder = new Recorder(settings, platform, store => new FrameSink(store, () => (FrameFormat.Video, 30)));
+
+        recorder.Tick();
+        Assert.Equal(RecorderState.Error, recorder.Status.State);
+        Assert.Contains("primary", recorder.Status.Error);
+
+        settings.Save(settings.Current with { CaptureMode = CaptureMode.AllMonitors });
+        recorder.Tick();
+        Assert.Equal(RecorderState.Recording, recorder.Status.State);
+    }
+
+    [Fact]
     public void AllMonitorsCapturesEveryMonitor()
     {
         var chosen = Recorder.ChooseMonitors(new WorklapseSettings { CaptureMode = CaptureMode.AllMonitors }, All, null);

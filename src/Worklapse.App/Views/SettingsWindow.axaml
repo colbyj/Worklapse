@@ -104,7 +104,8 @@
               <TextBlock Classes="label" Text="Capture:" VerticalAlignment="Top" Margin="0,6,10,0" />
               <StackPanel Grid.Column="1">
                 <RadioButton GroupName="mode" Content="Active application only" IsChecked="{Binding IsActiveApplication}" />
-                <RadioButton GroupName="mode" Content="Primary monitor" IsChecked="{Binding IsPrimaryMonitor}" />
+                <RadioButton GroupName="mode" Content="Primary monitor" IsChecked="{Binding IsPrimaryMonitor}"
+                             IsVisible="{Binding ShowsPrimaryMonitor}" />
                 <RadioButton GroupName="mode" Content="Selected monitors:" IsChecked="{Binding IsSelectedMonitors}" />
                 <ItemsControl ItemsSource="{Binding Monitors}" Margin="26,0,0,4" IsEnabled="{Binding IsSelectedMonitors}">
                   <ItemsControl.ItemTemplate>

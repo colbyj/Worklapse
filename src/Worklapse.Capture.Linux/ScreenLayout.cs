@@ -38,8 +38,6 @@ internal sealed class ScreenLayout
             return Empty;
 
         var spread = report.Screens.Max(s => s.Scale);
-        // KWin doesn't tell scripts which screen is primary; Plasma puts the primary screen at the origin by default.
-        var primary = (report.Screens.FirstOrDefault(s => s.X == 0 && s.Y == 0) ?? report.Screens[0]).Name;
 
         var screens = new List<(KWinScreen, MonitorInfo)>();
         foreach (var screen in report.Screens)
@@ -50,7 +48,8 @@ internal sealed class ScreenLayout
                 (int)Math.Round(screen.Y * spread),
                 width,
                 height);
-            screens.Add((screen, new MonitorInfo(screen.Name, bounds, screen.Name == primary)
+            // None is primary: KWin doesn't tell scripts which one is (see PlatformServices.KnowsPrimaryMonitor).
+            screens.Add((screen, new MonitorInfo(screen.Name, bounds, IsPrimary: false)
             {
                 StableId = StableId(screen),
             }));

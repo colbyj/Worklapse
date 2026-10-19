@@ -52,8 +52,8 @@ public class KdeCaptureTests
         Assert.Equal(new PixelRect(0, 0, 3440, 1440), monitors[0].Bounds);
         Assert.Equal(new PixelRect(5160, 0, 2560, 1600), monitors[1].Bounds);   // 3440 × 1.5
         Assert.Equal(new PixelRect(7720, 0, 1920, 1080), monitors[2].Bounds);   // 5147 × 1.5 (rounded to even)
-        Assert.True(monitors[0].IsPrimary);
-        Assert.False(monitors[1].IsPrimary || monitors[2].IsPrimary);
+        // KWin doesn't say which is primary, so none claims to be.
+        Assert.All(monitors, m => Assert.False(m.IsPrimary));
 
         // Never overlapping, whatever the scales.
         for (var i = 0; i < monitors.Count; i++)
@@ -79,14 +79,6 @@ public class KdeCaptureTests
         Assert.Equal(new PixelRect(6020, 0, 2560, 1599), ScreenLayout.From(screens, _ => null).Monitors[1].Bounds);
         var captured = ScreenLayout.From(screens, s => s == panel ? (2560, 1600) : null);
         Assert.Equal(new PixelRect(6020, 0, 2560, 1600), captured.Monitors[1].Bounds);   // 3440 × 1.75
-    }
-
-    [Fact]
-    public void TheScreenAtTheOriginIsPrimary()
-    {
-        // KWin doesn't tell scripts which screen is primary.
-        var monitors = ScreenLayout.From(new KWinScreens([Panel with { X = 0 }, Ultrawide with { X = -3440 }]), _ => null).Monitors;
-        Assert.Equal("eDP-1", monitors.Single(m => m.IsPrimary).DeviceName);
     }
 
     [Fact]
