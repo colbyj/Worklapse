@@ -71,7 +71,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         _focusOnApplication = settings.Current.ReviewFocusOnApplication;
         _capturesDeleted = capturesDeleted;
         _maxCaptureLength = settings.Current.MaxCaptureLength;
-        _playTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => PlayTick());
+        // Not the constructor taking a callback: that one starts the timer, and Day review would play from the moment it
+        // opens (unseen while it opened at a day's last capture; from the first, it played the day through).
+        _playTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(150) };
+        _playTimer.Tick += (_, _) => PlayTick();
         Speeds = ["Slow", "Normal", "Fast", "Very fast"];
         _speed = "Normal";
         LoadDays();

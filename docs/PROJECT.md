@@ -514,8 +514,11 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    capture to last) are a new tab, **Recorded Segments**, after Applications. The side panel is 440 px (segment rows
    didn't fit), lengths in segment rows are h:mm. Fixed: Set Project ▾ and the monitor menu came up empty — Avalonia
    12's menu flyout takes its item collection when its popup is made, before Opening, so a collection handed over in
-   Opening never showed; each flyout now keeps one collection, refilled when it opens. The developer expects to
-   iterate on how the side panel assigns time to projects.
+   Opening never showed; each flyout now keeps one collection, refilled when it opens. Also fixed: Day review played
+   on its own when a day was opened from the Overview — its play timer was made with the `DispatcherTimer`
+   constructor that takes a callback, which starts it; unseen while Day review opened at a day's last capture (the
+   first tick stopped at the end), it played the day through once days opened at their first. The developer expects
+   to iterate on how the side panel assigns time to projects.
 5. Timesheet view. (Phases 5–6 are handed off in `docs/HANDOFF.md`, 2026-10-18.)
    **Built 2026-10-18, committed (b903c08) after the developer looked at it.** `TimesheetView` / `TimesheetViewModel`: tool bar ‹ range ›,
    This Week (This Month), Week / Month (a radio pair drawn as toggle tool buttons, so clicking the one that's on
