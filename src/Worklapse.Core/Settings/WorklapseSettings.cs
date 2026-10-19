@@ -32,7 +32,9 @@ public enum ThemeMode
 public sealed record WorklapseSettings
 {
     public static string DefaultDataFolder { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Worklapse");
+        // DoNotVerify: on Linux the folder (~/.local/share) may not exist yet, and without it the path would be empty,
+        // leaving a relative "Worklapse" (in whatever folder Worklapse was started from).
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify), "Worklapse");
 
     public CaptureMode CaptureMode { get; init; } = CaptureMode.AllMonitors;
 

@@ -35,7 +35,7 @@ public sealed class SettingsStore
     public static string ConfigFolder =>
         Environment.GetEnvironmentVariable("WORKLAPSE_CONFIG_DIR") is { Length: > 0 } overridden
             ? overridden
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Worklapse");
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify), "Worklapse");
 
     public event EventHandler<WorklapseSettings>? Changed;
 
