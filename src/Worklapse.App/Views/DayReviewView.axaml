@@ -59,6 +59,10 @@
       <Setter Property="Padding" Value="6,1" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
+    <!-- Tighter than elsewhere, so the side panel's five tabs stay on one row. -->
+    <Style Selector="TabControl.panel > TabItem">
+      <Setter Property="Padding" Value="8,0" />
+    </Style>
     <Style Selector="CheckBox.cell">
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="MinWidth" Value="0" />
@@ -110,6 +114,10 @@
           <Button Classes="tool" Command="{Binding NextDayCommand}" ToolTip.Tip="Next day" AutomationProperties.Name="Next day">
             <ic:SymbolIcon Symbol="ChevronRight" />
           </Button>
+          <Button Classes="tool" Command="{Binding RefreshCommand}" IsVisible="{Binding IsToday}"
+                  ToolTip.Tip="Read today again (F5)" AutomationProperties.Name="Refresh">
+            <ic:SymbolIcon Symbol="ArrowClockwise" />
+          </Button>
 
           <Border Classes="separator" />
 
@@ -128,52 +136,6 @@
           </Button>
           <TextBlock Text="Speed:" Classes="toolLabel" />
           <ComboBox ItemsSource="{Binding Speeds}" SelectedItem="{Binding Speed}" MinWidth="104" VerticalAlignment="Center" />
-
-          <Border Classes="separator" />
-
-          <Button Classes="tool" ToolTip.Tip="Ranges marked for deletion on this day">
-            <StackPanel>
-              <ic:SymbolIcon Symbol="Delete" />
-              <TextBlock Text="{Binding MarkedButtonText}" />
-              <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
-            </StackPanel>
-            <Button.Flyout>
-              <Flyout Placement="BottomEdgeAlignedLeft">
-                <StackPanel Width="380" Spacing="8">
-                  <TextBlock Text="Marked for Deletion" Classes="strong" />
-                  <ItemsControl ItemsSource="{Binding MarkedRanges}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:MarkedRange">
-                        <Border Classes="group" Padding="8,6" Margin="0,0,0,6">
-                          <DockPanel>
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                              <Button Content="Go To" Command="{Binding GoTo}" MinWidth="0" />
-                              <Button Content="Restore" Command="{Binding Restore}" MinWidth="0" />
-                            </StackPanel>
-                            <StackPanel VerticalAlignment="Center">
-                              <TextBlock Text="{Binding RangeText}" Classes="strong" />
-                              <TextBlock Text="{Binding Detail}" Classes="secondary" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                          </DockPanel>
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <DockPanel IsVisible="{Binding HasMarked}">
-                    <Button DockPanel.Dock="Left" Command="{Binding ConfirmDeletesCommand}">
-                      <StackPanel Orientation="Horizontal" Spacing="6">
-                        <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource UiNegativeBrush}" />
-                        <TextBlock Text="Delete Permanently" />
-                      </StackPanel>
-                    </Button>
-                    <TextBlock Text="Marked time is already left out of the totals." Classes="hint" VerticalAlignment="Center" Margin="10,0,0,0" />
-                  </DockPanel>
-                  <TextBlock Text="Nothing is marked for deletion." Classes="secondary" IsVisible="{Binding HasNoMarked}" />
-                  <TextBlock Text="{Binding ConfirmMessage}" Classes="secondary" />
-                </StackPanel>
-              </Flyout>
-            </Button.Flyout>
-          </Button>
         </StackPanel>
       </DockPanel>
     </Border>
@@ -229,7 +191,7 @@
     <Border DockPanel.Dock="Right" Width="440" IsVisible="{Binding IsSidePanelOpen}" Background="{DynamicResource UiViewBrush}"
             BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="1,0,0,0">
       <Panel>
-        <!-- No selection: three tabs, from what was recorded to what's billed. -->
+        <!-- No selection: the day's tabs, from what was recorded to what's billed, then what's marked for removal. -->
         <DockPanel IsVisible="{Binding !HasSelection}">
           <Border DockPanel.Dock="Bottom" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}"
                   BorderThickness="0,1,0,0" Padding="8,6,8,8">
@@ -240,7 +202,7 @@
             </StackPanel>
           </Border>
 
-          <TabControl SelectedIndex="{Binding PanelTab}" Padding="0" Margin="6,6,6,0">
+          <TabControl Classes="panel" SelectedIndex="{Binding PanelTab}" Padding="0" Margin="6,6,6,0">
             <TabItem Header="Applications">
               <DockPanel>
                 <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,50,74,124">
@@ -389,6 +351,59 @@
                     <TextBlock Grid.Column="2" Text="{Binding LoggedTotalText}" Classes="strong" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0" />
                   </Grid>
                 </StackPanel>
+              </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Marked" ToolTip.Tip="Marked for removal">
+              <DockPanel>
+                <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="130,*,44,Auto">
+                  <TextBlock Text="Time" />
+                  <TextBlock Grid.Column="1" Text="Applications" />
+                  <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+                </Grid>
+                <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,4">
+                  <Border.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                      <Binding Path="HasMarked" />
+                      <Binding Path="ConfirmMessage" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                    </MultiBinding>
+                  </Border.IsVisible>
+                  <StackPanel Spacing="4">
+                    <DockPanel IsVisible="{Binding HasMarked}">
+                      <Button DockPanel.Dock="Right" Command="{Binding ConfirmDeletesCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource UiNegativeBrush}" />
+                          <TextBlock Text="Delete Permanently" />
+                        </StackPanel>
+                      </Button>
+                      <TextBlock DockPanel.Dock="Left" Text="Marked" Classes="strong" VerticalAlignment="Center" />
+                      <TextBlock DockPanel.Dock="Left" Text="{Binding MarkedTotalText}" Classes="strong" VerticalAlignment="Center" Margin="8,0,0,0" />
+                      <TextBlock Text="Left out of the totals" Classes="hint" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,10,0" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding ConfirmMessage}" Classes="secondary" IsVisible="{Binding ConfirmMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </StackPanel>
+                </Border>
+                <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="8,8" IsVisible="{Binding HasNoMarked}"
+                           Text="Nothing is marked for removal this day." />
+                <ScrollViewer>
+                  <ItemsControl ItemsSource="{Binding MarkedRanges}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:MarkedRange">
+                        <Border Classes="row">
+                          <Grid ColumnDefinitions="130,*,44,Auto">
+                            <TextBlock Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
+                            <TextBlock Grid.Column="1" Text="{Binding AppsText}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AppsText}" />
+                            <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="4,1">
+                              <Button Content="Go To" Command="{Binding GoTo}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                              <Button Content="Restore" Command="{Binding Restore}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
               </DockPanel>
             </TabItem>
           </TabControl>

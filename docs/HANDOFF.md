@@ -69,7 +69,7 @@ before changing any code. (The previous handoff, for the Timesheet and Overview,
 
 The panel is a toolbar toggle, 440 px wide, on the right of Day review.
 
-**No selection: four tabs, with the day note under them.**
+**No selection: five tabs, with the day note under them.**
 1. **Applications:** the day's apps and sites, with Active time, a Productive checkbox and a Project link combo. Both
    controls apply to all history. Hint: "Changes apply to the app on every day".
 2. **Recorded Segments** (added 2026-10-19 at the developer's request): the day from first capture to last, as runs.
@@ -79,7 +79,9 @@ The panel is a toolbar toggle, 440 px wide, on the right of Day review.
    - Idle and Not recorded rows have no controls.
 3. **Projects:** the project blocks, each with "via Code.exe" or "set by hand", a note box, and a Join spot between
    close blocks of the same project.
-4. **Time Log:** project, Assigned, and Logged (an editable cell).
+. **Marked** (added 2026-10-19 at the developer's request, replacing the tool bar's Marked button; tooltip "Marked
+   for removal"): ranges marked for deletion with Go To and Restore, and Delete Permanently with the marked total below.
+   The panel's tabs have 8 px padding (not 14) so the five fit on one row at 440 px.
 
 **With a selection:**
 - Start and end boxes, the length, and a bar of active, idle and unrecorded time.
@@ -104,7 +106,7 @@ Code: `src/Worklapse.App/Views/DayReviewView.axaml` (+ `.axaml.cs`), `src/Workla
   - Two different ways to put a project on time sit side by side with different reach: the Applications tab's combo
     (a link, all history) and a segment's combo (this stretch). Nothing in the UI tells them apart beyond a hint line.
   - Idle and Not recorded segments can only get a project through a selection plus Set Project.
-  - Four tabs plus a selection mode in 440 px. The Applications tab's Active column cuts "4 h 43 m", and long
+  - Five tabs plus a selection mode in 440 px. The Applications tab's Active column cuts "4 h 43 m", and long
     project names get cut in segment rows.
   - "Clear Project" means a range set to no project, which overrides links. Undoing a hand-set stretch back to "follow
     the links" isn't possible; that was agreed, but it may matter more now that segment combos make hand-set ranges
@@ -118,8 +120,8 @@ Code: `src/Worklapse.App/Views/DayReviewView.axaml` (+ `.axaml.cs`), `src/Workla
 - Should idle and unrecorded stretches have a project control in lists?
 - Should links and hand-set ranges look different wherever a project is shown (e.g. "via Code.exe" vs "set by hand",
   as the Projects tab does)?
-- Do the no-selection tabs still make sense as Applications → Recorded Segments → Projects → Time Log (raw to
-  curated)? Or should some merge? How does the selection panel relate to them?
+- Do the no-selection tabs still make sense as Applications → Recorded Segments → Projects → Time Log → Marked (raw
+  to curated, then deletions)? Or should some merge? How does the selection panel relate to them?
 - Is a way back to "follow the links" for a stretch now wanted?
 
 Offer two or three distinct alternatives as boards rather than one, each with a sentence on its trade-off, and let the

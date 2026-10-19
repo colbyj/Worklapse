@@ -442,7 +442,8 @@ developer types (hh:mm) to bill, per project per day. Screens show h:mm; CSV exp
   side panel. With no selection, three tabs from raw to curated: **Applications** (the day's apps/sites:
   active time, Productive checkbox, project link), **Projects** (project blocks only, how each was assigned,
   its note; between two blocks of the same project less than 10 minutes apart, a spot offering to join them),
-  **Time Log** (Project, Assigned, Logged — editable). Day note underneath. With a selection (a
+  **Time Log** (Project, Assigned, Logged — editable), and **Marked** (added 2026-10-19, replacing the tool bar's
+  Marked button: ranges marked for removal with Go To / Restore, Delete Permanently below). Day note underneath. With a selection (a
   single frame is just a short range): **Recorded** (app runs in order, repeated when switching back, idle and
   not-recorded rows; per-app Productive and Project), **Projects and notes** (each project block in the
   selection with its note box; "No project" time), and an action bar: **Set Project ▾**, **Clear Project**,
@@ -487,7 +488,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    **Built 2026-10-18.** `MainWindow` (rail with Overview / Day review / Timesheet, then
    recording and Settings at the bottom; no menu bar since 2026-10-19, its shortcuts are window key bindings:
    Ctrl+1/2/3, Ctrl+, Settings, Ctrl+W, Ctrl+Q, F5 in Day review), `MainViewModel`, `DayReviewView` (was `DayReviewWindow`; tool
-   bar: day, frames, playback and deletion on the left, monitor menu with Focus on Active App and zoom on the right),
+   bar: day (with Refresh while it shows today), frames and playback on the left, monitor menu with Focus on Active App and zoom on the right),
    `RecordingViewModel` (was `StatusViewModel`) shown by `RecordingIndicator` (start of each view's status bar) and
    `RecordingMessages` (bars under the tool bar: paused with Resume Recording, not recording, deleted content still on
    disk); the tray menu is Show Worklapse / Pause–Resume / Settings / Quit and its tooltip says the state. Closing the

@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using Worklapse.App.Controls;
 using Worklapse.App.Theming;
 using Worklapse.Core.History;
+using Worklapse.Core.Projects;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
 
@@ -33,7 +34,8 @@ public sealed partial class MarkedRange : ObservableObject
     public required DateTimeOffset End { get; init; }
     public required int FirstIndex { get; init; }
     public required string RangeText { get; init; }
-    public required string Detail { get; init; }
+    public required string AppsText { get; init; }
+    public required string LengthText { get; init; }
     public required IRelayCommand GoTo { get; init; }
     public required IRelayCommand Restore { get; init; }
 }
@@ -117,7 +119,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _frameApp = "";
     [ObservableProperty] private string _summaryTitle = "";
     [ObservableProperty] private string _summaryRange = "";
-    [ObservableProperty] private string _markedButtonText = "Marked";
+    [ObservableProperty] private string _markedTotalText = "";
     [ObservableProperty] private string _confirmMessage = "";
 
     /// <summary>The monitors attached at the current capture, by id.</summary>
@@ -133,6 +135,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     public bool HasNoMarked => MarkedRanges.Count == 0;
     public bool CanGoNextDay => _days.Any(d => d > Day.Day);
     public bool CanGoPreviousDay => _days.Any(d => d < Day.Day);
+
+    /// <summary>Today is shown: it grows while recording, so it can be read again.</summary>
+    public bool IsToday => Day.Day == Period.Today;
+
     public string PlayText => IsPlaying ? "Pause" : "Play";
 
     // --- navigation ---------------------------------------------------------------------------
@@ -152,6 +158,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         Reload(keepId);
         if (atEnd && Captures.Count > 0)
             MoveTo(Captures.Count - 1);
+        OnPropertyChanged(nameof(IsToday));
     }
 
     public void GoToDay(DateOnly day)
@@ -480,6 +487,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     private void LoadDay(DateOnly day)
     {
         SetDay(_history.LoadDay(day));
+        ConfirmMessage = "";
         _anchor = null;
         _range = null;
         SelectionStart = SelectionEnd = null;
@@ -493,6 +501,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         Title = $"{Day.Day.ToString("D", CultureInfo.CurrentCulture)} — Day review — Worklapse";
         OnPropertyChanged(nameof(CanGoNextDay));
         OnPropertyChanged(nameof(CanGoPreviousDay));
+        OnPropertyChanged(nameof(IsToday));
         PreviousDayCommand.NotifyCanExecuteChanged();
         NextDayCommand.NotifyCanExecuteChanged();
         UpdateFrameText();
@@ -563,7 +572,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             var last = i;
             var start = Captures[first].Time;
             var end = Captures[last].Time + CaptureLength(last);
-            var apps = Captures.Skip(first).Take(last - first + 1).Select(c => c.AppName).Where(a => a is not null).Distinct().Take(2);
+            var apps = Captures.Skip(first).Take(last - first + 1).Select(c => c.AppName).Where(a => a is not null).Distinct();
             var length = TimeSpan.FromSeconds(Enumerable.Range(first, last - first + 1).Sum(k => CaptureLength(k).TotalSeconds));
             var goTo = first;
             MarkedRanges.Add(new MarkedRange
@@ -571,14 +580,15 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
                 Start = start,
                 End = end,
                 FirstIndex = first,
-                RangeText = $"{Clock(start)} – {Clock(end)}",
-                Detail = $"{Duration(length)} · {string.Join(", ", apps)}",
+                RangeText = $"{ClockShort(start)} – {ClockShort(end)}",
+                AppsText = string.Join(", ", apps),
+                LengthText = Duration(length),
                 GoTo = new RelayCommand(() => { Stop(); MoveTo(goTo); }),
                 Restore = new RelayCommand(() => Restore(start, end.AddMilliseconds(1))),
             });
         }
         var markedTotal = TimeSpan.FromSeconds(Enumerable.Range(0, Captures.Count).Where(k => Captures[k].PendingDelete).Sum(k => CaptureLength(k).TotalSeconds));
-        MarkedButtonText = MarkedRanges.Count == 0 ? "Marked" : $"Marked ({Duration(markedTotal)})";
+        MarkedTotalText = Duration(markedTotal);
         OnPropertyChanged(nameof(HasMarked));
         OnPropertyChanged(nameof(HasNoMarked));
         UpdateSummary();
