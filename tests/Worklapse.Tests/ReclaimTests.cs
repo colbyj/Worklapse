@@ -443,9 +443,9 @@ public class ReclaimTests
         var file = recording.FileOf(recording.Captures[0].Frame.SegmentId);
         recording.Delete((0, 60));
 
-        // Another program has the file open without letting it be deleted.
+        // Something keeps the file from being deleted.
         string? reported;
-        using (var held = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (HoldAgainstDeletion(file))
         {
             using var encoder = new BatchEncoder(recording.Folder.Path);
             Assert.True(encoder.WaitUntilIdle(Timeout));
@@ -479,6 +479,30 @@ public class ReclaimTests
         Assert.True(encoder.WaitUntilIdle(Timeout));
         Assert.NotNull(encoder.DeletedContentLeft);
         Assert.Contains(Path.GetFileName(file), encoder.DeletedContentLeft);
+    }
+
+    /// <summary>
+    /// Keeps a file from being deleted until disposed. On Windows: another program has it open without letting it be
+    /// deleted. Elsewhere an open file can always be deleted; what stops it is a folder that can't be changed.
+    /// </summary>
+    private static IDisposable HoldAgainstDeletion(string file)
+    {
+        if (OperatingSystem.IsWindows())
+            return new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var folder = Path.GetDirectoryName(file)!;
+        var mode = File.GetUnixFileMode(folder);
+        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        return new Restore(() =>
+        {
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(folder, mode);
+        });
+    }
+
+    private sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
     }
 
     private static bool FilesContain(string dataFolder, string text)
