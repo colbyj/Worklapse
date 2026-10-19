@@ -26,6 +26,11 @@ internal static class Program
             {
                 RenderingMode = UseGpuRendering() ? [Win32RenderingMode.AngleEgl, Win32RenderingMode.Software] : [Win32RenderingMode.Software],
             })
+            // The same choice on Linux (X11, through XWayland on a Wayland desktop); not measured there yet.
+            .With(new X11PlatformOptions
+            {
+                RenderingMode = UseGpuRendering() ? [X11RenderingMode.Glx, X11RenderingMode.Egl, X11RenderingMode.Software] : [X11RenderingMode.Software],
+            })
             .LogToTrace();
 
     private static bool UseGpuRendering()

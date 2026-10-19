@@ -8,6 +8,8 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Win32.SystemEvents" Version="10.0.13" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.13" />
+    <!-- The version Avalonia.FreeDesktop uses, so the app carries one copy. -->
+    <PackageVersion Include="Tmds.DBus.Protocol" Version="0.94.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />

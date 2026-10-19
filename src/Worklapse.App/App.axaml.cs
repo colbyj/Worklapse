@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Worklapse.App.Theming;
 using Worklapse.App.ViewModels;
 using Worklapse.App.Views;
+using Worklapse.Capture.Linux;
 using Worklapse.Capture.Windows;
 using Worklapse.Core.History;
 using Worklapse.Core.Platform;
@@ -123,7 +124,12 @@ public partial class App : Application
     {
         if (OperatingSystem.IsWindows())
             return WindowsPlatform.Create();
-        throw new PlatformNotSupportedException("Screen capture is only implemented for Windows so far.");
+        if (OperatingSystem.IsLinux())
+        {
+            var icon = Path.Combine(AppContext.BaseDirectory, "worklapse.png");
+            return KdePlatform.Create(File.Exists(icon) ? icon : null);
+        }
+        throw new PlatformNotSupportedException("Screen capture is only implemented for Windows and KDE Plasma so far.");
     }
 
     private void CreateTrayIcon(IClassicDesktopStyleApplicationLifetime desktop)
@@ -207,7 +213,7 @@ public partial class App : Application
     {
         var monitors = _platform!.Screen.GetMonitors();
         // The recording preview captures the primary monitor with a source of its own.
-        var sampler = OperatingSystem.IsWindows() ? new PrimaryScreenSampler(new GdiScreenSource()) : null;
+        var sampler = _platform.CreateScreenSource is { } createSource ? new PrimaryScreenSampler(createSource()) : null;
         var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler) };
         var owner = ShowMainWindow();
         await dialog.ShowDialog(owner);

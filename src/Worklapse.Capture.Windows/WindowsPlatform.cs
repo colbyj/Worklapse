@@ -10,5 +10,8 @@ public static class WindowsPlatform
         new GdiScreenSource(),
         new Win32ForegroundWindowProbe(),
         new Win32IdleDetector(),
-        new Win32SessionStateMonitor());
+        new Win32SessionStateMonitor())
+    {
+        CreateScreenSource = () => new GdiScreenSource(),
+    };
 }

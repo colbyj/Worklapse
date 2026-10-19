@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/Worklapse.Capture.Linux/Worklapse.Capture.Linux.csproj" />
     <ProjectReference Include="../../src/Worklapse.Core/Worklapse.Core.csproj" />
     <ProjectReference Include="../../src/Worklapse.Video/Worklapse.Video.csproj" />
   </ItemGroup>

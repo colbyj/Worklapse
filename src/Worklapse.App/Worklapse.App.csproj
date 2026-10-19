@@ -13,6 +13,11 @@
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
 
+  <!-- On Linux the application menu entry (the desktop file Worklapse writes) shows this file. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <None Include="Assets/worklapse.png" Link="worklapse.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
@@ -24,6 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="../Worklapse.Core/Worklapse.Core.csproj" />
     <ProjectReference Include="../Worklapse.Video/Worklapse.Video.csproj" />
+    <ProjectReference Include="../Worklapse.Capture.Linux/Worklapse.Capture.Linux.csproj" />
     <ProjectReference Include="../Worklapse.Capture.Windows/Worklapse.Capture.Windows.csproj" />
   </ItemGroup>
 

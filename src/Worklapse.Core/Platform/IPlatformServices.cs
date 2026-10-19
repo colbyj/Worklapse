@@ -34,10 +34,17 @@ public sealed record PlatformServices(
     IIdleDetector Idle,
     ISessionStateMonitor Session) : IDisposable
 {
+    /// <summary>
+    /// Makes a further screen source, for a second user next to the recorder (the Settings preview): a source reuses
+    /// its buffer for every capture. Null when the platform can't.
+    /// </summary>
+    public Func<IScreenSource>? CreateScreenSource { get; init; }
+
     public void Dispose()
     {
         Screen.Dispose();
         Session.Dispose();
+        (Idle as IDisposable)?.Dispose();
         (Foreground as IDisposable)?.Dispose();
     }
 }
