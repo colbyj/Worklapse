@@ -324,7 +324,6 @@
                                 <Rectangle Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Top" Margin="0,4,0,0" />
                                 <TextBlock Grid.Column="1" TextWrapping="Wrap" FontSize="11">
                                   <Run Text="{Binding Project}" FontWeight="SemiBold" />
-                                  <Run Text="{Binding RangeText}" Foreground="{DynamicResource UiSecondaryTextBrush}" />
                                   <Run Text="{Binding Text}" />
                                 </TextBlock>
                               </Grid>

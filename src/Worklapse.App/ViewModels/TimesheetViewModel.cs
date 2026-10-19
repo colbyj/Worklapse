@@ -27,16 +27,20 @@ public sealed partial class TimesheetDayRow(DateOnly day, IRelayCommand open) : 
     [ObservableProperty] private string _loggedText = "";
 }
 
-/// <summary>One project on one day. Logged is typed (as on Day review's Time Log) and saved at once.</summary>
+/// <summary>One project on one day. The note and Logged are typed (as on Day review's Time Log) and saved at once.</summary>
 public sealed partial class TimesheetLineRow : ObservableObject
 {
+    private readonly Func<TimesheetLineRow, string, string> _saveNote;
     private readonly Func<TimesheetLineRow, string, string> _saveLogged;
+    private string _noteText = "";
     private string _loggedText = "";
 
-    public TimesheetLineRow(DateOnly day, long projectId, Func<TimesheetLineRow, string, string> saveLogged)
+    public TimesheetLineRow(DateOnly day, long projectId, Func<TimesheetLineRow, string, string> saveNote,
+        Func<TimesheetLineRow, string, string> saveLogged)
     {
         Day = day;
         ProjectId = projectId;
+        _saveNote = saveNote;
         _saveLogged = saveLogged;
     }
 
@@ -45,17 +49,22 @@ public sealed partial class TimesheetLineRow : ObservableObject
 
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private IBrush _brush = Brushes.Transparent;
-    [ObservableProperty] private string _notesText = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(NotesStyle))]
-    private bool _hasNotes;
-
-    public FontStyle NotesStyle => HasNotes ? FontStyle.Normal : FontStyle.Italic;
-
     [ObservableProperty] private string _activeText = "";
     [ObservableProperty] private string _productiveText = "";
     [ObservableProperty] private string _assignedText = "";
+
+    public string NoteText
+    {
+        get => _noteText;
+        set
+        {
+            value ??= "";
+            if (value == _noteText)
+                return;
+            _noteText = _saveNote(this, value);
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(NoteText)));
+        }
+    }
 
     public string LoggedText
     {
@@ -71,13 +80,19 @@ public sealed partial class TimesheetLineRow : ObservableObject
         }
     }
 
-    /// <summary>Shows the stored value without saving it; leaves a cell being typed in alone when nothing changed.</summary>
-    public void ShowLogged(string text)
+    /// <summary>Shows the stored values without saving them; leaves a cell being typed in alone when nothing changed.</summary>
+    public void Show(string note, string logged)
     {
-        if (text == _loggedText)
-            return;
-        _loggedText = text;
-        OnPropertyChanged(nameof(LoggedText));
+        if (note != _noteText)
+        {
+            _noteText = note;
+            OnPropertyChanged(nameof(NoteText));
+        }
+        if (logged != _loggedText)
+        {
+            _loggedText = logged;
+            OnPropertyChanged(nameof(LoggedText));
+        }
     }
 }
 
@@ -88,7 +103,8 @@ public sealed record TimesheetTotalRow(string Name, IBrush Brush, bool IsCategor
 }
 
 /// <summary>
-/// The Timesheet view: a line per project per day for a week or a month. Logged time is saved as it's typed. Reloads
+/// The Timesheet view: a line per project per day for a week or a month. Notes and logged time are saved as they're
+/// typed. Reloads
 /// when shown (Day review may have changed logged time or notes).
 /// </summary>
 public sealed partial class TimesheetViewModel(SettingsStore settings, Action<DateOnly> openDay)
@@ -188,12 +204,10 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
                 var line = lines[(lineRow.Day, lineRow.ProjectId)];
                 lineRow.Name = data.Catalog.NameOf(line.ProjectId);
                 lineRow.Brush = data.Catalog.BrushOf(line.ProjectId);
-                lineRow.HasNotes = line.Notes.Count > 0;
-                lineRow.NotesText = lineRow.HasNotes ? line.NotesText : "No notes";
                 lineRow.ActiveText = Hm(line.Active);
                 lineRow.ProductiveText = Hm(line.Productive);
                 lineRow.AssignedText = Hm(line.Assigned);
-                lineRow.ShowLogged(line.Logged is { } logged ? Hm(logged) : "");
+                lineRow.Show(line.Note, line.Logged is { } logged ? Hm(logged) : "");
             }
         }
 
@@ -212,7 +226,7 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
     {
         var existing = Rows.ToDictionary(KeyOf);
         var wanted = keys.Select(key => existing.TryGetValue(key, out var row) ? row
-            : key.Project is { } project ? new TimesheetLineRow(key.Day, project, SaveLogged)
+            : key.Project is { } project ? new TimesheetLineRow(key.Day, project, SaveNote, SaveLogged)
             : new TimesheetDayRow(key.Day, new RelayCommand(() => OpenDay(key.Day)))).ToList();
         var keep = wanted.ToHashSet();
         for (var i = Rows.Count - 1; i >= 0; i--)
@@ -254,38 +268,54 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
         HasNoTotals = Totals.Count == 0;
     }
 
+    /// <summary>Saves a line's note as typed (empty clears it); returns the text to show.</summary>
+    private string SaveNote(TimesheetLineRow row, string typed)
+    {
+        var note = typed.Trim();
+        return Save(row, line => line with { Note = note }, (projects, line) => projects.SetNote(line.Day, line.ProjectId, note))
+            ? note : row.NoteText;
+    }
+
     /// <summary>Saves a line's logged time from what was typed (empty clears it); returns the text to show.</summary>
     private string SaveLogged(TimesheetLineRow row, string typed)
     {
-        if (Data is not { } data)
-            return row.LoggedText;
-        var index = data.Lines.FindIndex(l => l.Day == row.Day && l.ProjectId == row.ProjectId);
-        if (index < 0)
-            return row.LoggedText;
-        var line = data.Lines[index];
-        var shown = line.Logged is { } before ? Hm(before) : "";
         TimeSpan? value;
         if (string.IsNullOrWhiteSpace(typed))
             value = null;
         else if (ProjectTimes.ParseDuration(typed) is { } parsed)
             value = parsed;
         else
-            return shown;
+            return row.LoggedText;
+        return Save(row, line => line with { Logged = value }, (projects, line) => projects.SetLogged(line.Day, line.ProjectId, value))
+            ? (value is { } saved ? Hm(saved) : "") : row.LoggedText;
+    }
+
+    /// <summary>
+    /// Saves a change to a line and shows the totals again. False when it isn't saved: nothing's loaded, or the project
+    /// was deleted in Settings since it was read (what's there now is read instead).
+    /// </summary>
+    private bool Save(TimesheetLineRow row, Func<TimesheetLine, TimesheetLine> change, Action<ProjectStore, TimesheetLine> save)
+    {
+        if (Data is not { } data)
+            return false;
+        var index = data.Lines.FindIndex(l => l.Day == row.Day && l.ProjectId == row.ProjectId);
+        if (index < 0)
+            return false;
+        var line = data.Lines[index];
 
         using (var db = WorklapseDatabase.Open(data.DataFolder))
         {
             var projects = new ProjectStore(db);
-            // Deleted in Settings since this was read: show what's there now instead.
             if (!projects.ProjectExists(row.ProjectId))
             {
                 Dispatcher.UIThread.Post(Refresh);
-                return shown;
+                return false;
             }
-            projects.SetLogged(row.Day, row.ProjectId, value);
+            save(projects, line);
         }
-        data.Lines[index] = line with { Logged = value };
-        // Totals follow; the rows stay (a line whose logged time was all it had goes at the next reload). A load
-        // started before the save would show the old value, so read again too.
+        data.Lines[index] = change(line);
+        // Totals follow; the rows stay (a line whose note or logged time was all it had goes at the next reload). A
+        // load started before the save would show the old value, so read again too.
         Dispatcher.UIThread.Post(() =>
         {
             if (Data != data || IsDisposed)
@@ -293,7 +323,7 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
             Show(data);
             Refresh();
         });
-        return value is { } saved ? Hm(saved) : "";
+        return true;
     }
 
     private static string Hm(TimeSpan time) => ProjectTimes.Hm(time);

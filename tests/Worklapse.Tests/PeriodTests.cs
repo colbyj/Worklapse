@@ -92,7 +92,7 @@ public class PeriodTests
                 new Dictionary<long, ProjectTotals> { [project] = new(TimeSpan.FromMinutes(assignedMinutes), TimeSpan.Zero, TimeSpan.Zero) },
                 new UnassignedTotals(TimeSpan.FromMinutes(productive), TimeSpan.FromMinutes(other), TimeSpan.Zero),
                 TimeSpan.FromMinutes(recorded));
-            return new DaySummary(date, null, time, [], [], new PlacedNotes([], []));
+            return new DaySummary(date, null, time, [], []);
         }
 
         var totals = PeriodTotals.Build(october,

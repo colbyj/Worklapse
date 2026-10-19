@@ -4,13 +4,10 @@ using Worklapse.Core.History;
 namespace Worklapse.Core.Projects;
 
 /// <summary>One project on one day.</summary>
-/// <param name="Notes">The project's notes that day, in time order.</param>
+/// <param name="Note">What was done for the project that day; empty when nothing's written.</param>
 /// <param name="Logged">The time to bill, as typed; null until it is.</param>
-public sealed record TimesheetLine(DateOnly Day, long ProjectId, IReadOnlyList<string> Notes,
-    TimeSpan Active, TimeSpan Productive, TimeSpan Assigned, TimeSpan? Logged)
-{
-    public string NotesText => string.Join("; ", Notes);
-}
+public sealed record TimesheetLine(DateOnly Day, long ProjectId, string Note,
+    TimeSpan Active, TimeSpan Productive, TimeSpan Assigned, TimeSpan? Logged);
 
 public static class Timesheet
 {
@@ -28,7 +25,7 @@ public static class Timesheet
         return lines;
     }
 
-    /// <summary>A day's lines: projects in the order their first block starts, then those with only notes or logged time.</summary>
+    /// <summary>A day's lines: projects in the order their first block starts, then those with only a note or logged time.</summary>
     private static IEnumerable<TimesheetLine> LinesOf(DaySummary summary, IReadOnlyDictionary<(DateOnly Day, long ProjectId), TimeSpan> logged)
     {
         var day = summary.Day;
@@ -41,7 +38,7 @@ public static class Timesheet
         {
             var totals = time.Totals.GetValueOrDefault(project);
             yield return new TimesheetLine(day, project,
-                summary.Notes.Where(n => n.ProjectId == project).Select(n => n.Text).ToList(),
+                summary.Notes.FirstOrDefault(n => n.ProjectId == project)?.Text ?? "",
                 totals?.Active ?? TimeSpan.Zero, totals?.Productive ?? TimeSpan.Zero, totals?.Assigned ?? TimeSpan.Zero,
                 logged.TryGetValue((day, project), out var value) ? value : null);
         }
@@ -66,7 +63,7 @@ public static class TimesheetCsv
                 line.Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 Field(category?.Name ?? ""),
                 Field(project?.Name ?? ""),
-                Field(line.NotesText),
+                Field(line.Note),
                 Hours(line.Active),
                 Hours(line.Productive),
                 Hours(line.Assigned),

@@ -14,8 +14,8 @@ public sealed record Project(long Id, string Name, long? CategoryId, int? Color,
 /// <summary>A range set by hand. <paramref name="ProjectId"/> null means "no project", overriding any link.</summary>
 public sealed record ProjectSpan(DateTimeOffset Start, DateTimeOffset End, long? ProjectId);
 
-/// <summary>A note on a project, attached to a moment (see <see cref="NotePlacement"/>).</summary>
-public sealed record ProjectNote(long Id, long ProjectId, DateTimeOffset Time, string Text);
+/// <summary>What was done for a project on a day.</summary>
+public sealed record ProjectNote(DateOnly Day, long ProjectId, string Text);
 
 /// <summary>Time to bill for a project on a day.</summary>
 public sealed record LoggedTime(DateOnly Day, long ProjectId, TimeSpan Logged);
@@ -217,41 +217,32 @@ public sealed class ProjectStore(WorklapseDatabase db)
 
     // ---- Notes ----
 
-    /// <summary>Notes attached to moments in start..end, in time order.</summary>
-    public List<ProjectNote> GetNotes(DateTimeOffset start, DateTimeOffset end)
+    /// <summary>The notes on projects from <paramref name="from"/> up to (not including) <paramref name="to"/>.</summary>
+    public List<ProjectNote> GetNotes(DateOnly from, DateOnly to)
     {
-        using var command = db.Command("""
-            SELECT id, project_id, ts_ms, text FROM notes WHERE ts_ms >= $start AND ts_ms < $end ORDER BY ts_ms, id;
-            """);
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
+        using var command = db.Command("SELECT day, project_id, text FROM project_notes WHERE day >= $from AND day < $to ORDER BY day, project_id;");
+        command.Parameters.AddWithValue("$from", DayKey(from));
+        command.Parameters.AddWithValue("$to", DayKey(to));
         using var reader = command.ExecuteReader();
         var notes = new List<ProjectNote>();
         while (reader.Read())
-            notes.Add(new ProjectNote(reader.GetInt64(0), reader.GetInt64(1),
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2)), reader.GetString(3)));
+            notes.Add(new ProjectNote(ParseDay(reader.GetString(0)), reader.GetInt64(1), reader.GetString(2)));
         return notes;
     }
 
-    /// <summary>Adds a note to a project at a moment, usually the middle of the block it's written for.</summary>
-    public long AddNote(long projectId, DateTimeOffset time, string text)
-    {
-        using var command = db.Command("INSERT INTO notes (project_id, ts_ms, text) VALUES ($project, $ts, $text) RETURNING id;");
-        command.Parameters.AddWithValue("$project", projectId);
-        command.Parameters.AddWithValue("$ts", time.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$text", text);
-        return (long)command.ExecuteScalar()!;
-    }
-
-    /// <summary>Changes a note's text; an empty text deletes it.</summary>
-    public void UpdateNote(long id, string text)
+    /// <summary>Sets a project's note for a day; an empty text removes it.</summary>
+    public void SetNote(DateOnly day, long projectId, string text)
     {
         using var command = string.IsNullOrWhiteSpace(text)
-            ? db.Command("DELETE FROM notes WHERE id = $id;")
-            : db.Command("UPDATE notes SET text = $text WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", id);
+            ? db.Command("DELETE FROM project_notes WHERE day = $day AND project_id = $project;")
+            : db.Command("""
+                INSERT INTO project_notes (day, project_id, text) VALUES ($day, $project, $text)
+                ON CONFLICT (day, project_id) DO UPDATE SET text = excluded.text;
+                """);
+        command.Parameters.AddWithValue("$day", DayKey(day));
+        command.Parameters.AddWithValue("$project", projectId);
         if (!string.IsNullOrWhiteSpace(text))
-            command.Parameters.AddWithValue("$text", text);
+            command.Parameters.AddWithValue("$text", text.Trim());
         command.ExecuteNonQuery();
     }
 

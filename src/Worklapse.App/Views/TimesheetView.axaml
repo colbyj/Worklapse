@@ -116,9 +116,9 @@
                           <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
                           <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
                         </StackPanel>
-                        <TextBlock Grid.Column="1" Text="{Binding NotesText}" Margin="6,0" TextTrimming="CharacterEllipsis"
-                                   Classes.secondary="{Binding !HasNotes}" FontStyle="{Binding NotesStyle}"
-                                   ToolTip.Tip="{Binding NotesText}" />
+                        <TextBox Grid.Column="1" Classes="cell" Margin="2,1" Text="{Binding NoteText, UpdateSourceTrigger=LostFocus}"
+                                 PlaceholderText="Add a note" ToolTip.Tip="{Binding NoteText}"
+                                 AutomationProperties.Name="{Binding Name, StringFormat='Note for {0}'}" />
                         <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
                         <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
                         <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />

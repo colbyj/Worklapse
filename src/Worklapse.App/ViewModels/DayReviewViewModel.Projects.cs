@@ -97,36 +97,37 @@ public sealed class SegmentRow(string range, string name, TimeSpan length, Progr
     public FontStyle NameStyle => HasProgram ? FontStyle.Normal : FontStyle.Italic;
 }
 
-/// <summary>
-/// A project block (on the Projects tab, or the part of one inside a selection) with its note. Typing a note saves
-/// it to the block.
-/// </summary>
-public sealed partial class ProjectBlockRow : ObservableObject
-{
-    private readonly Action<ProjectBlockRow, string> _saveNote;
-    private string _noteText;
+/// <summary>A project's time inside the selection; <see cref="IsNone"/> for the time with no project.</summary>
+public sealed record SelectionProjectRow(string Name, IBrush Brush, string LengthText, bool IsNone);
 
-    public ProjectBlockRow(ProjectBlock block, string range, TimeSpan length, string name, IBrush brush, string how,
-        IReadOnlyList<ProjectNote> notes, Action<ProjectBlockRow, string> saveNote)
+/// <summary>
+/// A project's time on the day, on the Time Log tab, with its note for the day. Logged is typed (h:mm); both are saved
+/// to the timesheet.
+/// </summary>
+public sealed partial class TimeLogRow : ObservableObject
+{
+    private readonly Func<TimeLogRow, string, string> _saveNote;
+    private readonly Func<TimeLogRow, string, string> _saveLogged;
+    private string _noteText;
+    private string _loggedText;
+
+    public TimeLogRow(long projectId, string name, IBrush brush, TimeSpan assigned, string note, TimeSpan? logged,
+        Func<TimeLogRow, string, string> saveNote, Func<TimeLogRow, string, string> saveLogged)
     {
-        Block = block;
-        RangeText = range;
-        LengthText = ProjectTimes.Hm(length);
+        ProjectId = projectId;
         Name = name;
         Brush = brush;
-        HowText = how;
-        Notes = notes;
-        _noteText = string.Join("; ", notes.Select(n => n.Text));
+        AssignedText = ProjectTimes.Hm(assigned);
+        _noteText = note;
+        _loggedText = logged is { } l ? ProjectTimes.Hm(l) : "";
         _saveNote = saveNote;
+        _saveLogged = saveLogged;
     }
 
-    public ProjectBlock Block { get; }
-    public IReadOnlyList<ProjectNote> Notes { get; }
-    public string RangeText { get; }
-    public string LengthText { get; }
+    public long ProjectId { get; }
     public string Name { get; }
     public IBrush Brush { get; }
-    public string HowText { get; }
+    public string AssignedText { get; }
 
     public string NoteText
     {
@@ -136,40 +137,10 @@ public sealed partial class ProjectBlockRow : ObservableObject
             value ??= "";
             if (value == _noteText)
                 return;
-            _noteText = value;
-            OnPropertyChanged();
-            _saveNote(this, value);
+            _noteText = _saveNote(this, value);
+            Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(NoteText)));
         }
     }
-}
-
-/// <summary>A short gap between two blocks of the same project, offered for joining.</summary>
-public sealed class JoinGapRow(string text, IRelayCommand join)
-{
-    public string Text => text;
-    public IRelayCommand Join => join;
-}
-
-/// <summary>A project's time on the day, on the Time Log tab; Logged is typed (h:mm) and saved to the timesheet.</summary>
-public sealed partial class TimeLogRow : ObservableObject
-{
-    private readonly Func<TimeLogRow, string, string> _saveLogged;
-    private string _loggedText;
-
-    public TimeLogRow(long projectId, string name, IBrush brush, TimeSpan assigned, TimeSpan? logged, Func<TimeLogRow, string, string> saveLogged)
-    {
-        ProjectId = projectId;
-        Name = name;
-        Brush = brush;
-        AssignedText = ProjectTimes.Hm(assigned);
-        _loggedText = logged is { } l ? ProjectTimes.Hm(l) : "";
-        _saveLogged = saveLogged;
-    }
-
-    public long ProjectId { get; }
-    public string Name { get; }
-    public IBrush Brush { get; }
-    public string AssignedText { get; }
 
     public string LoggedText
     {
@@ -239,8 +210,6 @@ public sealed partial class DayReviewViewModel
     private ProjectStore? _projectStore;
     private ProjectTime _projectTime = ProjectTime.Empty;
     private List<ProjectSpan> _handSpans = [];
-    private PlacedNotes _placedNotes = new([], []);
-    private List<ProjectNote> _notes = [];
     private Dictionary<long, Project> _projectsById = [];
     private Dictionary<long, Category> _categoriesById = [];
     private bool _loadingDayNote;
@@ -258,19 +227,17 @@ public sealed partial class DayReviewViewModel
 
     [ObservableProperty] private bool _isSidePanelOpen = true;
 
-    /// <summary>The side panel's tab with no selection: 0 Applications, 1 Recorded Segments, 2 Projects, 3 Time Log.</summary>
+    /// <summary>The side panel's tab with no selection: 0 Applications, 1 Recorded Segments, 2 Time Log, 3 Marked.</summary>
     [ObservableProperty] private int _panelTab;
 
     public ObservableCollection<DayAppRow> AppRows { get; } = [];
 
     /// <summary>The day's recorded segments, first capture to last, for the Recorded Segments tab.</summary>
     public ObservableCollection<SegmentRow> DaySegments { get; } = [];
-    public ObservableCollection<object> ProjectRows { get; } = [];
     public ObservableCollection<TimeLogRow> TimeLogRows { get; } = [];
     [ObservableProperty] private string _appsTotalText = "";
     [ObservableProperty] private string _assignedTotalText = "";
     [ObservableProperty] private string _loggedTotalText = "";
-    [ObservableProperty] private bool _hasNoProjectBlocks;
 
     /// <summary>The day's note, saved when the box loses the focus.</summary>
     [ObservableProperty] private string _dayNote = "";
@@ -294,9 +261,7 @@ public sealed partial class DayReviewViewModel
     private const double SelectionBarWidth = 420;
 
     public ObservableCollection<SegmentRow> SelectionRuns { get; } = [];
-    public ObservableCollection<ProjectBlockRow> SelectionBlocks { get; } = [];
-    [ObservableProperty] private string _selectionNoProjectText = "";
-    [ObservableProperty] private bool _hasSelectionNoProject;
+    public ObservableCollection<SelectionProjectRow> SelectionProjects { get; } = [];
 
     partial void OnSelectionSharesChanged((double Active, double Idle, double NotRecorded) value)
     {
@@ -368,9 +333,7 @@ public sealed partial class DayReviewViewModel
         _categoriesById = Projects.GetCategories().ToDictionary(c => c.Id);
         _projectsById = Projects.GetProjects().ToDictionary(p => p.Id);
         _handSpans = Projects.GetSpans(dayStart, dayEnd);
-        _notes = Projects.GetNotes(dayStart, dayEnd);
         _projectTime = ProjectTimeline.Build(Captures, _handSpans, dayStart, dayEnd, _maxCaptureLength);
-        _placedNotes = NotePlacement.Place(_notes, _projectTime.Blocks);
 
         // Lists: every project not archived, and archived ones something on this day is linked to or marked with.
         var linked = Captures.SelectMany(c => new[] { c.AppProjectId, c.SiteProjectId }).Where(id => id is not null).Select(id => id!.Value).ToHashSet();
@@ -392,7 +355,6 @@ public sealed partial class DayReviewViewModel
 
         BuildAppRows(dayStart, dayEnd);
         BuildDaySegments();
-        BuildProjectRows();
         BuildTimeLog();
         _loadingDayNote = true;
         DayNote = Projects.GetDayNote(Day.Day);
@@ -434,36 +396,18 @@ public sealed partial class DayReviewViewModel
             BuildSegments((Captures[0].Time, Captures[^1].Time + CaptureLength(Captures.Count - 1)), DaySegments);
     }
 
-    private void BuildProjectRows()
-    {
-        ProjectRows.Clear();
-        var blocks = _projectTime.Blocks;
-        var gaps = ProjectTimeline.JoinableGaps(blocks, ProjectTimeline.JoinableGap);
-        for (var i = 0; i < blocks.Count; i++)
-        {
-            ProjectRows.Add(BlockRow(blocks[i], i, blocks[i].Start, blocks[i].End));
-            if (gaps.FirstOrDefault(g => g.Start == blocks[i].End) is { } gap)
-            {
-                var minutes = Math.Max(1, (int)Math.Round((gap.End - gap.Start).TotalMinutes));
-                ProjectRows.Add(new JoinGapRow($"{minutes} min between", new RelayCommand(() =>
-                {
-                    Projects.SetSpan(gap.Start, gap.End, gap.ProjectId);
-                    RebuildProjects();
-                })));
-            }
-        }
-        HasNoProjectBlocks = blocks.Count == 0;
-    }
-
+    /// <summary>The day's projects as the Timesheet lists them: by their first block, then those with only a note or logged time.</summary>
     private void BuildTimeLog()
     {
         TimeLogRows.Clear();
+        var notes = Projects.GetNotes(Day.Day, Day.Day.AddDays(1)).ToDictionary(n => n.ProjectId, n => n.Text);
         var logged = Projects.GetLogged(Day.Day, Day.Day.AddDays(1)).ToDictionary(l => l.ProjectId, l => l.Logged);
-        var order = _projectTime.Blocks.Select(b => b.ProjectId).Concat(logged.Keys.Order()).Distinct();
+        var order = _projectTime.Blocks.Select(b => b.ProjectId).Concat(notes.Keys.Order()).Concat(logged.Keys.Order()).Distinct();
         foreach (var id in order)
         {
             var assigned = _projectTime.Totals.TryGetValue(id, out var totals) ? totals.Assigned : TimeSpan.Zero;
-            TimeLogRows.Add(new TimeLogRow(id, NameOf(id), BrushOf(id), assigned, logged.TryGetValue(id, out var l) ? l : null, SaveLogged));
+            TimeLogRows.Add(new TimeLogRow(id, NameOf(id), BrushOf(id), assigned, notes.GetValueOrDefault(id, ""),
+                logged.TryGetValue(id, out var l) ? l : null, SaveNote, SaveLogged));
         }
         UpdateTimeLogTotals(logged.Values);
     }
@@ -474,9 +418,21 @@ public sealed partial class DayReviewViewModel
         LoggedTotalText = ProjectTimes.Hm(logged.Aggregate(TimeSpan.Zero, (sum, t) => sum + t));
     }
 
+    /// <summary>Saves a project's note for the day as typed (empty clears it); returns the text to show.</summary>
+    private string SaveNote(TimeLogRow row, string typed)
+    {
+        if (!StillThere(row))
+            return row.NoteText;
+        var note = typed.Trim();
+        Projects.SetNote(Day.Day, row.ProjectId, note);
+        return note;
+    }
+
     /// <summary>Saves a project's logged time from what was typed; returns the text to show.</summary>
     private string SaveLogged(TimeLogRow row, string typed)
     {
+        if (!StillThere(row))
+            return row.LoggedText;
         var current = Projects.GetLogged(Day.Day, Day.Day.AddDays(1)).FirstOrDefault(l => l.ProjectId == row.ProjectId)?.Logged;
         if (string.IsNullOrWhiteSpace(typed))
         {
@@ -492,11 +448,20 @@ public sealed partial class DayReviewViewModel
         return current is { } shown ? ProjectTimes.Hm(shown) : "";
     }
 
+    /// <summary>Whether a row's project still exists; one deleted in Settings meanwhile takes its row away instead.</summary>
+    private bool StillThere(TimeLogRow row)
+    {
+        if (Projects.ProjectExists(row.ProjectId))
+            return true;
+        Dispatcher.UIThread.Post(RebuildProjects);
+        return false;
+    }
+
     /// <summary>Fills the selection panel from the selection, if there is one.</summary>
     private void SelectionChanged()
     {
         SelectionRuns.Clear();
-        SelectionBlocks.Clear();
+        SelectionProjects.Clear();
         ClearSelectionProjectCommand.NotifyCanExecuteChanged();
         if (_range is not { } range)
             return;
@@ -515,20 +480,20 @@ public sealed partial class DayReviewViewModel
 
         BuildSegments(range, SelectionRuns);
 
-        var assigned = TimeSpan.Zero;
-        for (var i = 0; i < _projectTime.Blocks.Count; i++)
+        // Each project's time inside the selection, in the order they come; then the time with none.
+        var perProject = new Dictionary<long, TimeSpan>();
+        foreach (var block in _projectTime.Blocks)
         {
-            var block = _projectTime.Blocks[i];
             var from = block.Start > range.Start ? block.Start : range.Start;
             var to = block.End < range.End ? block.End : range.End;
-            if (to <= from)
-                continue;
-            assigned += to - from;
-            SelectionBlocks.Add(BlockRow(block, i, from, to));
+            if (to > from)
+                perProject[block.ProjectId] = perProject.GetValueOrDefault(block.ProjectId) + (to - from);
         }
-        var none = length - assigned;
-        HasSelectionNoProject = none >= TimeSpan.FromSeconds(1);
-        SelectionNoProjectText = ProjectTimes.Hm(none);
+        foreach (var (id, time) in perProject)
+            SelectionProjects.Add(new SelectionProjectRow(NameOf(id), BrushOf(id), ProjectTimes.Hm(time), false));
+        var none = length - perProject.Values.Aggregate(TimeSpan.Zero, (sum, t) => sum + t);
+        if (none >= TimeSpan.FromSeconds(1))
+            SelectionProjects.Add(new SelectionProjectRow("No project", Brushes.Transparent, ProjectTimes.Hm(none), true));
     }
 
     /// <summary>Shows the selection's ends in the boxes, without that counting as typing.</summary>
@@ -600,45 +565,6 @@ public sealed partial class DayReviewViewModel
         static bool SameRun(CaptureRecord a, CaptureRecord b) =>
             a.IsActive == b.IsActive && a.PendingDelete == b.PendingDelete
             && (!a.IsActive || (string.Equals(a.AppName, b.AppName, StringComparison.OrdinalIgnoreCase) && a.Site == b.Site));
-    }
-
-    private ProjectBlockRow BlockRow(ProjectBlock block, int index, DateTimeOffset from, DateTimeOffset to) =>
-        new(block, RangeText(from, to), to - from, NameOf(block.ProjectId), BrushOf(block.ProjectId), HowOf(block),
-            index < _placedNotes.PerBlock.Count ? _placedNotes.PerBlock[index] : [], SaveNote);
-
-    /// <summary>Saves a block's note: one note per block (notes joined on it become one).</summary>
-    private void SaveNote(ProjectBlockRow row, string text)
-    {
-        if (row.Notes.Count == 0)
-        {
-            if (!string.IsNullOrWhiteSpace(text))
-                Projects.AddNote(row.Block.ProjectId, row.Block.Middle, text.Trim());
-        }
-        else
-        {
-            Projects.UpdateNote(row.Notes[0].Id, text.Trim());
-            foreach (var extra in row.Notes.Skip(1))
-                Projects.UpdateNote(extra.Id, "");
-        }
-        // The rows are rebuilt from the saved notes; not right away, while the box that changed is still in use.
-        Dispatcher.UIThread.Post(RebuildProjects);
-    }
-
-    /// <summary>"via Code.exe", "set by hand", or both.</summary>
-    private string HowOf(ProjectBlock block)
-    {
-        if (block.SetByHand >= block.Length - TimeSpan.FromSeconds(1))
-            return "set by hand";
-        var tally = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in Captures)
-        {
-            if (c.Time < block.Start || c.Time >= block.End || !c.IsActive || c.LinkedProjectId != block.ProjectId)
-                continue;
-            var name = c.SiteProjectId is not null ? c.Site! : c.AppName ?? "";
-            tally[name] = tally.GetValueOrDefault(name) + 1;
-        }
-        var via = tally.Count == 0 ? "" : "via " + tally.MaxBy(t => t.Value).Key;
-        return block.SetByHand > TimeSpan.Zero ? (via.Length > 0 ? via + ", partly by hand" : "partly by hand") : via;
     }
 
     /// <summary>A program's marks as the day's captures carry them (Productive, and its own project link).</summary>

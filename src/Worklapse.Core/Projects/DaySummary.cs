@@ -8,15 +8,13 @@ namespace Worklapse.Core.Projects;
 /// null for an empty day.
 /// </param>
 /// <param name="Activity">The recorded time as runs of productive, other and idle time; empty unless asked for.</param>
-/// <param name="Notes">The notes attached to moments of the day, in time order.</param>
-/// <param name="PlacedNotes">The same notes on the blocks they're shown on (<see cref="NotePlacement"/>).</param>
+/// <param name="Notes">The day's notes on projects.</param>
 public sealed record DaySummary(
     DateOnly Day,
     (DateTimeOffset First, DateTimeOffset Last)? Extent,
     ProjectTime Time,
     IReadOnlyList<ActivityRun> Activity,
-    IReadOnlyList<ProjectNote> Notes,
-    PlacedNotes PlacedNotes);
+    IReadOnlyList<ProjectNote> Notes);
 
 public static class DaySummaries
 {
@@ -35,7 +33,7 @@ public static class DaySummaries
         var (rangeStart, _) = HistoryStore.DayRange(from);
         var (rangeEnd, _) = HistoryStore.DayRange(to);
         var spans = projects.GetSpans(rangeStart, rangeEnd);
-        var notes = projects.GetNotes(rangeStart, rangeEnd);
+        var notes = projects.GetNotes(from, to);
 
         var days = new List<DaySummary>();
         var next = 0;
@@ -47,12 +45,12 @@ public static class DaySummaries
                 next++;
             var captures = samples.GetRange(first, next - first);
             var daySpans = spans.Where(s => s.Start < end && s.End > start).ToList();
-            var dayNotes = notes.Where(n => n.Time >= start && n.Time < end).ToList();
+            var dayNotes = notes.Where(n => n.Day == day).ToList();
 
             var time = ProjectTimeline.Build(captures, daySpans, start, end, maxCaptureLength);
             days.Add(new DaySummary(day, ExtentOf(captures, time.Blocks, end, maxCaptureLength), time,
                 withActivity ? ProjectTimeline.Activity(captures, start, end, maxCaptureLength) : [],
-                dayNotes, NotePlacement.Place(dayNotes, time.Blocks)));
+                dayNotes));
         }
         return days;
     }

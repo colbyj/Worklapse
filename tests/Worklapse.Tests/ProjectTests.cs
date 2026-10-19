@@ -74,7 +74,7 @@ public class ProjectTests
     }
 
     [Fact]
-    public void ShortGapsBetweenBlocksOfTheSameProjectAreOfferedForJoiningNeverJoinedOnTheirOwn()
+    public void BlocksOfTheSameProjectAreNeverJoinedOnTheirOwn()
     {
         CaptureRecord[] captures = [
             Capture(0, appProject: 1), Capture(10, appProject: 1),
@@ -87,21 +87,11 @@ public class ProjectTests
         var time = Build(captures);
         Assert.Equal([(0, 20, 1L), (40, 50, 1L), (60, 70, 2L), (80, 95, 2L)], Blocks(time));
 
-        var gaps = ProjectTimeline.JoinableGaps(time.Blocks, TimeSpan.FromSeconds(21));
-        Assert.Equal([Span(20, 40, 1), Span(70, 80, 2)], gaps);
-        Assert.Equal([Span(70, 80, 2)], ProjectTimeline.JoinableGaps(time.Blocks, TimeSpan.FromSeconds(20))); // shorter than, strictly
-
         // Joining is setting the gap by hand.
-        var joined = Build(captures, [gaps[0]]);
+        var joined = Build(captures, [Span(20, 40, 1)]);
         Assert.Equal([(0, 50, 1L), (60, 70, 2L), (80, 95, 2L)], Blocks(joined));
         Assert.Equal(TimeSpan.FromSeconds(20), joined.Blocks[0].SetByHand);
         Assert.Equal(TimeSpan.FromSeconds(50), joined.Totals[1].Active);
-
-        // A block of another project in between means nothing is offered; ten minutes or more neither.
-        ProjectBlock Block(int fromMinute, int toMinute, long project) =>
-            new(Nine.AddMinutes(fromMinute), Nine.AddMinutes(toMinute), project, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
-        Assert.Equal([new ProjectSpan(Nine.AddMinutes(10), Nine.AddMinutes(15), 1)], ProjectTimeline.JoinableGaps(
-            [Block(0, 10, 1), Block(15, 20, 1), Block(30, 40, 1), Block(42, 50, 2), Block(52, 60, 1)], ProjectTimeline.JoinableGap));
     }
 
     [Fact]
@@ -204,13 +194,13 @@ public class ProjectTests
         history.SetProject(new ProgramKey(ProgramKind.App, "Code.exe"), gone);
         projects.SetSpan(Nine, Nine.AddMinutes(1), gone);
         projects.SetSpan(Nine.AddMinutes(1), Nine.AddMinutes(2), kept);
-        projects.AddNote(gone, Nine, "note");
+        projects.SetNote(Day, gone, "note");
         projects.SetLogged(Day, gone, TimeSpan.FromHours(1));
 
         projects.DeleteProject(gone);
         Assert.Null(history.LoadDay(Day).Captures[0].LinkedProjectId);
         Assert.Equal([kept], projects.GetSpans(Nine.AddHours(-1), Nine.AddHours(1)).Select(s => s.ProjectId));
-        Assert.Empty(projects.GetNotes(Nine.AddHours(-1), Nine.AddHours(1)));
+        Assert.Empty(projects.GetNotes(Day, Day.AddDays(1)));
         Assert.Empty(projects.GetLogged(Day, Day.AddDays(1)));
 
         // A project takes its category's colour unless it has its own; deleting the category keeps the project.
@@ -229,23 +219,6 @@ public class ProjectTests
     }
 
     [Fact]
-    public void NotesGoOnTheBlockAroundThemOrTheNearestOfTheirProject()
-    {
-        ProjectBlock Block(int from, int to, long project) =>
-            new(Nine.AddSeconds(from), Nine.AddSeconds(to), project, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
-        ProjectNote Note(long id, int at, long project) => new(id, project, Nine.AddSeconds(at), $"n{id}");
-
-        var placed = NotePlacement.Place(
-            [Note(1, 5, 1), Note(2, 32, 1), Note(3, 25, 1), Note(4, 35, 2), Note(5, 0, 3)],
-            [Block(0, 10, 1), Block(10, 20, 2), Block(30, 40, 1)]);
-
-        Assert.Equal(["n1"], placed.PerBlock[0].Select(n => n.Text));
-        Assert.Equal(["n4"], placed.PerBlock[1].Select(n => n.Text));      // its project's only block
-        Assert.Equal(["n3", "n2"], placed.PerBlock[2].Select(n => n.Text)); // n3 is nearer this one than the first
-        Assert.Equal(["n5"], placed.Orphans.Select(n => n.Text));
-    }
-
-    [Fact]
     public void TimesheetHasALinePerProjectPerDayAndExportsDecimalHours()
     {
         using var folder = new TempFolder();
@@ -257,6 +230,7 @@ public class ProjectTests
         var worklapse = projects.AddProject("Worklapse", null);
         var client = projects.AddProject("Northwind, Inc.", clients);
         var admin = projects.AddProject("Admin", null);
+        var docs = projects.AddProject("Docs", null);
 
         // 45 minutes in Code (one capture a minute), then a 30-minute call set by hand while nothing was recorded.
         var code = recording.GetOrAddApp("Code.exe", null);
@@ -266,29 +240,28 @@ public class ProjectTests
         var interval = TimeSpan.FromMinutes(1);
         projects.SetSpan(Nine.AddHours(1), Nine.AddHours(1.5), client);
 
-        var time = ProjectTimeline.Build(history.LoadSamples(Day, Day.AddDays(1)), projects.GetSpans(Nine.AddHours(-1), Nine.AddHours(2)),
-            Nine.AddHours(-1), Nine.AddHours(2), interval);
-        projects.AddNote(worklapse, time.Blocks[0].Middle, "Panning");
-        projects.AddNote(worklapse, time.Blocks[0].Middle.AddSeconds(1), "Replug fix");
-        projects.AddNote(client, time.Blocks[1].Middle, "Call about the \"header\"");
+        projects.SetNote(Day, worklapse, "Panning; replug fix");
+        projects.SetNote(Day, client, "Call about the \"header\"");
+        projects.SetNote(Day, docs, "README");                    // a note with no time marked
         projects.SetLogged(Day, worklapse, TimeSpan.FromMinutes(45));
         projects.SetLogged(Day, admin, TimeSpan.FromMinutes(15)); // logged with no time marked
         projects.SetLogged(Day.AddDays(1), admin, TimeSpan.FromMinutes(5));
 
         var lines = Timesheet.Build(history, projects, Day, Day.AddDays(1), interval);
-        Assert.Equal([worklapse, client, admin], lines.Select(l => l.ProjectId));
-        Assert.Equal(new TimesheetLine(Day, worklapse, lines[0].Notes, TimeSpan.FromMinutes(45), TimeSpan.Zero, TimeSpan.FromMinutes(45), TimeSpan.FromMinutes(45)), lines[0]);
-        Assert.Equal("Panning; Replug fix", lines[0].NotesText);
+        Assert.Equal([worklapse, client, docs, admin], lines.Select(l => l.ProjectId));
+        Assert.Equal(new TimesheetLine(Day, worklapse, "Panning; replug fix", TimeSpan.FromMinutes(45), TimeSpan.Zero, TimeSpan.FromMinutes(45), TimeSpan.FromMinutes(45)), lines[0]);
         Assert.Equal((TimeSpan.Zero, TimeSpan.FromMinutes(30), (TimeSpan?)null), (lines[1].Active, lines[1].Assigned, lines[1].Logged));
-        Assert.Equal((TimeSpan.Zero, TimeSpan.FromMinutes(15)), (lines[2].Assigned, lines[2].Logged!.Value));
+        Assert.Equal(("README", TimeSpan.Zero, (TimeSpan?)null), (lines[2].Note, lines[2].Assigned, lines[2].Logged));
+        Assert.Equal(("", TimeSpan.Zero, TimeSpan.FromMinutes(15)), (lines[3].Note, lines[3].Assigned, lines[3].Logged!.Value));
 
         var csv = new StringWriter();
         TimesheetCsv.Write(csv, lines, projects.GetProjects().ToDictionary(p => p.Id), projects.GetCategories().ToDictionary(c => c.Id));
         var date = Day.ToString("yyyy-MM-dd");
         Assert.Equal(
             "Date,Category,Project,Notes,Active,Productive,Assigned,Logged\n" +
-            $"{date},,Worklapse,Panning; Replug fix,0.75,0.00,0.75,0.75\n" +
+            $"{date},,Worklapse,Panning; replug fix,0.75,0.00,0.75,0.75\n" +
             $"{date},Clients,\"Northwind, Inc.\",\"Call about the \"\"header\"\"\",0.00,0.00,0.50,\n" +
+            $"{date},,Docs,README,0.00,0.00,0.00,\n" +
             $"{date},,Admin,,0.00,0.00,0.00,0.25\n",
             csv.ToString().ReplaceLineEndings("\n"));
 
@@ -359,12 +332,12 @@ public class ProjectTests
         history.SetPendingDelete(Nine.AddSeconds(80), Nine.AddSeconds(81), true);
         var (_, midnight) = HistoryStore.DayRange(Day);
         recording.InsertCapture(midnight.AddSeconds(-5), CaptureKind.Active, code, "t", null);
-        projects.AddNote(worklapse, Nine.AddSeconds(30), "Panning");
+        projects.SetNote(Day, worklapse, "Panning");
 
         // Day 2: nothing recorded, only a call set by hand in the evening, with a note. Day 3: nothing at all.
         var (dayTwo, _) = HistoryStore.DayRange(Day.AddDays(1));
         projects.SetSpan(dayTwo.AddHours(18), dayTwo.AddHours(18.5), client);
-        projects.AddNote(client, dayTwo.AddHours(18.25), "Call");
+        projects.SetNote(Day.AddDays(1), client, "Call");
 
         var days = DaySummaries.Build(history, projects, Day, Day.AddDays(3), Max, withActivity: true);
         Assert.Equal([Day, Day.AddDays(1), Day.AddDays(2)], days.Select(d => d.Day));
@@ -380,14 +353,14 @@ public class ProjectTests
         Assert.Equal(
             [(0, 60, ActivityKind.Productive), (60, 70, ActivityKind.Other), (70, 80, ActivityKind.Idle)],
             one.Activity.Take(3).Select(r => ((int)(r.Start - Nine).TotalSeconds, (int)(r.End - Nine).TotalSeconds, r.Kind)));
-        Assert.Equal(["Panning"], one.PlacedNotes.PerBlock[0].Select(n => n.Text));
+        Assert.Equal([new ProjectNote(Day, worklapse, "Panning")], one.Notes);
 
         var two = days[1];
         Assert.Equal((dayTwo.AddHours(18), dayTwo.AddHours(18.5)), two.Extent);
         Assert.Equal(TimeSpan.FromMinutes(30), two.Time.Assigned);
         Assert.Equal(TimeSpan.Zero, two.Time.Recorded);
         Assert.Empty(two.Activity);
-        Assert.Equal(["Call"], two.PlacedNotes.PerBlock.Single().Select(n => n.Text));
+        Assert.Equal([new ProjectNote(Day.AddDays(1), client, "Call")], two.Notes);
 
         Assert.Null(days[2].Extent);
         Assert.Empty(days[2].Time.Blocks);
@@ -399,7 +372,7 @@ public class ProjectTests
     }
 
     [Fact]
-    public void DayNotesAreSetPerDayAndClearedWhenEmpty()
+    public void NotesAreSetPerDayAndClearedWhenEmpty()
     {
         using var folder = new TempFolder();
         using var db = WorklapseDatabase.Open(folder.Path);
@@ -414,10 +387,14 @@ public class ProjectTests
         projects.SetDayNote(Day, "  ");
         Assert.Equal("", projects.GetDayNote(Day));
 
-        var note = projects.AddNote(projects.AddProject("P", null), Nine, "text");
-        projects.UpdateNote(note, "changed");
-        Assert.Equal("changed", projects.GetNotes(Nine, Nine.AddSeconds(1)).Single().Text);
-        projects.UpdateNote(note, "");
-        Assert.Empty(projects.GetNotes(Nine, Nine.AddSeconds(1)));
+        // A project's note, one per day.
+        var (p, q) = (projects.AddProject("P", null), projects.AddProject("Q", null));
+        projects.SetNote(Day, p, "text");
+        projects.SetNote(Day, p, " changed ");
+        projects.SetNote(Day, q, "other");
+        projects.SetNote(Day.AddDays(1), p, "next day");
+        Assert.Equal([new ProjectNote(Day, p, "changed"), new ProjectNote(Day, q, "other")], projects.GetNotes(Day, Day.AddDays(1)));
+        projects.SetNote(Day, p, "");
+        Assert.Equal([q], projects.GetNotes(Day, Day.AddDays(1)).Select(n => n.ProjectId));
     }
 }

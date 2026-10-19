@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 9;
+    private const int SchemaVersion = 10;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -261,8 +261,8 @@ public sealed class WorklapseDatabase : IDisposable
         if (version < 9)
         {
             // Projects. An app or site linked to a project marks its active time with it; ranges set by hand override
-            // the links (a NULL project there means "no project"). Notes belong to a project and a moment, and are shown
-            // on the block of that project around it. The timesheet holds the time to bill per project per day.
+            // the links (a NULL project there means "no project"). Notes belonged to a project and a moment, shown
+            // on the block of that project around it (until schema 10). The timesheet holds the time to bill per project per day.
             using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE categories (
@@ -312,6 +312,24 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 9;");
+            transaction.Commit();
+        }
+
+        if (version < 10)
+        {
+            // Notes are per project per day, not per block (2026-10-19); none had been written yet to carry over.
+            using var transaction = BeginTransaction();
+            Execute("""
+                DROP TABLE notes;
+
+                CREATE TABLE project_notes (
+                    day         TEXT NOT NULL,                      -- local date, yyyy-MM-dd
+                    project_id  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                    text        TEXT NOT NULL,
+                    PRIMARY KEY (day, project_id)
+                ) WITHOUT ROWID;
+                """);
+            Execute("PRAGMA user_version = 10;");
             transaction.Commit();
         }
     }

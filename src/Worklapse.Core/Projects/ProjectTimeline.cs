@@ -10,9 +10,6 @@ public sealed record ProjectBlock(DateTimeOffset Start, DateTimeOffset End, long
 {
     /// <summary>Everything in the block, idle or not recorded included: the project's Assigned time.</summary>
     public TimeSpan Length => End - Start;
-
-    /// <summary>Where a note written for this block is attached.</summary>
-    public DateTimeOffset Middle => Start + (End - Start) / 2;
 }
 
 /// <param name="Assigned">All time marked with the project, idle or not recorded included.</param>
@@ -175,63 +172,5 @@ public static class ProjectTimeline
             pieces.Add(new Piece(from, to, kind, capture.Productive, kind == PieceKind.Active ? capture.LinkedProjectId : null));
         }
         return pieces;
-    }
-
-    /// <summary>How short a gap between two blocks of the same project is offered for joining.</summary>
-    public static readonly TimeSpan JoinableGap = TimeSpan.FromMinutes(10);
-
-    /// <summary>
-    /// The gaps worth offering to join: between two blocks of the same project, shorter than
-    /// <paramref name="shorterThan"/>, with no other project in between. Joining one means setting it to that project
-    /// by hand; nothing is ever joined on its own.
-    /// </summary>
-    public static List<ProjectSpan> JoinableGaps(IReadOnlyList<ProjectBlock> blocks, TimeSpan shorterThan)
-    {
-        var gaps = new List<ProjectSpan>();
-        for (var i = 0; i + 1 < blocks.Count; i++)
-        {
-            var (before, after) = (blocks[i], blocks[i + 1]);
-            if (before.ProjectId == after.ProjectId && after.Start > before.End && after.Start - before.End < shorterThan)
-                gaps.Add(new ProjectSpan(before.End, after.Start, before.ProjectId));
-        }
-        return gaps;
-    }
-}
-
-/// <summary>Which block each note is shown on.</summary>
-/// <param name="PerBlock">The notes of each block, in the order of the blocks given; each block's in time order.</param>
-/// <param name="Orphans">Notes whose project has no block in the span.</param>
-public sealed record PlacedNotes(IReadOnlyList<IReadOnlyList<ProjectNote>> PerBlock, IReadOnlyList<ProjectNote> Orphans);
-
-public static class NotePlacement
-{
-    /// <summary>
-    /// A note goes on the block of its project that contains its moment; if none does (the block moved or shrank), on
-    /// the nearest block of that project; with no block of its project at all, it's an orphan.
-    /// </summary>
-    public static PlacedNotes Place(IReadOnlyList<ProjectNote> notes, IReadOnlyList<ProjectBlock> blocks)
-    {
-        var perBlock = blocks.Select(_ => new List<ProjectNote>()).ToArray();
-        var orphans = new List<ProjectNote>();
-        foreach (var note in notes.OrderBy(n => n.Time).ThenBy(n => n.Id))
-        {
-            var best = -1;
-            var bestDistance = TimeSpan.MaxValue;
-            for (var i = 0; i < blocks.Count; i++)
-            {
-                if (blocks[i].ProjectId != note.ProjectId)
-                    continue;
-                var distance = note.Time < blocks[i].Start ? blocks[i].Start - note.Time
-                    : note.Time >= blocks[i].End ? note.Time - blocks[i].End
-                    : TimeSpan.Zero;
-                if (distance < bestDistance)
-                    (best, bestDistance) = (i, distance);
-            }
-            if (best >= 0)
-                perBlock[best].Add(note);
-            else
-                orphans.Add(note);
-        }
-        return new PlacedNotes(perBlock, orphans);
     }
 }

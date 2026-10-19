@@ -63,10 +63,10 @@ public sealed record OverviewTreeRow(
     public Thickness Indent => IsGroup ? new Thickness(4, 0, 0, 0) : new Thickness(30, 0, 0, 0);
 }
 
-/// <summary>A block note under a day in the notes list.</summary>
-public sealed record OverviewNoteEntry(IBrush Brush, string Project, string RangeText, string Text);
+/// <summary>A project's note under a day in the notes list.</summary>
+public sealed record OverviewNoteEntry(IBrush Brush, string Project, string Text);
 
-/// <summary>A day with notes: its day note, and its block notes when expanded.</summary>
+/// <summary>A day with notes: its day note, and its projects' notes when expanded.</summary>
 public sealed partial class OverviewNoteRow(DateOnly day, string dayNote, IReadOnlyList<OverviewNoteEntry> entries, bool expanded,
     Action<DateOnly, bool> expandedChanged) : ObservableObject
 {
@@ -290,14 +290,12 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
         foreach (var summary in data.Days)
         {
             var day = summary.Day;
-            var entries = new List<OverviewNoteEntry>();
-            var blocks = summary.Time.Blocks;
-            for (var i = 0; i < blocks.Count; i++)
-                foreach (var note in summary.PlacedNotes.PerBlock[i])
-                    entries.Add(new OverviewNoteEntry(data.Catalog.BrushOf(note.ProjectId), data.Catalog.NameOf(note.ProjectId),
-                        $"{Clock(blocks[i].Start)} – {Clock(blocks[i].End)}", note.Text));
-            foreach (var note in summary.PlacedNotes.Orphans)
-                entries.Add(new OverviewNoteEntry(data.Catalog.BrushOf(note.ProjectId), data.Catalog.NameOf(note.ProjectId), "", note.Text));
+            // In the order the projects' first blocks start, then projects with a note and no time.
+            var order = summary.Time.Blocks.Select(b => b.ProjectId).Distinct().ToList();
+            var entries = summary.Notes
+                .OrderBy(n => order.IndexOf(n.ProjectId) is var i and >= 0 ? i : int.MaxValue)
+                .Select(n => new OverviewNoteEntry(data.Catalog.BrushOf(n.ProjectId), data.Catalog.NameOf(n.ProjectId), n.Text))
+                .ToList();
             var dayNote = data.DayNotes.GetValueOrDefault(day, "");
             if (dayNote.Length == 0 && entries.Count == 0)
                 continue;
