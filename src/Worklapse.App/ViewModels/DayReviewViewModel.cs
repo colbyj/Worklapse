@@ -311,7 +311,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     // --- productive or not --------------------------------------------------------------------
 
-    /// <summary>Apps and sites listed for a selection, longest first; the rest are on the Programs page.</summary>
+    /// <summary>Apps and sites listed for a selection, longest first; the rest are on the Applications page.</summary>
     public const int MaxClassificationChoices = 12;
 
     /// <summary>

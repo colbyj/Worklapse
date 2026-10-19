@@ -13,7 +13,7 @@ public enum RecorderState
     Idle,
     Locked,
 
-    /// <summary>An app or site excluded on the Programs page has the focus: nothing is recorded.</summary>
+    /// <summary>An app or site excluded on the Applications page has the focus: nothing is recorded.</summary>
     Excluded,
     Error,
 }

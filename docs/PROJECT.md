@@ -473,6 +473,15 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    ends up with no project (a range set to "no project", overriding links); there is no "back to links" command.
    Schema 9 is one-way: once a build with it has opened the real data folder, older builds can't.
 2. Settings tabs: Applications (Project column), Projects, Appearance; Defaults moved into its tabs.
+   **Built 2026-10-18, not yet reviewed or committed.** Tabs General / Applications / Projects / Appearance (dialog
+   760 px wide). Defaults stays at the left of the button bar but only shows on General and Appearance and resets
+   only that page (as KDE's System Settings does). Projects tab (`ProjectsViewModel`): categories with their projects,
+   then "No category"; New Project / New Category / Delete (asks first, `ConfirmWindow`, when it's in the history);
+   Show archived; editors for name, category, colour (the category's or its own, from a 12-colour palette), linked
+   apps and sites (read-only), Archived. Projects made in the dialog can be linked on the Applications tab before
+   Apply; Apply saves projects first, then links. Renamed items are re-sorted the next time the dialog opens (re-sorting
+   while typing would take the focus). Checked with headless screenshots (light and dark) and an Apply round trip on a
+   scratch data folder; 153 tests pass.
 3. Main window shell: rail, Day review moved in as a view, tool bar reordered, recording state everywhere,
    close-to-tray; the status window removed.
 4. Day review labelling: Projects lane, side panel tabs, selection panel and actions, menus.

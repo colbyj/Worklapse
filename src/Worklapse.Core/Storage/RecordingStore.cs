@@ -87,7 +87,7 @@ public sealed class RecordingStore(WorklapseDatabase db)
 
     /// <summary>
     /// Whether the app (any copy with that exe name) or the site is excluded from recording. Looked up every
-    /// tick, so a change on the Programs page applies from the next capture.
+    /// tick, so a change on the Applications page applies from the next capture.
     /// </summary>
     public bool IsExcluded(string exeName, string? domain)
     {

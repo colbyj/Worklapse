@@ -6,7 +6,7 @@
         x:DataType="vm:SettingsViewModel"
         Title="Settings — Worklapse"
         Icon="avares://Worklapse/Assets/worklapse.ico"
-        Width="680" Height="720" MinWidth="520" MinHeight="420"
+        Width="760" Height="720" MinWidth="600" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
   <Window.Styles>
@@ -15,8 +15,7 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Margin" Value="0,0,10,0" />
     </Style>
-    <!-- Column headers of the Programs list: flat, click to sort. -->
-    <!-- Column headers of the Programs list: flat with dividers between them, click to sort. -->
+    <!-- Column headers of the Applications list: flat with dividers between them, click to sort. -->
     <Style Selector="Button.columnHeader">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
@@ -44,21 +43,56 @@
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="MinWidth" Value="0" />
     </Style>
+    <Style Selector="ListBox.programs ComboBox">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="6,1" />
+    </Style>
+    <!-- Colour swatches to pick from: the selection shows as the item's highlight around the swatch. -->
+    <Style Selector="ListBox.palette">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.palette ListBoxItem">
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="Margin" Value="0,0,2,2" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="2" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <!-- The chosen colour gets a ring in the text colour, plainer than the list's selection fill. -->
+    <Style Selector="ListBox.palette ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource UiTextBrush}" />
+    </Style>
+    <Style Selector="ListBox.palette ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource UiSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="ListBox.palette ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource UiTextBrush}" />
+    </Style>
+    <Style Selector="ListBox.projects ListBoxItem">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="8,4" />
+    </Style>
   </Window.Styles>
 
   <DockPanel>
     <Border DockPanel.Dock="Bottom" Classes="buttonBar" BorderThickness="0" Padding="10,8,10,9">
       <DockPanel>
-        <Button DockPanel.Dock="Left" Content="Defaults" Click="OnDefaults" />
+        <Button DockPanel.Dock="Left" Content="Defaults" Click="OnDefaults" IsVisible="{Binding HasDefaults}"
+                ToolTip.Tip="Put this page's settings back to their defaults" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-          <Button Content="OK" Classes="accent" IsDefault="True" IsEnabled="{Binding HasDataFolder}" Click="OnOk" />
+          <Button Content="OK" Classes="accent" IsDefault="True" IsEnabled="{Binding CanConfirm}" Click="OnOk" />
           <Button Content="Cancel" IsCancel="True" Click="OnCancel" />
           <Button Content="Apply" IsEnabled="{Binding CanApply}" Click="OnApply" />
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <TabControl Margin="10,10,10,0">
+    <TabControl Margin="10,10,10,0" SelectedIndex="{Binding SelectedTab}">
       <TabItem Header="General">
     <ScrollViewer>
       <StackPanel Margin="10" Spacing="8">
@@ -213,36 +247,49 @@
     </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Programs">
+      <TabItem Header="Applications">
         <DockPanel Margin="10" DataContext="{Binding Programs}" x:DataType="vm:ProgramsViewModel">
           <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
             <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
           </DockPanel>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
-                     Text="A website decides for the pages recorded on it; a browser marked productive counts only for its pages without a known site (private windows, browser pages, captures from before sites were recorded). Productive applies to all history; Excluded stops recording while it has the focus." />
+                     Text="A website decides before its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus." />
           <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="110,100,*,90,100" Margin="0,0,14,0">
+                <Grid ColumnDefinitions="88,76,*,64,156,84" Margin="0,0,14,0">
                   <Button Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
                   <Button Grid.Column="1" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ExcludedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Excluded}" />
                   <Button Grid.Column="2" Classes="columnHeader" Content="{Binding NameHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Name}" />
                   <Button Grid.Column="3" Classes="columnHeader" Content="{Binding KindHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Kind}" />
-                  <Button Grid.Column="4" Classes="columnHeader" Content="{Binding RecordedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Recorded}" HorizontalContentAlignment="Right" />
+                  <Button Grid.Column="4" Classes="columnHeader" Content="{Binding ProjectHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Project}" />
+                  <Button Grid.Column="5" Classes="columnHeader" Content="{Binding RecordedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Recorded}" HorizontalContentAlignment="Right" />
                 </Grid>
               </Border>
               <ListBox Classes="programs" ItemsSource="{Binding Rows}" Background="Transparent" BorderThickness="0">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:ProgramRow">
-                    <Grid ColumnDefinitions="104,100,*,90,94">
+                    <Grid ColumnDefinitions="82,76,*,64,156,78">
                       <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}"
                                 HorizontalAlignment="Center" Margin="-6,-3,0,-3" Padding="0" />
                       <CheckBox Grid.Column="1" IsChecked="{Binding Excluded}" AutomationProperties.Name="{Binding Name, StringFormat='Excluded: {0}'}"
                                 HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />
                       <TextBlock Grid.Column="2" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                       <TextBlock Grid.Column="3" Text="{Binding KindText}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
-                      <TextBlock Grid.Column="4" Text="{Binding RecordedText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                      <ComboBox Grid.Column="4" HorizontalAlignment="Stretch" Margin="2,-3,8,-3"
+                                ItemsSource="{Binding $parent[ListBox].((vm:ProgramsViewModel)DataContext).ProjectChoices}"
+                                SelectedItem="{Binding Project}" AutomationProperties.Name="{Binding Name, StringFormat='Project: {0}'}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ProjectItem">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" IsVisible="{Binding !IsNone}" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding DisplayName}" Classes.secondary="{Binding IsNone}" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <TextBlock Grid.Column="5" Text="{Binding RecordedText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
                     </Grid>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -252,11 +299,132 @@
         </DockPanel>
       </TabItem>
 
-      <TabItem Header="Application">
+      <TabItem Header="Projects">
+        <DockPanel Margin="10" DataContext="{Binding Projects}" x:DataType="vm:ProjectsViewModel">
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Content="New Project" Command="{Binding NewProjectCommand}" />
+              <Button Content="New Category" Command="{Binding NewCategoryCommand}" />
+              <Button Content="Delete" Click="OnDeleteProject" IsEnabled="{Binding CanDeleteSelected}" />
+              <CheckBox Content="Show archived" IsChecked="{Binding ShowArchived}" Margin="10,0,0,0" />
+            </StackPanel>
+          </DockPanel>
+          <TextBlock DockPanel.Dock="Bottom" Classes="warning" Margin="0,8,0,0" IsVisible="{Binding !IsValid}"
+                     Text="Every project and category needs a name." />
+          <Grid ColumnDefinitions="230,*" ColumnSpacing="12">
+            <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
+              <ListBox Classes="projects" ItemsSource="{Binding Entries}" SelectedItem="{Binding Selected}" Background="Transparent" BorderThickness="0"
+                       AutomationProperties.Name="Categories and projects">
+                <ListBox.DataTemplates>
+                  <DataTemplate DataType="vm:CategoryItem">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DataTemplate>
+                  <DataTemplate DataType="vm:ProjectItem">
+                    <StackPanel Orientation="Horizontal" Spacing="7" Margin="17,0,0,0">
+                      <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" Classes.secondary="{Binding Archived}" />
+                    </StackPanel>
+                  </DataTemplate>
+                  <DataTemplate DataType="vm:NoCategoryHeading">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Classes="secondary" Margin="17,0,0,0" />
+                  </DataTemplate>
+                </ListBox.DataTemplates>
+              </ListBox>
+            </Border>
+
+            <ContentControl Grid.Column="1" Content="{Binding Selected}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:CategoryItem">
+                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                    <TextBlock Classes="label" Text="Name:" />
+                    <TextBox Grid.Column="1" Text="{Binding Name}" AutomationProperties.Name="Category name" />
+                    <TextBlock Grid.Row="1" Classes="label" Text="Colour:" VerticalAlignment="Top" Margin="0,4,10,0" />
+                    <ListBox Grid.Row="1" Grid.Column="1" Classes="palette" ItemsSource="{Binding Palette}" SelectedItem="{Binding SelectedPaletteColor}"
+                             AutomationProperties.Name="Category colour">
+                      <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                      </ListBox.ItemsPanel>
+                      <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PaletteColor">
+                          <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Brush}" />
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" Text="Its projects use this colour unless they have their own" />
+                  </Grid>
+                </DataTemplate>
+
+                <DataTemplate DataType="vm:ProjectItem">
+                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                    <TextBlock Classes="label" Text="Name:" />
+                    <TextBox Grid.Column="1" Text="{Binding Name}" AutomationProperties.Name="Project name" />
+
+                    <TextBlock Grid.Row="1" Classes="label" Text="Category:" />
+                    <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="200" ItemsSource="{Binding CategoryChoices}" SelectedItem="{Binding Category}"
+                              AutomationProperties.Name="Category">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CategoryItem">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" IsVisible="{Binding !IsNone}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" Classes.secondary="{Binding IsNone}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <TextBlock Grid.Row="2" Classes="label" Text="Colour:" VerticalAlignment="Top" Margin="0,4,10,0" />
+                    <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                      <RadioButton GroupName="projectColor" IsChecked="{Binding UsesCategoryColor}" AutomationProperties.Name="The category's colour">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="The category’s" />
+                          <Rectangle Width="12" Height="12" RadiusX="2" RadiusY="2" Fill="{Binding CategoryBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </RadioButton>
+                      <RadioButton GroupName="projectColor" Content="Its own" IsChecked="{Binding UsesOwnColor}" />
+                      <ListBox Classes="palette" Margin="22,0,0,0" ItemsSource="{Binding Palette}" SelectedItem="{Binding SelectedPaletteColor}"
+                               IsEnabled="{Binding UsesOwnColor}" AutomationProperties.Name="Project colour">
+                        <ListBox.ItemsPanel>
+                          <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PaletteColor">
+                            <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Brush}" />
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="3" Classes="label" Text="Linked:" VerticalAlignment="Top" />
+                    <StackPanel Grid.Row="3" Grid.Column="1" Spacing="2">
+                      <TextBlock Text="{Binding LinkedText}" TextWrapping="Wrap" />
+                      <TextBlock Classes="hint" Text="Link apps and sites on the Applications tab" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="4" Grid.Column="1" Spacing="2">
+                      <CheckBox Content="Archived" IsChecked="{Binding Archived}" />
+                      <TextBlock Classes="hint" Text="Hidden from lists, history kept" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+
+                <DataTemplate DataType="vm:NoCategoryHeading">
+                  <TextBlock Classes="hint" Text="Projects without a category. Pick one for a project to move it." TextWrapping="Wrap" />
+                </DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
+          </Grid>
+        </DockPanel>
+      </TabItem>
+
+      <TabItem Header="Appearance">
         <StackPanel Margin="10" Spacing="8">
           <Border Classes="group">
             <StackPanel>
-              <TextBlock Classes="groupHeader" Text="Appearance" />
+              <TextBlock Classes="groupHeader" Text="Theme" />
               <!-- In the order of ThemeStyle and ThemeMode. -->
               <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
                 <TextBlock Classes="label" Text="Style:" />

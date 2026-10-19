@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Worklapse.App.Views.ConfirmWindow"
+        Title="Worklapse"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="440" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button x:Name="ConfirmButton" Click="OnConfirm" />
+        <Button Content="Cancel" Classes="accent" IsDefault="True" IsCancel="True" Click="OnCancel" />
+      </StackPanel>
+    </Border>
+
+    <StackPanel Margin="16,14" Spacing="8">
+      <TextBlock x:Name="QuestionText" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock x:Name="DetailText" TextWrapping="Wrap" />
+    </StackPanel>
+  </DockPanel>
+</Window>

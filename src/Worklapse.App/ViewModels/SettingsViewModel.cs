@@ -44,18 +44,44 @@ public sealed partial class SettingsViewModel : ObservableObject
             Monitors.Add(option);
         }
 
+        Projects = new ProjectsViewModel();
+        Programs = new ProgramsViewModel(TimeSpan.FromSeconds(store.Current.IntervalSeconds)) { ProjectChoices = Projects.ProjectChoices };
+        Programs.Changed += () =>
+        {
+            MarkDirty();
+            Projects.RefreshLinked();
+        };
+        Projects.Changed += () =>
+        {
+            MarkDirty();
+            OnPropertyChanged(nameof(CanApply));
+            OnPropertyChanged(nameof(CanConfirm));
+        };
+        Projects.ProjectDeleted += Programs.Unlink;
+        Projects.LinkedNames = Programs.LinkedTo;
+
         Load(store.Current);
         PropertyChanged += OnAnyPropertyChanged;
-
-        Programs = new ProgramsViewModel(TimeSpan.FromSeconds(store.Current.IntervalSeconds));
-        Programs.Changed += MarkDirty;
-        _ = Programs.LoadAsync(store.Current.DataFolder);
+        _ = LoadHistoryAsync(store.Current.DataFolder);
     }
+
+    // Tabs, in order.
+    public const int GeneralTab = 0, ApplicationsTab = 1, ProjectsTab = 2, AppearanceTab = 3;
 
     public ObservableCollection<MonitorOption> Monitors { get; } = [];
 
-    /// <summary>The Programs page; its marks are kept in the history in the data folder.</summary>
+    /// <summary>The Applications page; its marks and links are kept in the history in the data folder.</summary>
     public ProgramsViewModel Programs { get; }
+
+    /// <summary>The Projects page; kept in the history in the data folder.</summary>
+    public ProjectsViewModel Projects { get; }
+
+    /// <summary>The tab shown; Defaults only applies to (and only shows on) General and Appearance.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDefaults))]
+    private int _selectedTab;
+
+    public bool HasDefaults => SelectedTab is GeneralTab or AppearanceTab;
 
     /// <summary>The chosen format and quality applied to the screen; null when the screen couldn't be captured.</summary>
     public RecordingPreviewViewModel? Preview { get; }
@@ -77,7 +103,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private decimal? _idleMinutes;
     [ObservableProperty] private bool _pauseWhenLocked;
 
-    // The Application page: indexes into its lists, in the order of ThemeStyle and ThemeMode.
+    // The Appearance page: indexes into its lists, in the order of ThemeStyle and ThemeMode.
     [ObservableProperty] private int _themeStyleIndex;
     [ObservableProperty] private int _themeModeIndex;
 
@@ -102,7 +128,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     // An empty folder used to mean the default one silently; now it has to be chosen (Browse or Default).
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasDataFolder), nameof(CanApply), nameof(DataFolderExists))]
+    [NotifyPropertyChangedFor(nameof(HasDataFolder), nameof(CanApply), nameof(CanConfirm), nameof(DataFolderExists))]
     private string _dataFolder = "";
 
     [ObservableProperty]
@@ -113,7 +139,10 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>The folder in the box can be opened (a new one is only made once recording starts there).</summary>
     public bool DataFolderExists => HasDataFolder && Directory.Exists(DataFolder.Trim());
-    public bool CanApply => IsDirty && HasDataFolder;
+    public bool CanApply => IsDirty && CanConfirm;
+
+    /// <summary>OK can be pressed: there's a history folder, and every project and category has a name.</summary>
+    public bool CanConfirm => HasDataFolder && Projects.IsValid;
 
     public void UseDefaultDataFolder() => DataFolder = WorklapseSettings.DefaultDataFolder;
 
@@ -122,18 +151,43 @@ public sealed partial class SettingsViewModel : ObservableObject
     public string JpegQualityText => ((int)JpegQuality).ToString();
     public string WebPQualityText => ((int)WebPQuality).ToString();
 
-    // Settings the dialog doesn't show (set in the settings file) are kept as they are.
-    public void RestoreDefaults() => Load(new WorklapseSettings { UseGpuRendering = _store.Current.UseGpuRendering });
+    /// <summary>
+    /// Puts the shown tab's settings back to their defaults: everything on General (the look kept), or the look on
+    /// Appearance. Settings the dialog doesn't show (set in the settings file) are kept as they are.
+    /// </summary>
+    public void RestoreDefaults()
+    {
+        var defaults = new WorklapseSettings { UseGpuRendering = _store.Current.UseGpuRendering };
+        if (SelectedTab == AppearanceTab)
+        {
+            ThemeStyleIndex = (int)defaults.ThemeStyle;
+            ThemeModeIndex = (int)defaults.ThemeMode;
+        }
+        else if (SelectedTab == GeneralTab)
+        {
+            Load(defaults with { ThemeStyle = (ThemeStyle)ThemeStyleIndex, ThemeMode = (ThemeMode)ThemeModeIndex });
+        }
+    }
 
     public void Apply()
     {
-        // The marks go to the history they were read from, before a change of folder takes effect.
+        // Projects and marks go to the history they were read from, before a change of folder takes effect. Projects
+        // first, so links to projects made in the dialog have ids to point at.
         var folder = _store.Current.DataFolder;
+        Projects.Apply(folder);
         Programs.Apply(folder);
         _store.Save(ToSettings());
         IsDirty = false;
         if (!string.Equals(_store.Current.DataFolder, folder, StringComparison.OrdinalIgnoreCase))
-            _ = Programs.LoadAsync(_store.Current.DataFolder);
+            _ = LoadHistoryAsync(_store.Current.DataFolder);
+    }
+
+    /// <summary>Reads the Projects page, then the Applications page (whose links point at its projects).</summary>
+    private async Task LoadHistoryAsync(string dataFolder)
+    {
+        await Projects.LoadAsync(dataFolder);
+        await Programs.LoadAsync(dataFolder, Projects.Resolve);
+        Projects.RefreshLinked();
     }
 
     private WorklapseSettings ToSettings() => _store.Current with
@@ -180,15 +234,15 @@ public sealed partial class SettingsViewModel : ObservableObject
         ThemeStyleIndex = (int)settings.ThemeStyle;
         ThemeModeIndex = (int)settings.ThemeMode;
         _loading = false;
-        // Defaults don't touch the Programs page (its marks are history, not settings); its changes still count.
+        // Defaults don't touch the Applications and Projects pages (they're history, not settings); their changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)
-            || Programs is { IsDirty: true };
+            || Programs is { IsDirty: true } || Projects is { IsDirty: true };
     }
 
     private void OnAnyPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         // CanApply follows IsDirty: counting it as a change kept the dialog dirty right after Apply.
-        if (e.PropertyName is not (nameof(IsDirty) or nameof(CanApply)))
+        if (e.PropertyName is not (nameof(IsDirty) or nameof(CanApply) or nameof(CanConfirm) or nameof(SelectedTab) or nameof(HasDefaults)))
             MarkDirty();
         if (e.PropertyName is nameof(IsVideo) or nameof(IsJpeg) or nameof(IsWebP) or nameof(Quality) or nameof(JpegQuality) or nameof(WebPQuality)
             or nameof(IntervalSeconds))

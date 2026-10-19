@@ -53,6 +53,23 @@ public partial class SettingsWindow : Window
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
 
+    /// <summary>Deletes the selected category or project, asking first when it's in the history already.</summary>
+    private async void OnDeleteProject(object? sender, RoutedEventArgs e)
+    {
+        var projects = ViewModel.Projects;
+        var (question, detail) = projects.Selected switch
+        {
+            CategoryItem c => ($"Delete the category “{c.Name}”?", "Its projects are kept, without a category."),
+            ProjectItem p => ($"Delete the project “{p.Name}”?", "Its time set by hand, notes and logged time go too; archiving keeps them."),
+            _ => (null, null),
+        };
+        if (question is null)
+            return;
+        if (projects.SelectedIsSaved && !await ConfirmWindow.Ask(this, question, detail!, "Delete"))
+            return;
+        projects.DeleteCommand.Execute(null);
+    }
+
     private async void OnBrowse(object? sender, RoutedEventArgs e)
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions

@@ -5,10 +5,10 @@ using Worklapse.Core.Storage;
 
 namespace Worklapse.App.ViewModels;
 
-/// <summary>An app or website on the Programs page.</summary>
+/// <summary>An app or website on the Applications page.</summary>
 public sealed partial class ProgramRow : ObservableObject
 {
-    public ProgramRow(ProgramUsage usage)
+    public ProgramRow(ProgramUsage usage, ProjectItem project)
     {
         Program = usage.Program;
         Recorded = usage.Recorded;
@@ -16,6 +16,8 @@ public sealed partial class ProgramRow : ObservableObject
         _productive = usage.Productive;
         SavedExcluded = usage.Excluded;
         _excluded = usage.Excluded;
+        SavedProject = project;
+        _project = project;
     }
 
     public ProgramKey Program { get; }
@@ -30,12 +32,27 @@ public sealed partial class ProgramRow : ObservableObject
     /// <summary>The exclusion in the database; <see cref="Excluded"/> is what the dialog shows.</summary>
     public bool SavedExcluded { get; set; }
 
-    public bool IsDirty => Productive != Saved || Excluded != SavedExcluded;
+    /// <summary>The project link in the database; <see cref="Project"/> is what the dialog shows.</summary>
+    public ProjectItem SavedProject { get; set; }
+
+    public bool IsDirty => Productive != Saved || Excluded != SavedExcluded || Project != SavedProject;
 
     [ObservableProperty] private bool _productive;
 
     /// <summary>Nothing is recorded while it has the focus.</summary>
     [ObservableProperty] private bool _excluded;
+
+    private ProjectItem _project;
+
+    /// <summary>
+    /// The project its active time is marked with (<see cref="ProjectItem.None"/> for none). A list that loses its
+    /// selection hands back null, which means none.
+    /// </summary>
+    public ProjectItem Project
+    {
+        get => _project;
+        set => SetProperty(ref _project, value ?? ProjectItem.None);
+    }
 }
 
 public enum ProgramSort
@@ -44,13 +61,14 @@ public enum ProgramSort
     Excluded,
     Name,
     Kind,
+    Project,
     Recorded,
 }
 
 /// <summary>
-/// The Programs page of the Settings dialog: every app and website recorded, to mark productive or exclude
-/// from recording. The marks live in the history database (they belong with the history), and like the other
-/// settings take effect on Apply or OK.
+/// The Applications page of the Settings dialog: every app and website recorded, to mark productive, exclude from
+/// recording, or link to a project. The marks live in the history database (they belong with the history), and like
+/// the other settings take effect on Apply or OK.
 /// </summary>
 public sealed partial class ProgramsViewModel : ObservableObject
 {
@@ -60,8 +78,11 @@ public sealed partial class ProgramsViewModel : ObservableObject
 
     public ProgramsViewModel(TimeSpan captureInterval) => _maxCaptureLength = captureInterval * 1.5;
 
-    /// <summary>Raised when a row's checkbox changes.</summary>
+    /// <summary>Raised when a row's checkbox or project changes.</summary>
     public event Action? Changed;
+
+    /// <summary>"None" and the projects, from the Projects page (projects made there can be picked before Apply).</summary>
+    public IReadOnlyList<ProjectItem> ProjectChoices { get; init; } = [ProjectItem.None];
 
     [ObservableProperty] private IReadOnlyList<ProgramRow> _rows = [];
     [ObservableProperty] private string _filter = "";
@@ -73,12 +94,16 @@ public sealed partial class ProgramsViewModel : ObservableObject
     public string ExcludedHeader => Header("Excluded", ProgramSort.Excluded);
     public string NameHeader => Header("Name", ProgramSort.Name);
     public string KindHeader => Header("Type", ProgramSort.Kind);
+    public string ProjectHeader => Header("Project", ProgramSort.Project);
     public string RecordedHeader => Header("Recorded", ProgramSort.Recorded);
 
     public bool IsDirty => _all.Any(r => r.IsDirty);
 
-    /// <summary>Reads the list from the history in <paramref name="dataFolder"/>, off the UI thread.</summary>
-    public async Task LoadAsync(string dataFolder)
+    /// <summary>
+    /// Reads the list from the history in <paramref name="dataFolder"/>, off the UI thread; <paramref name="resolve"/>
+    /// finds the Projects page's item for a project id.
+    /// </summary>
+    public async Task LoadAsync(string dataFolder, Func<long?, ProjectItem> resolve)
     {
         var load = ++_loads;
         Status = "Loading…";
@@ -100,13 +125,27 @@ public sealed partial class ProgramsViewModel : ObservableObject
         if (load != _loads)
             return; // a newer load (another folder) replaced this one
 
-        _all = programs.Select(p => new ProgramRow(p)).ToList();
+        _all = programs.Select(p => new ProgramRow(p, resolve(p.ProjectId))).ToList();
         foreach (var row in _all)
             row.PropertyChanged += (_, _) => Changed?.Invoke();
         Refresh();
     }
 
-    /// <summary>Writes the changed marks to the history in <paramref name="dataFolder"/>.</summary>
+    /// <summary>The names of the apps and sites linked to <paramref name="project"/> in the dialog.</summary>
+    public IEnumerable<string> LinkedTo(ProjectItem project) =>
+        _all.Where(r => r.Project == project).Select(r => r.Name).Order(StringComparer.CurrentCultureIgnoreCase);
+
+    /// <summary>A project deleted on the Projects page: whatever was linked to it no longer is.</summary>
+    public void Unlink(ProjectItem project)
+    {
+        foreach (var row in _all.Where(r => r.Project == project))
+            row.Project = ProjectItem.None;
+    }
+
+    /// <summary>
+    /// Writes the changed marks to the history in <paramref name="dataFolder"/>. The Projects page is applied first,
+    /// so projects made in the dialog have their ids.
+    /// </summary>
     public void Apply(string dataFolder)
     {
         var changed = _all.Where(r => r.IsDirty).ToList();
@@ -119,8 +158,11 @@ public sealed partial class ProgramsViewModel : ObservableObject
                 history.SetProductive(row.Program, row.Productive);
             if (row.Excluded != row.SavedExcluded)
                 history.SetExcluded(row.Program, row.Excluded);
+            if (row.Project != row.SavedProject)
+                history.SetProject(row.Program, row.Project.Id);
             row.Saved = row.Productive;
             row.SavedExcluded = row.Excluded;
+            row.SavedProject = row.Project;
         }
     }
 
@@ -146,6 +188,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
             ProgramSort.Excluded => r => r.Excluded,
             ProgramSort.Name => r => r.Name,
             ProgramSort.Kind => r => r.KindText,
+            ProgramSort.Project => r => r.Project.IsNone ? "" : r.Project.Name,
             _ => r => r.Recorded,
         };
         var ordered = Descending ? rows.OrderByDescending(key) : rows.OrderBy(key);
@@ -160,6 +203,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
         OnPropertyChanged(nameof(ExcludedHeader));
         OnPropertyChanged(nameof(NameHeader));
         OnPropertyChanged(nameof(KindHeader));
+        OnPropertyChanged(nameof(ProjectHeader));
         OnPropertyChanged(nameof(RecordedHeader));
     }
 

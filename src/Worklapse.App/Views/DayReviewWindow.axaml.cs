@@ -127,7 +127,7 @@ public partial class DayReviewWindow : Window
             if (more > 0)
             {
                 items.Add(new Separator());
-                items.Add(new MenuItem { Header = $"{more} more in Settings → Programs", IsEnabled = false });
+                items.Add(new MenuItem { Header = $"{more} more in Settings → Applications", IsEnabled = false });
             }
             menu.ItemsSource = items;
         };
