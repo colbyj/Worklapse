@@ -104,6 +104,11 @@ public sealed class SegmentRow(DateTimeOffset from, DateTimeOffset to, string ra
         set => SetProperty(ref _isPicked, value);
     }
 
+    /// <summary>Idle or not recorded time marked with a project (by hand): shown without a list to change it in.</summary>
+    public bool ShowsProjectName => !HasProgram && Project is not { IsNone: true };
+    public string ProjectName => Project?.Name ?? "Mixed";
+    public IBrush ProjectBrush => Project?.Brush ?? Brushes.Transparent;
+
     /// <summary>h:mm, as on the Projects tab; seconds for a segment under a minute.</summary>
     public string LengthText => to - from < TimeSpan.FromMinutes(1) ? DurationText.Of(to - from) : ProjectTimes.Hm(to - from);
     public FontStyle NameStyle => HasProgram ? FontStyle.Normal : FontStyle.Italic;
@@ -374,7 +379,6 @@ public sealed partial class DayReviewViewModel
 
         BuildAppRows(AppRows, dayStart, dayEnd);
         AppsTotalText = DurationText.Of(SpanSummary.For(Captures, dayStart, dayEnd, _maxCaptureLength).Active);
-        DaySpanText = Captures.Count > 0 ? RangeText(Captures[0].Time, Captures[^1].Time + CaptureLength(Captures.Count - 1)) : "";
         BuildDaySegments();
         BuildTimeLog();
         _loadingDayNote = true;
@@ -411,12 +415,28 @@ public sealed partial class DayReviewViewModel
         }
     }
 
-    /// <summary>The whole day's segments, from the first capture to the end of the last.</summary>
+    /// <summary>
+    /// The whole day's segments, from the first capture to the end of the last, or further for time set to a project
+    /// while nothing was recorded (an evening call); that's the span shown beside the Day button too.
+    /// </summary>
     private void BuildDaySegments()
     {
         DaySegments.Clear();
-        if (Captures.Count > 0)
-            BuildSegments((Captures[0].Time, Captures[^1].Time + CaptureLength(Captures.Count - 1)), DaySegments);
+        DateTimeOffset? start = Captures.Count > 0 ? Captures[0].Time : null;
+        DateTimeOffset? end = Captures.Count > 0 ? Captures[^1].Time + CaptureLength(Captures.Count - 1) : null;
+        var (dayStart, dayEnd) = HistoryStore.DayRange(Day.Day);
+        foreach (var span in _handSpans.Where(s => s.ProjectId is not null))
+        {
+            var (from, to) = (span.Start > dayStart ? span.Start : dayStart, span.End < dayEnd ? span.End : dayEnd);
+            if (start is null || from < start) start = from;
+            if (end is null || to > end) end = to;
+        }
+        DaySpanText = "";
+        if (start is { } s && end is { } e && e > s)
+        {
+            BuildSegments((s, e), DaySegments);
+            DaySpanText = RangeText(s, e);
+        }
     }
 
     /// <summary>The day's projects as the Timesheet lists them: by their first block, then those with only a note or logged time.</summary>
@@ -546,10 +566,20 @@ public sealed partial class DayReviewViewModel
         var cursor = range.Start;
         (DateTimeOffset From, DateTimeOffset To, CaptureRecord Capture)? run = null;
 
+        // Time not recorded: a row for each stretch of it set to a project (a call while away), and for what's between.
         void Gap(DateTimeOffset to)
         {
-            if (to - cursor >= TimeSpan.FromSeconds(1))
-                segments.Add(Segment(cursor, to, null));
+            var from = cursor;
+            foreach (var span in _handSpans.Where(s => s.ProjectId is not null && s.End > from && s.Start < to))
+            {
+                if (span.Start - from >= TimeSpan.FromSeconds(1))
+                    segments.Add(Segment(from, span.Start, null));
+                var (start, end) = (span.Start > from ? span.Start : from, span.End < to ? span.End : to);
+                segments.Add(Segment(start, end, null));
+                from = end;
+            }
+            if (to - from >= TimeSpan.FromSeconds(1))
+                segments.Add(Segment(from, to, null));
         }
 
         void Flush()
@@ -589,7 +619,7 @@ public sealed partial class DayReviewViewModel
     private SegmentRow Segment(DateTimeOffset from, DateTimeOffset to, CaptureRecord? capture)
     {
         if (capture is not { } c)
-            return new SegmentRow(from, to, RangeText(from, to), "Not recorded", null, false, OptionOf(null), SetProductiveSoon, (_, _) => { });
+            return new SegmentRow(from, to, RangeText(from, to), "Not recorded", null, false, ProjectOfSpan(from, to), SetProductiveSoon, (_, _) => { });
         ProgramKey? program = !c.IsActive || c.PendingDelete ? null
             : c.Site is { } site ? new ProgramKey(ProgramKind.Site, site)
             : c.AppName is { } app ? new ProgramKey(ProgramKind.App, app) : null;

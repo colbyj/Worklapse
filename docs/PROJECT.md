@@ -699,6 +699,15 @@ Choices made while building, to confirm:
 - The Project column in the Applications and segment lists grows with the panel (120 px at its narrowest).
 - With the status bar's frame line gone, the window title isn't shown anywhere.
 
+Changed after the developer used it (2026-10-19):
+- Shift or Ctrl+click on a picked row at either end of the selection lets it go (the last one clears it).
+- The Day / Selection pair is a tool bar across the panel (icon and text tool buttons); its right side shows the
+  day's span, or the selection's typeable ends, length and Clear (no longer a row of their own).
+- Time set to a project while nothing was recorded is a row of its own on Recorded Segments, with its project shown
+  (no list to change it in); the day's list, and its span, reach out to such time beyond the recording (an evening call).
+- Day review's last capture lasts the maximum, as in Core's totals and project blocks (it lasted one interval, so a
+  block ran 5 s past the end of the segments and the gap after it read "Mixed").
+
 ### 1. Make it usable day to day
 
 Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history); both are built (2026-10-17).

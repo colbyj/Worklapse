@@ -714,6 +714,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     /// <summary>Seconds after the day's local midnight.</summary>
     public double SecondsOf(DateTimeOffset time) => (time.ToLocalTime().DateTime - Day.Day.ToDateTime(TimeOnly.MinValue)).TotalSeconds;
 
+    /// <summary>
+    /// The time a capture stands for: until the next one, at most the maximum, which the last one lasts too. The same
+    /// rule as the totals (<see cref="SpanSummary"/>) and the projects (<see cref="ProjectTimeline"/>).
+    /// </summary>
     private TimeSpan CaptureLength(int index)
     {
         if (index + 1 < Captures.Count)
@@ -721,7 +725,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             var gap = Captures[index + 1].Time - Captures[index].Time;
             return gap < _maxCaptureLength ? gap : _maxCaptureLength;
         }
-        return _maxCaptureLength / 1.5;
+        return _maxCaptureLength;
     }
 
     /// <summary>The nearest capture at or past <paramref name="index"/> in a direction that isn't marked for deletion.</summary>
