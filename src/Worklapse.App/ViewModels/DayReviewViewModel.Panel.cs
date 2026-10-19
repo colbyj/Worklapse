@@ -197,17 +197,48 @@ public sealed partial class DayReviewViewModel
 
     /// <summary>
     /// A row clicked: selects its time; with Shift or Ctrl, from the row picked before to this one, and everything in
-    /// between. The panel stays on the day.
+    /// between; a picked row at either end of the selection is let go instead (so Shift held can take rows off again).
+    /// The panel stays on the day.
     /// </summary>
     public void Pick(DateTimeOffset from, DateTimeOffset to, bool extend)
     {
-        if (extend && _pickAnchor is { } anchor && HasSelection)
+        if (extend && _pickAnchor is { } picked && _range is { } range)
         {
+            var inside = from >= range.Start && to <= range.End;
+            // The selection moved on since that row was picked (its ends typed or dragged): its far end anchors instead.
+            (DateTimeOffset From, DateTimeOffset To) anchor = picked.From >= range.Start && picked.To <= range.End ? picked
+                : to > range.End ? (range.Start, range.Start) : (range.End, range.End);
+            if (inside && (from == range.Start || to == range.End))
+            {
+                if (from == range.Start && to == range.End)
+                {
+                    ClearSelection();
+                    return;
+                }
+                var (start, end) = from == range.Start ? (to, range.End) : (range.Start, from);
+                // Letting go of the row picked first: the row now at that end takes its place.
+                if (anchor == (from, to))
+                    _pickAnchor = PickedRowAt(from == range.Start ? start : end, atStart: from == range.Start);
+                SelectRange(start, end);
+                return;
+            }
             SelectRange(anchor.From < from ? anchor.From : from, anchor.To > to ? anchor.To : to);
             return;
         }
         _pickAnchor = (from, to);
         SelectRange(from, to);
+    }
+
+    /// <summary>The segment or marked range starting (or ending) at a moment, as picked rows are kept; null if none does.</summary>
+    private (DateTimeOffset From, DateTimeOffset To)? PickedRowAt(DateTimeOffset at, bool atStart)
+    {
+        foreach (var row in DaySegments)
+            if (atStart ? row.From == at : row.To == at)
+                return (row.From, row.To);
+        foreach (var marked in MarkedRanges)
+            if (atStart ? marked.Start == at : marked.End == at)
+                return (marked.Start, marked.End);
+        return null;
     }
 
     /// <summary>What a row's menu acts on: the selection, when the row is inside it; otherwise the row's own time.</summary>
