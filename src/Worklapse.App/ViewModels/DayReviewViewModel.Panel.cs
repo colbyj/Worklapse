@@ -48,6 +48,9 @@ public sealed partial class DayReviewViewModel
         }
     }
 
+    /// <summary>The day's first capture to the end of its last, beside the Day button.</summary>
+    [ObservableProperty] private string _daySpanText = "";
+
     /// <summary>The selection's tab: 0 Applications, 1 Recorded Segments, 2 Projects. The first two follow the day's.</summary>
     [ObservableProperty] private int _selectionTab;
 

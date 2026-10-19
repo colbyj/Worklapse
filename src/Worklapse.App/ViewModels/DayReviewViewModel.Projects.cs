@@ -374,6 +374,7 @@ public sealed partial class DayReviewViewModel
 
         BuildAppRows(AppRows, dayStart, dayEnd);
         AppsTotalText = DurationText.Of(SpanSummary.For(Captures, dayStart, dayEnd, _maxCaptureLength).Active);
+        DaySpanText = Captures.Count > 0 ? RangeText(Captures[0].Time, Captures[^1].Time + CaptureLength(Captures.Count - 1)) : "";
         BuildDaySegments();
         BuildTimeLog();
         _loadingDayNote = true;

@@ -677,7 +677,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
   - Shift+click moves the nearer edge.
   - A drag elsewhere starts a new selection; Esc clears.
   - Double-clicking a project block or an activity run selects it.
-- *Resizable panel.* Drag its left edge. The mockup allows 360–720 px; the width is to be remembered.
+- *Resizable panel.* Drag its left edge, 400–720 px (360 in the mockup left no room for names in segment rows); the width is remembered.
 
 **Built 2026-10-19** (commits after 3a41ae3).
 - *Notes:* `ProjectStore.GetNotes(from, to)` / `SetNote(day, project, text)` on `project_notes` (schema 10; the
@@ -696,7 +696,7 @@ Choices made while building, to confirm:
 - Highlights follow the pointer, Tab focus and an open row menu; not focus from a click (it would outstay the pointer).
 - Double-clicking where nothing was recorded selects that gap.
 - Idle and Not recorded frames show no marks in the slice, as their rows have none.
-- The Project column in the Applications and segment lists grows with the panel (136 px at its narrowest).
+- The Project column in the Applications and segment lists grows with the panel (120 px at its narrowest).
 - With the status bar's frame line gone, the window title isn't shown anywhere.
 
 ### 1. Make it usable day to day

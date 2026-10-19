@@ -89,7 +89,7 @@ public sealed record WorklapseSettings
     /// <summary>The width of Day review's side panel, as last dragged (device-independent pixels).</summary>
     public double ReviewPanelWidth { get; init; } = DefaultReviewPanelWidth;
 
-    public const double DefaultReviewPanelWidth = 440, MinReviewPanelWidth = 360, MaxReviewPanelWidth = 720;
+    public const double DefaultReviewPanelWidth = 440, MinReviewPanelWidth = 400, MaxReviewPanelWidth = 720;
 
     /// <summary>
     /// The look of the windows: the desktop's own by default, or another desktop's (which also lets each be tried on
