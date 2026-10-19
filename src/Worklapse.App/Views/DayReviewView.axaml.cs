@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -49,9 +50,8 @@ public partial class DayReviewView : UserControl
         Frames.ViewChanged += UpdateView;
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
-        MonitorMenu.Opening += (_, _) => FillMonitorMenu();
-        var setProject = (MenuFlyout)SetProjectButton.Flyout!;
-        setProject.Opening += (_, _) => setProject.ItemsSource = ProjectMenuItems();
+        FillWhenOpening((MenuFlyout)MonitorButton.Flyout!, MonitorMenuItems);
+        FillWhenOpening((MenuFlyout)SetProjectButton.Flyout!, ProjectMenuItems);
 
         // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, set the
         // selection's project or mark it for deletion, and mark what it contains (or the frame's, without one).
@@ -113,7 +113,22 @@ public partial class DayReviewView : UserControl
         }
     }
 
-    private MenuFlyout MonitorMenu => (MenuFlyout)MonitorButton.Flyout!;
+    /// <summary>
+    /// Fills a menu flyout from the state at the moment it opens. The flyout keeps one collection for good: its popup
+    /// takes the collection when it's made, before Opening is raised, so a collection handed over in Opening would
+    /// never show (Avalonia 12) — the menu came up empty.
+    /// </summary>
+    private static void FillWhenOpening(MenuFlyout flyout, Func<List<Control>> items)
+    {
+        var shown = new ObservableCollection<Control>();
+        flyout.ItemsSource = shown;
+        flyout.Opening += (_, _) =>
+        {
+            shown.Clear();
+            foreach (var item in items())
+                shown.Add(item);
+        };
+    }
 
     public void ZoomIn() => Frames.ZoomBy(1.5);
 
@@ -122,7 +137,7 @@ public partial class DayReviewView : UserControl
     public void Fit() => Frames.Fit();
 
     /// <summary>The monitors to choose between, then whether to show only the window that had the focus.</summary>
-    private void FillMonitorMenu()
+    private List<Control> MonitorMenuItems()
     {
         var items = new List<Control>();
         foreach (var choice in _viewModel.MonitorChoices)
@@ -147,7 +162,7 @@ public partial class DayReviewView : UserControl
         ToolTip.SetTip(focus, "Show only the window that had focus, centred, without the monitors around it");
         focus.Click += (_, _) => _viewModel.FocusOnApplication = !_viewModel.FocusOnApplication;
         items.Add(focus);
-        MonitorMenu.ItemsSource = items;
+        return items;
     }
 
     /// <summary>

@@ -19,17 +19,19 @@ public sealed record ProjectOption(long? Id, string Name, IBrush Brush, string C
 }
 
 /// <summary>
-/// An app or site with its two marks, Productive and Project. Both apply to all history; Day review saves them as
-/// soon as they change.
+/// An app or site with its two marks, Productive and Project, which Day review saves as soon as they change.
+/// Productive applies to the app or site on every day; what Project applies to is the row's (the app's link, or a
+/// stretch of time).
 /// </summary>
 public abstract partial class ProgramMarksRow : ObservableObject
 {
     private readonly Action<ProgramKey, bool>? _setProductive;
     private readonly Action<ProgramKey, ProjectOption>? _setProject;
     private bool _productive;
-    private ProjectOption _project;
+    private ProjectOption? _project;
 
-    protected ProgramMarksRow(ProgramKey? program, bool productive, ProjectOption project,
+    /// <param name="project">Null when it can't be one choice (a stretch of time partly under one project).</param>
+    protected ProgramMarksRow(ProgramKey? program, bool productive, ProjectOption? project,
         Action<ProgramKey, bool>? setProductive, Action<ProgramKey, ProjectOption>? setProject)
     {
         Program = program;
@@ -54,7 +56,7 @@ public abstract partial class ProgramMarksRow : ObservableObject
         }
     }
 
-    public ProjectOption Project
+    public ProjectOption? Project
     {
         get => _project;
         set
@@ -79,14 +81,19 @@ public sealed class DayAppRow(ProgramKey program, TimeSpan active, bool producti
     public string ActiveText => DurationText.Of(active);
 }
 
-/// <summary>A stretch of a selection: one app or site in a row, or idle, or not recorded.</summary>
-public sealed class SelectionRunRow(string range, string name, TimeSpan length, ProgramKey? program, bool productive, ProjectOption project,
+/// <summary>
+/// A recorded segment: one app or site in a row, or idle, or not recorded (in a selection, or on the Recorded Segments
+/// tab). Its Project is the project of that stretch of time only (set by hand); Productive is the app's or site's.
+/// </summary>
+public sealed class SegmentRow(string range, string name, TimeSpan length, ProgramKey? program, bool productive, ProjectOption? project,
     Action<ProgramKey, bool> setProductive, Action<ProgramKey, ProjectOption> setProject)
     : ProgramMarksRow(program, productive, project, setProductive, setProject)
 {
     public string RangeText => range;
     public string Name => name;
-    public string LengthText => DurationText.Of(length);
+
+    /// <summary>h:mm, as on the Projects tab; seconds for a segment under a minute.</summary>
+    public string LengthText => length < TimeSpan.FromMinutes(1) ? DurationText.Of(length) : ProjectTimes.Hm(length);
     public FontStyle NameStyle => HasProgram ? FontStyle.Normal : FontStyle.Italic;
 }
 
@@ -251,10 +258,13 @@ public sealed partial class DayReviewViewModel
 
     [ObservableProperty] private bool _isSidePanelOpen = true;
 
-    /// <summary>The side panel's tab with no selection: 0 Applications, 1 Projects, 2 Time Log.</summary>
+    /// <summary>The side panel's tab with no selection: 0 Applications, 1 Recorded Segments, 2 Projects, 3 Time Log.</summary>
     [ObservableProperty] private int _panelTab;
 
     public ObservableCollection<DayAppRow> AppRows { get; } = [];
+
+    /// <summary>The day's recorded segments, first capture to last, for the Recorded Segments tab.</summary>
+    public ObservableCollection<SegmentRow> DaySegments { get; } = [];
     public ObservableCollection<object> ProjectRows { get; } = [];
     public ObservableCollection<TimeLogRow> TimeLogRows { get; } = [];
     [ObservableProperty] private string _appsTotalText = "";
@@ -281,9 +291,9 @@ public sealed partial class DayReviewViewModel
     public double SelectionActiveWidth => SelectionShares.Active * SelectionBarWidth;
     public double SelectionIdleWidth => SelectionShares.Idle * SelectionBarWidth;
     public double SelectionNotRecordedWidth => SelectionShares.NotRecorded * SelectionBarWidth;
-    private const double SelectionBarWidth = 380;
+    private const double SelectionBarWidth = 420;
 
-    public ObservableCollection<SelectionRunRow> SelectionRuns { get; } = [];
+    public ObservableCollection<SegmentRow> SelectionRuns { get; } = [];
     public ObservableCollection<ProjectBlockRow> SelectionBlocks { get; } = [];
     [ObservableProperty] private string _selectionNoProjectText = "";
     [ObservableProperty] private bool _hasSelectionNoProject;
@@ -362,8 +372,9 @@ public sealed partial class DayReviewViewModel
         _projectTime = ProjectTimeline.Build(Captures, _handSpans, dayStart, dayEnd, _maxCaptureLength);
         _placedNotes = NotePlacement.Place(_notes, _projectTime.Blocks);
 
-        // Lists: every project not archived, and archived ones something on this day is linked to.
+        // Lists: every project not archived, and archived ones something on this day is linked to or marked with.
         var linked = Captures.SelectMany(c => new[] { c.AppProjectId, c.SiteProjectId }).Where(id => id is not null).Select(id => id!.Value).ToHashSet();
+        linked.UnionWith(_projectTime.Blocks.Select(b => b.ProjectId));
         var options = new List<ProjectOption> { new(null, "None", Avalonia.Media.Brushes.Transparent, "") };
         options.AddRange(_projectsById.Values
             .Where(p => !p.Archived || linked.Contains(p.Id))
@@ -380,6 +391,7 @@ public sealed partial class DayReviewViewModel
         WidenViewForHandSpans();
 
         BuildAppRows(dayStart, dayEnd);
+        BuildDaySegments();
         BuildProjectRows();
         BuildTimeLog();
         _loadingDayNote = true;
@@ -412,6 +424,14 @@ public sealed partial class DayReviewViewModel
             AppRows.Add(new DayAppRow(program, time, productive, OptionOf(projectId), SetProductiveSoon, SetProjectSoon));
         }
         AppsTotalText = DurationText.Of(SpanSummary.For(Captures, dayStart, dayEnd, _maxCaptureLength).Active);
+    }
+
+    /// <summary>The whole day's segments, from the first capture to the end of the last.</summary>
+    private void BuildDaySegments()
+    {
+        DaySegments.Clear();
+        if (Captures.Count > 0)
+            BuildSegments((Captures[0].Time, Captures[^1].Time + CaptureLength(Captures.Count - 1)), DaySegments);
     }
 
     private void BuildProjectRows()
@@ -493,7 +513,7 @@ public sealed partial class DayReviewViewModel
         SelectionShares = (summary.Active.TotalSeconds / total, summary.Idle.TotalSeconds / total,
             Math.Max(0, 1 - (summary.Active + summary.Idle).TotalSeconds / total));
 
-        BuildSelectionRuns(range);
+        BuildSegments(range, SelectionRuns);
 
         var assigned = TimeSpan.Zero;
         for (var i = 0; i < _projectTime.Blocks.Count; i++)
@@ -523,10 +543,10 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>
-    /// The selection as runs: each app or site in a row (repeated when switching back), idle stretches, and time
+    /// A range as segments: each app or site in a row (repeated when switching back), idle stretches, and time
     /// nothing was recorded.
     /// </summary>
-    private void BuildSelectionRuns((DateTimeOffset Start, DateTimeOffset End) range)
+    private void BuildSegments((DateTimeOffset Start, DateTimeOffset End) range, ICollection<SegmentRow> segments)
     {
         var cursor = range.Start;
         (DateTimeOffset From, DateTimeOffset To, CaptureRecord Capture)? run = null;
@@ -534,7 +554,7 @@ public sealed partial class DayReviewViewModel
         void Gap(DateTimeOffset to)
         {
             if (to - cursor >= TimeSpan.FromSeconds(1))
-                SelectionRuns.Add(new SelectionRunRow(RangeText(cursor, to), "Not recorded", to - cursor, null, false, OptionOf(null), SetProductiveSoon, SetProjectSoon));
+                segments.Add(new SegmentRow(RangeText(cursor, to), "Not recorded", to - cursor, null, false, OptionOf(null), SetProductiveSoon, (_, _) => { }));
         }
 
         void Flush()
@@ -546,9 +566,10 @@ public sealed partial class DayReviewViewModel
                 : c.Site is { } site ? new ProgramKey(ProgramKind.Site, site)
                 : c.AppName is { } app ? new ProgramKey(ProgramKind.App, app) : null;
             var name = c.PendingDelete ? "Marked for deletion" : !c.IsActive ? "Idle" : program?.Name ?? "Unknown";
-            var (productive, projectId) = program is { } p ? MarksOf(p) : (false, null);
-            SelectionRuns.Add(new SelectionRunRow(RangeText(r.From, r.To), name, r.To - r.From, program, productive, OptionOf(projectId),
-                SetProductiveSoon, SetProjectSoon));
+            var productive = program is { } p && MarksOf(p).Productive;
+            var (from, to) = (r.From, r.To);
+            segments.Add(new SegmentRow(RangeText(from, to), name, to - from, program, productive, ProjectOfSpan(from, to),
+                SetProductiveSoon, (_, project) => SetSpanProjectSoon(from, to, project)));
             cursor = r.To;
             run = null;
         }
@@ -632,6 +653,36 @@ public sealed partial class DayReviewViewModel
         }
         return (false, null);
     }
+
+    /// <summary>
+    /// The project from..to is marked with: the one project over all of it, None over none of it, null (mixed) when
+    /// it's partly one project and partly another or none.
+    /// </summary>
+    private ProjectOption? ProjectOfSpan(DateTimeOffset from, DateTimeOffset to)
+    {
+        var covered = TimeSpan.Zero;
+        long? project = null;
+        var several = false;
+        foreach (var block in _projectTime.Blocks)
+        {
+            var overlap = (block.End < to ? block.End : to) - (block.Start > from ? block.Start : from);
+            if (overlap <= TimeSpan.Zero)
+                continue;
+            covered += overlap;
+            several |= project is { } seen && seen != block.ProjectId;
+            project = block.ProjectId;
+        }
+        if (covered == TimeSpan.Zero)
+            return OptionOf(null);
+        return several || covered < to - from ? null : OptionOf(project);
+    }
+
+    /// <summary>Sets a stretch of time to a project by hand, or to no project; only that stretch, not the app's link.</summary>
+    private void SetSpanProjectSoon(DateTimeOffset from, DateTimeOffset to, ProjectOption project) => Dispatcher.UIThread.Post(() =>
+    {
+        Projects.SetSpan(from, to, project.Id);
+        RebuildProjects();
+    });
 
     private void SetProductiveSoon(ProgramKey program, bool productive) =>
         Dispatcher.UIThread.Post(() => SetProductive(program, productive));

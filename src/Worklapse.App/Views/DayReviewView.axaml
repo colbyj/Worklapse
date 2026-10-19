@@ -7,6 +7,34 @@
              xmlns:ic="using:FluentIcons.Avalonia"
              x:Class="Worklapse.App.Views.DayReviewView"
              x:DataType="vm:DayReviewViewModel">
+  <UserControl.Resources>
+    <!-- A recorded segment: in a selection, and on the Recorded Segments tab. -->
+    <DataTemplate x:Key="SegmentTemplate" x:DataType="vm:SegmentRow">
+      <Border Classes="row">
+        <Grid ColumnDefinitions="122,*,40,28,130">
+          <TextBlock Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
+          <TextBlock Grid.Column="1" Text="{Binding Name}" FontStyle="{Binding NameStyle}" Classes.secondary="{Binding !HasProgram}"
+                     TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+          <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
+          <CheckBox Grid.Column="3" Classes="cell" IsChecked="{Binding Productive}" IsVisible="{Binding HasProgram}"
+                    AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}" />
+          <ComboBox Grid.Column="4" Classes="cell" Margin="0,1,4,1" IsVisible="{Binding HasProgram}"
+                    ItemsSource="{Binding $parent[UserControl].((vm:DayReviewViewModel)DataContext).ProjectOptions}"
+                    SelectedItem="{Binding Project}" PlaceholderText="Mixed" AutomationProperties.Name="{Binding Name, StringFormat='Project: {0}'}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProjectOption">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" IsVisible="{Binding !IsNone}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Name}" Classes.secondary="{Binding IsNone}" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
   <UserControl.Styles>
     <Style Selector="ic|SymbolIcon">
       <Setter Property="FontSize" Value="16" />
@@ -198,7 +226,7 @@
     </Border>
 
     <!-- The side panel: the day's applications, projects and time log; or, with a selection, what's in it. -->
-    <Border DockPanel.Dock="Right" Width="400" IsVisible="{Binding IsSidePanelOpen}" Background="{DynamicResource UiViewBrush}"
+    <Border DockPanel.Dock="Right" Width="440" IsVisible="{Binding IsSidePanelOpen}" Background="{DynamicResource UiViewBrush}"
             BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="1,0,0,0">
       <Panel>
         <!-- No selection: three tabs, from what was recorded to what's billed. -->
@@ -254,6 +282,30 @@
                         </Border>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Recorded Segments">
+              <DockPanel>
+                <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="122,*,40,28,130">
+                  <TextBlock Text="Time" />
+                  <TextBlock Grid.Column="1" Text="Application or site" />
+                  <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+                  <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
+                  <TextBlock Grid.Column="4" Text="Project" />
+                </Grid>
+                <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
+                  <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
+                </Border>
+                <ScrollViewer>
+                  <ItemsControl ItemsSource="{Binding DaySegments}" ItemTemplate="{StaticResource SegmentTemplate}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
                   </ItemsControl>
                 </ScrollViewer>
               </DockPanel>
@@ -380,7 +432,7 @@
             <Border Classes="sectionHeader">
               <TextBlock Text="Recorded" />
             </Border>
-            <Grid Classes="gridHeader" ColumnDefinitions="98,*,40,28,118">
+            <Grid Classes="gridHeader" ColumnDefinitions="122,*,40,28,130">
               <TextBlock Text="Time" />
               <TextBlock Grid.Column="1" Text="Application or site" />
               <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
@@ -389,34 +441,7 @@
             </Grid>
           </StackPanel>
           <ScrollViewer Grid.Row="3">
-            <ItemsControl ItemsSource="{Binding SelectionRuns}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:SelectionRunRow">
-                  <Border Classes="row">
-                    <Grid ColumnDefinitions="98,*,40,28,118">
-                      <TextBlock Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
-                      <TextBlock Grid.Column="1" Text="{Binding Name}" FontStyle="{Binding NameStyle}" Classes.secondary="{Binding !HasProgram}"
-                                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
-                      <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
-                      <CheckBox Grid.Column="3" Classes="cell" IsChecked="{Binding Productive}" IsVisible="{Binding HasProgram}"
-                                AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}" />
-                      <ComboBox Grid.Column="4" Classes="cell" Margin="0,1,4,1" IsVisible="{Binding HasProgram}"
-                                ItemsSource="{Binding $parent[UserControl].((vm:DayReviewViewModel)DataContext).ProjectOptions}"
-                                SelectedItem="{Binding Project}" AutomationProperties.Name="{Binding Name, StringFormat='Project: {0}'}">
-                        <ComboBox.ItemTemplate>
-                          <DataTemplate x:DataType="vm:ProjectOption">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" IsVisible="{Binding !IsNone}" VerticalAlignment="Center" />
-                              <TextBlock Text="{Binding Name}" Classes.secondary="{Binding IsNone}" />
-                            </StackPanel>
-                          </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                      </ComboBox>
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <ItemsControl ItemsSource="{Binding SelectionRuns}" ItemTemplate="{StaticResource SegmentTemplate}" />
           </ScrollViewer>
 
           <Border Grid.Row="4" Classes="sectionHeader">

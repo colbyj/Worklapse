@@ -498,7 +498,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    is now a range of time, not whole captures: dragging snaps each end to the capture it falls in, or to the minute
    where nothing was recorded, and the selection panel's start and end can be typed — so time with no recording (a
    call while away, an evening call) can be selected and given a project; the timeline widens to show ranges set by
-   hand. Deleting still acts on the captures inside the range. Side panel (toolbar toggle, 400 px): with no selection,
+   hand. Deleting still acts on the captures inside the range. Side panel (toolbar toggle, 400 px, now 440): with no selection,
    tabs Applications (the day's apps and sites: active time, Productive, Project link — saved at once, all history),
    Projects (blocks with "via Code.exe" / "set by hand", a note box each, and a Join spot between blocks of the same
    project under 10 minutes apart) and Time Log (Assigned, Logged typed as 4:45 / 4.75 / 4h45 / 45m, saved to the
@@ -507,6 +507,15 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    and notes (one note box per block in the selection) and Set Project ▾ / Clear Project / Mark for Deletion. The same
    commands are on the Edit menu and the timeline's right-click menu. Code: `DayReviewViewModel.Projects.cs`,
    `DayReviewView.axaml`, `TimelineControl` (`ProjectLaneBlock`). Checked with a headless harness on a scratch day.
+   **Changed 2026-10-19 after the developer used it:** a recorded segment's Project (in a selection's Recorded list)
+   sets that stretch of time only, as a range set by hand ("None": no project there), not the app's link for all
+   history — linking stays on the Applications tab; the combo shows the stretch's project, or "Mixed" when it's partly
+   one project and partly another or none; Productive is still the app's. The same segments for the whole day (first
+   capture to last) are a new tab, **Recorded Segments**, after Applications. The side panel is 440 px (segment rows
+   didn't fit), lengths in segment rows are h:mm. Fixed: Set Project ▾ and the monitor menu came up empty — Avalonia
+   12's menu flyout takes its item collection when its popup is made, before Opening, so a collection handed over in
+   Opening never showed; each flyout now keeps one collection, refilled when it opens. The developer expects to
+   iterate on how the side panel assigns time to projects.
 5. Timesheet view. (Phases 5–6 are handed off in `docs/HANDOFF.md`, 2026-10-18.)
    **Built 2026-10-18, committed (b903c08) after the developer looked at it.** `TimesheetView` / `TimesheetViewModel`: tool bar ‹ range ›,
    This Week (This Month), Week / Month (a radio pair drawn as toggle tool buttons, so clicking the one that's on
