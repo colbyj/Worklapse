@@ -85,8 +85,8 @@ The panel is a toolbar toggle, 440 px wide, on the right of Day review.
 - Start and end boxes, the length, and a bar of active, idle and unrecorded time.
 - **Recorded:** the same segment rows, clipped to the selection.
 - **Projects and notes:** a note box per block in the selection, plus a "No project" line.
-- Action bar: **Set Project ▾**, **Clear Project**, **Mark for Deletion**. The same commands are on the Edit menu and
-  the timeline's right-click menu.
+- Action bar: **Set Project ▾**, **Clear Project**, **Mark for Deletion**. The same commands are on the timeline's
+  right-click menu.
 
 Code: `src/Worklapse.App/Views/DayReviewView.axaml` (+ `.axaml.cs`), `src/Worklapse.App/ViewModels/DayReviewViewModel.Projects.cs`
 (rows, building, saving), `src/Worklapse.App/Controls/TimelineControl.cs` (the projects lane). Data: `src/Worklapse.Core/Projects/`.

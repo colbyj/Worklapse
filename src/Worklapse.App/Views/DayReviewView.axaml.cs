@@ -93,9 +93,15 @@ public partial class DayReviewView : UserControl
         _bitmaps.Clear();
     }
 
-    /// <summary>Arrow keys step through frames wherever the focus is, except in text and open lists.</summary>
+    /// <summary>F5 refreshes; arrow keys step through frames wherever the focus is, except in text and open lists.</summary>
     public void HandleKey(KeyEventArgs e)
     {
+        if (e.Key == Key.F5)
+        {
+            _viewModel.RefreshCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
         if (e.Source is ComboBox { IsDropDownOpen: true } or ComboBoxItem or TextBox)
             return;
 
@@ -130,12 +136,6 @@ public partial class DayReviewView : UserControl
         };
     }
 
-    public void ZoomIn() => Frames.ZoomBy(1.5);
-
-    public void ZoomOut() => Frames.ZoomBy(1 / 1.5);
-
-    public void Fit() => Frames.Fit();
-
     /// <summary>The monitors to choose between, then whether to show only the window that had the focus.</summary>
     private List<Control> MonitorMenuItems()
     {
@@ -166,10 +166,10 @@ public partial class DayReviewView : UserControl
     }
 
     /// <summary>
-    /// The projects to set the selection to, each in its colour; for the Set Project button, the Edit menu and the
-    /// timeline's right-click menu.
+    /// The projects to set the selection to, each in its colour; for the Set Project button and the timeline's
+    /// right-click menu.
     /// </summary>
-    public List<Control> ProjectMenuItems()
+    private List<Control> ProjectMenuItems()
     {
         var items = new List<Control>();
         foreach (var project in _viewModel.AssignableProjects)
@@ -425,9 +425,9 @@ public partial class DayReviewView : UserControl
             Frames.ScrollTo(new Vector(HorizontalBar.Value, VerticalBar.Value));
     }
 
-    private void OnZoomIn(object? sender, RoutedEventArgs e) => ZoomIn();
+    private void OnZoomIn(object? sender, RoutedEventArgs e) => Frames.ZoomBy(1.5);
 
-    private void OnZoomOut(object? sender, RoutedEventArgs e) => ZoomOut();
+    private void OnZoomOut(object? sender, RoutedEventArgs e) => Frames.ZoomBy(1 / 1.5);
 
-    private void OnFit(object? sender, RoutedEventArgs e) => Fit();
+    private void OnFit(object? sender, RoutedEventArgs e) => Frames.Fit();
 }

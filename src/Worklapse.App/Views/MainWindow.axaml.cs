@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
 using Worklapse.App.ViewModels;
 using Worklapse.Core.Settings;
 
@@ -15,7 +16,6 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel = null!;
     private readonly SettingsStore _settings = null!;
-    private readonly Func<Task>? _quit;
     private readonly OverviewView _overview = null!;
     private readonly TimesheetView _timesheet = null!;
     private DayReviewView? _dayView;
@@ -24,12 +24,11 @@ public partial class MainWindow : Window
     // Needed by the XAML loader; the app always uses the other constructor.
     public MainWindow() => InitializeComponent();
 
-    /// <param name="quit">Quits Worklapse (File → Quit).</param>
+    /// <param name="quit">Quits Worklapse (Ctrl+Q).</param>
     public MainWindow(MainViewModel viewModel, SettingsStore settings, Func<Task> quit) : this()
     {
         _viewModel = viewModel;
         _settings = settings;
-        _quit = quit;
         DataContext = viewModel;
         _dataFolder = settings.Current.DataFolder;
 
@@ -37,8 +36,8 @@ public partial class MainWindow : Window
         _timesheet = new TimesheetView(viewModel.Timesheet, viewModel.Recording);
         Host.Children.Add(_overview);
         Host.Children.Add(_timesheet);
-        // Filled when it opens; one entry now so it shows as a submenu.
-        SetProjectMenu.ItemsSource = new[] { new MenuItem { Header = "…", IsEnabled = false } };
+        KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.W, KeyModifiers.Control), Command = new RelayCommand(Close) });
+        KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Q, KeyModifiers.Control), Command = new AsyncRelayCommand(quit) });
 
         viewModel.PropertyChanged += OnViewModelChanged;
         _settings.Changed += OnSettingsChanged;
@@ -122,26 +121,5 @@ public partial class MainWindow : Window
     {
         if (_viewModel.IsDayReview)
             _dayView?.HandleKey(e);
-    }
-
-    /// <summary>The projects, listed when the submenu opens (they can change in Settings meanwhile).</summary>
-    private void OnSetProjectMenuOpened(object? sender, RoutedEventArgs e)
-    {
-        if (_dayView is not null && ReferenceEquals(e.Source, SetProjectMenu))
-            SetProjectMenu.ItemsSource = _dayView.ProjectMenuItems();
-    }
-
-    private void OnZoomIn(object? sender, RoutedEventArgs e) => _dayView?.ZoomIn();
-
-    private void OnZoomOut(object? sender, RoutedEventArgs e) => _dayView?.ZoomOut();
-
-    private void OnFit(object? sender, RoutedEventArgs e) => _dayView?.Fit();
-
-    private void OnCloseWindow(object? sender, RoutedEventArgs e) => Close();
-
-    private async void OnQuit(object? sender, RoutedEventArgs e)
-    {
-        if (_quit is not null)
-            await _quit();
     }
 }

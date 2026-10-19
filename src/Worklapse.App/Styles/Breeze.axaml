@@ -49,11 +49,7 @@
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
 
-  <!-- Header areas (menu bar, tool bar), as in Plasma's "header" colour. -->
-  <Style Selector="Menu.header">
-    <Setter Property="Background" Value="{DynamicResource UiHeaderBrush}" />
-    <Setter Property="Padding" Value="2,0" />
-  </Style>
+  <!-- Header areas (tool bars), as in Plasma's "header" colour. -->
   <Style Selector="Border.toolBar">
     <Setter Property="Background" Value="{DynamicResource UiHeaderBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />

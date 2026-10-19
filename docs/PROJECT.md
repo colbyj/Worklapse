@@ -17,7 +17,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 |---|---|---|
 | Platforms | Windows first, then Kubuntu 26.04 (KDE Plasma, Wayland). GNOME, XFCE, Mint/X11 later. | The developer dual-boots; Linux is the long-term home. |
 | UI toolkit | .NET 10 + Avalonia 12 | Familiar stack, runs on both. |
-| Look | **KDE Breeze-style with a little Windows flavour**: Breeze control styling, system font (9 pt Segoe UI / 10 pt Noto Sans), 4 px corners, Fluent System Icons, desktop control sizes (Fluent compact density plus own templates for scroll bars, tabs, check boxes, spinners). Colours follow the OS, live: Windows 11 light/dark with the system accent; on KDE the active colour scheme from kdeglobals; on GNOME and the other GTK desktops (XFCE, Cinnamon, MATE, Budgie, …) Adwaita light/dark (colours only, untested); elsewhere Breeze light/dark with the portal accent. On Windows the menu bar, tool bar and timeline strip share the window colour, like Windows 11's own apps. Settings → Application can pick another desktop's look (Windows / KDE / GTK) and force light or dark; the desktop's accent is kept. Timeline meaning colours stay fixed (dark variants). A dense desktop-app layout (menu bar, tool bar, status bar), not a web-app look. | Asked for explicitly; an earlier pass with cards and big padding looked like a web app, and a later one still looked touch-sized (2026-10-18). |
+| Look | **KDE Breeze-style with a little Windows flavour**: Breeze control styling, system font (9 pt Segoe UI / 10 pt Noto Sans), 4 px corners, Fluent System Icons, desktop control sizes (Fluent compact density plus own templates for scroll bars, tabs, check boxes, spinners). Colours follow the OS, live: Windows 11 light/dark with the system accent; on KDE the active colour scheme from kdeglobals; on GNOME and the other GTK desktops (XFCE, Cinnamon, MATE, Budgie, …) Adwaita light/dark (colours only, untested); elsewhere Breeze light/dark with the portal accent. On Windows the tool bars and timeline strip share the window colour, like Windows 11's own apps. Settings → Application can pick another desktop's look (Windows / KDE / GTK) and force light or dark; the desktop's accent is kept. Timeline meaning colours stay fixed (dark variants). A dense desktop-app layout (tool bars, status bars; no menu bar since 2026-10-19: it repeated the rail and tool bars), not a web-app look. | Asked for explicitly; an earlier pass with cards and big padding looked like a web app, and a later one still looked touch-sized (2026-10-18). |
 | What to capture | Choice of active application, primary monitor, selected monitors, or all monitors. The developer uses all monitors. | Matches TimeSnapper's options; all monitors became practical once video compression was in. |
 | Idle | Stop capturing after N minutes without input (default 5) and while the screen is locked. When the limit is hit, the captures since the last input are re-marked as idle. | Idle time should be time without input, not time after the threshold. |
 | Video format | AV1 (libaom), one stream per monitor, 90-frame segments (15 min at 10 s), constant quantizer, default 40, adjustable 20–55 in Settings (warning from 48). | Measured: roughly 2.5× smaller than per-frame WebP or JPEG at the same readability. |
@@ -336,7 +336,7 @@ Working on Windows:
   list; picking a monitor across the replug).
 - Day review panning and Focus on App (2026-10-18, not yet reviewed by the developer): scroll bars while the
   picture is larger than the view, drag with the left or middle button; a zoom keeps its magnification as frames
-  change size (Fit stays fitted). Focus on App (tool bar, View menu; remembered as `ReviewFocusOnApplication` in
+  change size (Fit stays fitted). Focus on App (tool bar monitor menu; remembered as `ReviewFocusOnApplication` in
   `settings.json`) shows only the focused window's rectangle (`captures.window_*`) on the monitors recorded, centred:
   for active-application recordings that is just what was recorded; idle captures use the last active one's window;
   a capture without a window, or whose window misses every recorded monitor, shows all monitors. Checked off-screen
@@ -446,7 +446,7 @@ developer types (hh:mm) to bill, per project per day. Screens show h:mm; CSV exp
   single frame is just a short range): **Recorded** (app runs in order, repeated when switching back, idle and
   not-recorded rows; per-app Productive and Project), **Projects and notes** (each project block in the
   selection with its note box; "No project" time), and an action bar: **Set Project ▾**, **Clear Project**,
-  **Mark for Deletion**. The same commands on the Edit menu and the timeline's right-click menu.
+  **Mark for Deletion**. The same commands on the timeline's right-click menu.
 - *Timesheet*: one line per project per day — Project, Notes (block notes joined), Active, Productive,
   Assigned, Logged (editable cell). Week/month, totals by category, Export CSV.
 - *Settings* tabs: General, **Applications** (was Programs; adds a Project column), **Projects** (categories,
@@ -484,8 +484,9 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    scratch data folder; 153 tests pass.
 3. Main window shell: rail, Day review moved in as a view, tool bar reordered, recording state everywhere,
    close-to-tray; the status window removed.
-   **Built 2026-10-18.** `MainWindow` (menu bar across the top; rail with Overview / Day review / Timesheet, then
-   recording and Settings at the bottom; Ctrl+1/2/3), `MainViewModel`, `DayReviewView` (was `DayReviewWindow`; tool
+   **Built 2026-10-18.** `MainWindow` (rail with Overview / Day review / Timesheet, then
+   recording and Settings at the bottom; no menu bar since 2026-10-19, its shortcuts are window key bindings:
+   Ctrl+1/2/3, Ctrl+, Settings, Ctrl+W, Ctrl+Q, F5 in Day review), `MainViewModel`, `DayReviewView` (was `DayReviewWindow`; tool
    bar: day, frames, playback and deletion on the left, monitor menu with Focus on Active App and zoom on the right),
    `RecordingViewModel` (was `StatusViewModel`) shown by `RecordingIndicator` (start of each view's status bar) and
    `RecordingMessages` (bars under the tool bar: paused with Resume Recording, not recording, deleted content still on
@@ -505,7 +506,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    timesheet), plus the day note. With a selection: start/end boxes and length, active/idle/not-recorded bar, the
    Recorded runs (an app listed again each time you switch back; Productive and Project per app or site), Projects
    and notes (one note box per block in the selection) and Set Project ▾ / Clear Project / Mark for Deletion. The same
-   commands are on the Edit menu and the timeline's right-click menu. Code: `DayReviewViewModel.Projects.cs`,
+   commands are on the timeline's right-click menu. Code: `DayReviewViewModel.Projects.cs`,
    `DayReviewView.axaml`, `TimelineControl` (`ProjectLaneBlock`). Checked with a headless harness on a scratch day.
    **Changed 2026-10-19 after the developer used it:** a recorded segment's Project (in a selection's Recorded list)
    sets that stretch of time only, as a range set by hand ("None": no project there), not the app's link for all

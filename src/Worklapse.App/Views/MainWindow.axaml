@@ -55,68 +55,18 @@
     </Style>
   </Window.Styles>
 
-  <DockPanel>
-    <Menu DockPanel.Dock="Top" Classes="header">
-      <MenuItem Header="_File">
-        <MenuItem Header="_Settings…" Command="{Binding OpenSettingsCommand}" InputGesture="Ctrl+OemComma" HotKey="Ctrl+OemComma">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="Settings" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="{Binding Recording.PauseText}" Command="{Binding Recording.TogglePauseCommand}" />
-        <Separator />
-        <MenuItem Header="_Close Window" Click="OnCloseWindow" InputGesture="Ctrl+W" HotKey="Ctrl+W">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="Dismiss" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="_Quit Worklapse" Click="OnQuit" InputGesture="Ctrl+Q" HotKey="Ctrl+Q" />
-      </MenuItem>
-      <MenuItem Header="_Edit" IsVisible="{Binding IsDayReview}">
-        <MenuItem x:Name="SetProjectMenu" Header="Set _Project" SubmenuOpened="OnSetProjectMenuOpened">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="Tag" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="Clea_r Project" Command="{Binding DayReview.ClearSelectionProjectCommand}" />
-        <Separator />
-        <MenuItem Header="_Mark Selection for Deletion" Command="{Binding DayReview.MarkSelectionCommand}">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="Delete" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="_Clear Selection" Command="{Binding DayReview.ClearSelectionCommand}" InputGesture="Escape" />
-        <Separator />
-        <MenuItem Header="C_onfirm Deletions" Command="{Binding DayReview.ConfirmDeletesCommand}" IsEnabled="{Binding DayReview.HasMarked}" />
-      </MenuItem>
-      <MenuItem Header="_View">
-        <MenuItem Header="_Overview" Command="{Binding ShowOverviewCommand}" InputGesture="Ctrl+D1" HotKey="Ctrl+D1"
-                  ToggleType="Radio" GroupName="view" IsChecked="{Binding IsOverview, Mode=OneWay}" />
-        <MenuItem Header="_Day Review" Command="{Binding ShowDayReviewCommand}" InputGesture="Ctrl+D2" HotKey="Ctrl+D2"
-                  ToggleType="Radio" GroupName="view" IsChecked="{Binding IsDayReview, Mode=OneWay}" />
-        <MenuItem Header="_Timesheet" Command="{Binding ShowTimesheetCommand}" InputGesture="Ctrl+D3" HotKey="Ctrl+D3"
-                  ToggleType="Radio" GroupName="view" IsChecked="{Binding IsTimesheet, Mode=OneWay}" />
-        <Separator IsVisible="{Binding IsDayReview}" />
-        <MenuItem Header="Zoom _In" Click="OnZoomIn" IsVisible="{Binding IsDayReview}">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="ZoomIn" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="Zoom O_ut" Click="OnZoomOut" IsVisible="{Binding IsDayReview}">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="ZoomOut" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="_Fit to Window" Click="OnFit" IsVisible="{Binding IsDayReview}">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="ScaleFit" /></MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Header="Focus on _Active App" ToggleType="CheckBox" IsVisible="{Binding IsDayReview}"
-                  IsChecked="{Binding DayReview.FocusOnApplication, Mode=TwoWay, FallbackValue=False}" />
-      </MenuItem>
-      <MenuItem Header="_Go" IsVisible="{Binding IsDayReview}">
-        <MenuItem Header="_Previous Frame" Command="{Binding DayReview.PreviousFrameCommand}" InputGesture="Left" />
-        <MenuItem Header="_Next Frame" Command="{Binding DayReview.NextFrameCommand}" InputGesture="Right" />
-        <Separator />
-        <MenuItem Header="Previous _Day" Command="{Binding DayReview.PreviousDayCommand}" />
-        <MenuItem Header="Next D_ay" Command="{Binding DayReview.NextDayCommand}" />
-        <Separator />
-        <MenuItem Header="_Refresh" Command="{Binding DayReview.RefreshCommand}" InputGesture="F5" HotKey="F5">
-          <MenuItem.Icon><ic:SymbolIcon Symbol="ArrowClockwise" /></MenuItem.Icon>
-        </MenuItem>
-      </MenuItem>
-    </Menu>
+  <!-- Ctrl+W and Ctrl+Q are added in code (they act on the window, not the view model). -->
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+D1" Command="{Binding ShowOverviewCommand}" />
+    <KeyBinding Gesture="Ctrl+D2" Command="{Binding ShowDayReviewCommand}" />
+    <KeyBinding Gesture="Ctrl+D3" Command="{Binding ShowTimesheetCommand}" />
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenSettingsCommand}" />
+  </Window.KeyBindings>
 
+  <DockPanel>
     <!-- The rail. -->
     <Border DockPanel.Dock="Left" Width="48" Background="{DynamicResource UiWindowBrush}"
-            BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,1,0" Padding="0,6">
+            BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,1,0" Padding="0,6">
       <DockPanel>
         <StackPanel DockPanel.Dock="Bottom" Spacing="2">
           <Button Classes="rail" Command="{Binding Recording.TogglePauseCommand}" ToolTip.Tip="{Binding Recording.RailTip}"
