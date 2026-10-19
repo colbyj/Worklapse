@@ -31,7 +31,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
 | Excluded apps and sites | Marked on Settings → Programs (Excluded column, next to Productive). While an excluded app (by exe name) or site has the focus, **nothing is recorded** (no capture at all), so that time shows as *Not recorded*; once the idle limit passes it is recorded as idle as usual (an idle capture has no app or frames). Excluded if the app or the site is (a browser excluded covers all its pages). A browser tick whose site can't be read (private window, too slow) is recorded as the browser. Recorded history is left as it is. Kept in the database like the productive marks; an excluded app or site keeps its row when its captures are deleted. | Developer, 2026-10-18: nothing kept rather than time-and-name; the Programs list only (something must be recorded once before it can be excluded); no browser-specific handling for now. |
-| Projects and the main window | **Designed 2026-10-18, being built** (phases 1–4 done) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
+| Projects and the main window | **Designed 2026-10-18, being built** (phases 1–5 done) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
@@ -107,7 +107,7 @@ src/
   Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
                               frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
-  Worklapse.App/              Avalonia app: tray icon, main window (rail; Day review; Overview and Timesheet to come), settings dialog
+  Worklapse.App/              Avalonia app: tray icon, main window (rail; Day review, Timesheet; Overview to come), settings dialog
 tests/Worklapse.Tests/        xUnit v3 tests (storage, recorder, staging, AV1 round trip, playback frames, history, reclaiming space, sites, monitor layouts, images)
 docs/PROJECT.md               this file
 docs/HANDOFF.md               briefs for the next tasks, for a new session
@@ -507,12 +507,30 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    and notes (one note box per block in the selection) and Set Project ▾ / Clear Project / Mark for Deletion. The same
    commands are on the Edit menu and the timeline's right-click menu. Code: `DayReviewViewModel.Projects.cs`,
    `DayReviewView.axaml`, `TimelineControl` (`ProjectLaneBlock`). Checked with a headless harness on a scratch day.
-5. Timesheet view.
+5. Timesheet view. (Phases 5–6 are handed off in `docs/HANDOFF.md`, 2026-10-18.)
+   **Built 2026-10-18, not yet reviewed or committed.** `TimesheetView` / `TimesheetViewModel`: tool bar ‹ range ›,
+   This Week (This Month), Week / Month (a radio pair drawn as toggle tool buttons, so clicking the one that's on
+   leaves it on), Export CSV… (a save dialog; the range read again, written by `TimesheetCsv` as UTF-8 with a byte
+   order mark for spreadsheets; a failure, such as the file open in a spreadsheet, shows in a bar under the tool
+   bar). The grid: a heading row per day that has lines or a day note (the date is a link to Day review, as is
+   double-clicking the row; the day note; the day's totals), then a line per project (colour, name with
+   "(archived)", notes joined or *No notes*, Active, Productive, Assigned, Logged typed as on the Time Log and saved at
+   once, empty clears it); week or month totals at the bottom; beside it, Totals by category → project (Assigned,
+   Logged; projects without a category under "No category"). Loaded off the UI thread with a connection of its own
+   (`TimesheetData.Load`; a newer load wins, a load finishing after the window closed is dropped), when the view is
+   shown, when the window is activated (Day review and Settings share the database) and after a data folder change;
+   when the same lines come back (today growing while recording) the rows are updated in place so a cell being typed
+   in keeps its text. Logged time typed for a project deleted meanwhile isn't saved; the view reloads. Shared grid
+   styles (`Grid.gridHeader`, `Border.row`, `TextBox.cell`) and a `Button.link` style moved to `Styles/Breeze.axaml`.
+   Measured: a month (30 days × 8 h at 10 s, 86,400 captures) loads in 140–190 ms with ~50 MB of short-lived
+   allocations. Checked with a headless harness on a scratch October (screenshots light and dark, week, month, an
+   empty month; toggles clicked; typing, clearing and invalid logged time; a project deleted while open; export and
+   export to a locked file; opening a day). Not seen: the save dialog (headless can't show it).
 6. Overview (week, month; month totals need a lighter query than loading every capture).
 
 ### 1. Make it usable day to day
 
-Items 1 and 2 were handed off in `docs/HANDOFF.md` (2026-10-16); both are built (2026-10-17), awaiting review.
+Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history); both are built (2026-10-17).
 
 1. **Productive apps & sites — built 2026-10-17** (see Decisions, How sites are read). Checked end to end on a
    copy of real data plus a fresh recording with browsing: marking `google.ca` and `firefox.exe` on the Programs

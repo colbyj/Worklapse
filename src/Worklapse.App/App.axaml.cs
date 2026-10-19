@@ -169,7 +169,7 @@ public partial class App : Application
     {
         if (_mainWindow is null)
         {
-            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, view ?? MainView.DayReview);
+            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, _settings!, view ?? MainView.DayReview);
             _mainWindow = new MainWindow(viewModel, _settings!, QuitAsync);
             _mainWindow.Closed += (_, _) =>
             {

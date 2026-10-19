@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Worklapse.Core.Settings;
 
 namespace Worklapse.App.ViewModels;
 
@@ -19,17 +20,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly Func<DayReviewViewModel> _createDayReview;
     private readonly Func<Task> _openSettings;
 
-    public MainViewModel(RecordingViewModel recording, Func<DayReviewViewModel> createDayReview, Func<Task> openSettings, MainView first)
+    public MainViewModel(RecordingViewModel recording, Func<DayReviewViewModel> createDayReview, Func<Task> openSettings,
+        SettingsStore settings, MainView first)
     {
         Recording = recording;
         _createDayReview = createDayReview;
         _openSettings = openSettings;
+        Timesheet = new TimesheetViewModel(settings, OpenDay);
         View = first;
         if (first == MainView.DayReview)
             EnsureDayReview();
     }
 
     public RecordingViewModel Recording { get; }
+
+    /// <summary>Reads its data folder from the settings at each load, so it needs nothing after a folder change.</summary>
+    public TimesheetViewModel Timesheet { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOverview), nameof(IsDayReview), nameof(IsTimesheet), nameof(Title))]
@@ -62,6 +68,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private Task OpenSettings() => _openSettings();
 
+    /// <summary>Opens a day in Day review (from the Timesheet or the Overview).</summary>
+    public void OpenDay(DateOnly day)
+    {
+        EnsureDayReview();
+        DayReview!.GoToDay(day);
+        View = MainView.DayReview;
+    }
+
     /// <summary>Makes Day review again, reading the history from where the settings now say (after a folder change).</summary>
     public void ReopenDayReview()
     {
@@ -72,7 +86,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             EnsureDayReview();
     }
 
-    public void Dispose() => CloseDayReview();
+    public void Dispose()
+    {
+        CloseDayReview();
+        Timesheet.Dispose();
+    }
 
     private void EnsureDayReview()
     {

@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private readonly SettingsStore _settings = null!;
     private readonly Func<Task>? _quit;
     private readonly PlaceholderView _overview = new();
-    private readonly PlaceholderView _timesheet = new();
+    private TimesheetView? _timesheet;
     private DayReviewView? _dayView;
     private string _dataFolder = "";
 
@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         _dataFolder = settings.Current.DataFolder;
 
         _overview.Show("Overview", "The week and month overview comes in a later step.", viewModel.Recording);
-        _timesheet.Show("Timesheet", "The timesheet comes in a later step.", viewModel.Recording);
+        _timesheet = new TimesheetView(viewModel.Timesheet, viewModel.Recording);
         Host.Children.Add(_overview);
         Host.Children.Add(_timesheet);
         // Filled when it opens; one entry now so it shows as a submenu.
@@ -94,16 +94,21 @@ public partial class MainWindow : Window
     private void ShowCurrent()
     {
         _overview.IsVisible = _viewModel.IsOverview;
-        _timesheet.IsVisible = _viewModel.IsTimesheet;
+        _timesheet!.IsVisible = _viewModel.IsTimesheet;
         if (_dayView is not null)
             _dayView.IsVisible = _viewModel.IsDayReview;
     }
 
-    /// <summary>The day may have grown while the window was in the background.</summary>
+    /// <summary>
+    /// The day may have grown while the window was in the background, and the views share the history: Day review
+    /// changes the Timesheet's logged time and notes, Settings its projects.
+    /// </summary>
     private void RefreshCurrent()
     {
         if (_viewModel.IsDayReview)
             _viewModel.DayReview?.RefreshCommand.Execute(null);
+        else if (_viewModel.IsTimesheet)
+            _viewModel.Timesheet.Refresh();
     }
 
     private void OnSettingsChanged(object? sender, WorklapseSettings settings) => Dispatcher.UIThread.Post(() =>
@@ -113,6 +118,9 @@ public partial class MainWindow : Window
             return;
         _dataFolder = settings.DataFolder;
         _viewModel.ReopenDayReview();
+        // The Timesheet reads the folder the settings name at each load.
+        if (_viewModel.IsTimesheet)
+            _viewModel.Timesheet.Refresh();
     });
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
