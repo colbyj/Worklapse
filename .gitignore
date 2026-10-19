@@ -10,6 +10,9 @@ TestResults/
 native/vcpkg_installed/
 native/win-x64/
 native/src/build/
+native/linux-x64/
+native/vcpkg_installed-linux/
+native/src/build-linux/
 
 # Reference material that must not be committed
 *.FDB

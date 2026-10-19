@@ -1,33 +1,51 @@
 <Project>
   <!--
-    Builds native/win-x64/worklapse_native.dll (the C code in native/src, with libaom, libjpeg-turbo and
-    libwebp linked in statically) as part of building Worklapse.Video, whenever the DLL is missing or older
-    than its sources. Uses the vcpkg, CMake and Ninja that ship with Visual Studio (or its Build Tools) and
-    its C++ compiler. The first build takes about seven minutes while vcpkg builds the libraries; after
-    that, only a change under native/ rebuilds anything.
+    Builds the native library (the C code in native/src, with libaom, libjpeg-turbo and libwebp linked in
+    statically) as part of building Worklapse.Video, whenever it is missing or older than its sources:
+      Windows  native/win-x64/worklapse_native.dll, with the vcpkg, CMake and Ninja that ship with Visual Studio
+               (or its Build Tools) and its C++ compiler.
+      Linux    native/linux-x64/worklapse_native.so, with vcpkg ($VCPKG_ROOT or on the PATH), vcpkg's own CMake
+               and Ninja, and the system's gcc.
+    The first build takes several minutes while vcpkg builds the libraries; after that, only a change under
+    native/ rebuilds anything. See native/README.md for what each platform needs installed.
   -->
 
   <PropertyGroup>
     <WorklapseNativeDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</WorklapseNativeDir>
-    <WorklapseNativeTriplet>x64-windows-static-md</WorklapseNativeTriplet>
-    <WorklapseNativeDll>$(WorklapseNativeDir)win-x64\worklapse_native.dll</WorklapseNativeDll>
-    <WorklapseNativeBuildDir>$(WorklapseNativeDir)src\build</WorklapseNativeBuildDir>
   </PropertyGroup>
 
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <WorklapseNativeInput Include="$(WorklapseNativeDir)src\*.c;$(WorklapseNativeDir)src\*.h;$(WorklapseNativeDir)src\CMakeLists.txt" />
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <WorklapseNativeTriplet>x64-windows-static-md</WorklapseNativeTriplet>
+    <WorklapseNativeFileName>worklapse_native.dll</WorklapseNativeFileName>
+    <WorklapseNativeLibrary>$(WorklapseNativeDir)win-x64\worklapse_native.dll</WorklapseNativeLibrary>
+    <WorklapseNativeBuildDir>$(WorklapseNativeDir)src\build</WorklapseNativeBuildDir>
+    <WorklapseNativeInstallDir>$(WorklapseNativeDir)vcpkg_installed</WorklapseNativeInstallDir>
+  </PropertyGroup>
+
+  <!-- Separate build and install folders from Windows': vcpkg keeps one list of installed packages per install
+       folder and removes whatever the current build doesn't need, which would include the other OS's. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <WorklapseNativeTriplet>x64-linux</WorklapseNativeTriplet>
+    <WorklapseNativeFileName>worklapse_native.so</WorklapseNativeFileName>
+    <WorklapseNativeLibrary>$(WorklapseNativeDir)linux-x64/worklapse_native.so</WorklapseNativeLibrary>
+    <WorklapseNativeBuildDir>$(WorklapseNativeDir)src/build-linux</WorklapseNativeBuildDir>
+    <WorklapseNativeInstallDir>$(WorklapseNativeDir)vcpkg_installed-linux</WorklapseNativeInstallDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(WorklapseNativeLibrary)' != ''">
+    <WorklapseNativeInput Include="$(WorklapseNativeDir)src/*.c;$(WorklapseNativeDir)src/*.h;$(WorklapseNativeDir)src/CMakeLists.txt" />
     <WorklapseNativeInput Include="$(WorklapseNativeDir)vcpkg.json;$(WorklapseNativeDir)vcpkg-configuration.json;$(MSBuildThisFileFullPath)" />
 
     <!-- Copied next to every assembly that uses Worklapse.Video. Declared even before the first native build
          has produced it, so a fresh clone gets it copied in the same build. -->
-    <None Include="$(WorklapseNativeDll)" Link="worklapse_native.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(WorklapseNativeLibrary)" Link="$(WorklapseNativeFileName)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="BuildWorklapseNative"
           BeforeTargets="BeforeBuild"
           Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(DesignTimeBuild)' != 'true'"
           Inputs="@(WorklapseNativeInput)"
-          Outputs="$(WorklapseNativeDll)">
+          Outputs="$(WorklapseNativeLibrary)">
 
     <PropertyGroup>
       <_VsWhere>$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe</_VsWhere>
@@ -60,12 +78,49 @@
     <Exec WorkingDirectory="$(WorklapseNativeDir)" Command="
 call &quot;$(_VcVars)&quot; &gt;nul || exit /b 1
 set &quot;PATH=$(_CMakeBin);$(_NinjaDir);%25PATH%25&quot;
-cmake -S src -B &quot;$(WorklapseNativeBuildDir)&quot; -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=&quot;$(WorklapseNativeDir)vcpkg_installed\$(WorklapseNativeTriplet)&quot; || exit /b 1
+cmake -S src -B &quot;$(WorklapseNativeBuildDir)&quot; -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=&quot;$(WorklapseNativeInstallDir)\$(WorklapseNativeTriplet)&quot; || exit /b 1
 cmake --build &quot;$(WorklapseNativeBuildDir)&quot; || exit /b 1
 " />
 
     <Copy SourceFiles="$(WorklapseNativeBuildDir)\worklapse_native.dll" DestinationFolder="$(WorklapseNativeDir)win-x64" />
     <!-- Copy keeps the build's timestamp; mark the output as newer than every input. -->
-    <Touch Files="$(WorklapseNativeDll)" />
+    <Touch Files="$(WorklapseNativeLibrary)" />
+  </Target>
+
+  <Target Name="BuildWorklapseNativeLinux"
+          BeforeTargets="BeforeBuild"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(WorklapseNativeInput)"
+          Outputs="$(WorklapseNativeLibrary)">
+
+    <!-- vcpkg: $VCPKG_ROOT first, then the PATH. -->
+    <PropertyGroup>
+      <_Vcpkg Condition="'$(VCPKG_ROOT)' != '' and Exists('$(VCPKG_ROOT)/vcpkg')">$(VCPKG_ROOT)/vcpkg</_Vcpkg>
+    </PropertyGroup>
+    <Exec Condition="'$(_Vcpkg)' == ''" Command="command -v vcpkg || true" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_Vcpkg" />
+    </Exec>
+    <Error Condition="'$(_Vcpkg)' == ''"
+           Text="Building worklapse_native.so needs vcpkg (git clone https://github.com/microsoft/vcpkg ~/vcpkg, run ~/vcpkg/bootstrap-vcpkg.sh, then set VCPKG_ROOT=~/vcpkg); see native/README.md." />
+
+    <Message Importance="high" Text="Building worklapse_native.so (the first time, vcpkg builds libaom, libjpeg-turbo and libwebp: several minutes)" />
+
+    <!-- The libraries, versions pinned by vcpkg-configuration.json, into native/vcpkg_installed-linux. -->
+    <Exec Command="&quot;$(_Vcpkg)&quot; install --triplet $(WorklapseNativeTriplet) --x-install-root=&quot;$(WorklapseNativeInstallDir)&quot;"
+          WorkingDirectory="$(WorklapseNativeDir)" />
+
+    <!-- CMake and Ninja are vcpkg's own copies (`vcpkg fetch` prints the path last), so the build doesn't depend on
+         the distribution's versions. %24 is a literal $ in MSBuild. -->
+    <Exec WorkingDirectory="$(WorklapseNativeDir)" Command="
+set -e
+cmake=&quot;%24(&quot;$(_Vcpkg)&quot; fetch cmake | tail -n 1)&quot;
+ninja=&quot;%24(&quot;$(_Vcpkg)&quot; fetch ninja | tail -n 1)&quot;
+&quot;%24cmake&quot; -S src -B &quot;$(WorklapseNativeBuildDir)&quot; -G Ninja -DCMAKE_MAKE_PROGRAM=&quot;%24ninja&quot; -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=&quot;$(WorklapseNativeInstallDir)/$(WorklapseNativeTriplet)&quot;
+&quot;%24cmake&quot; --build &quot;$(WorklapseNativeBuildDir)&quot;
+" />
+
+    <Copy SourceFiles="$(WorklapseNativeBuildDir)/worklapse_native.so" DestinationFolder="$(WorklapseNativeDir)linux-x64" />
+    <!-- Copy keeps the build's timestamp; mark the output as newer than every input. -->
+    <Touch Files="$(WorklapseNativeLibrary)" />
   </Target>
 </Project>

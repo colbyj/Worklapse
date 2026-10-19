@@ -22,3 +22,21 @@ builds the wrapper with CMake and Ninja in `src/build/`, copies `worklapse_nativ
 from there next to every assembly that uses `Worklapse.Video`. The first build takes about seven minutes
 while vcpkg builds the libraries (much less if vcpkg's binary cache already has them); a change to the C code
 rebuilds in seconds. Visual Studio's design-time builds skip it.
+
+## Linux
+
+The same libraries at the same versions, linked in statically, into `native/linux-x64/worklapse_native.so`. It exports
+only the `wl_*` functions (the libraries' own symbols are hidden, so they can't clash with Skia's libjpeg and libwebp)
+and needs nothing beyond libc and libm. Install once (Kubuntu / Ubuntu):
+
+```sh
+sudo apt install build-essential git curl zip unzip tar pkg-config nasm
+git clone https://github.com/microsoft/vcpkg ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+echo 'export VCPKG_ROOT=~/vcpkg' >> ~/.bashrc   # then open a new terminal
+```
+
+Then `dotnet build` works as on Windows: `worklapse_native.targets` runs `vcpkg install --triplet x64-linux` into
+`vcpkg_installed-linux/` (its own folder: vcpkg removes whatever an install folder holds that the current build
+doesn't need, which would include the other OS's libraries), builds with vcpkg's own CMake and Ninja in
+`src/build-linux/`, and copies the library to `linux-x64/`. The first build takes several minutes.

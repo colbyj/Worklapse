@@ -22,3 +22,12 @@ if(MSVC)
 else()
     target_compile_options(worklapse_native PRIVATE -Wall -Wextra -O2)
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(worklapse_native PRIVATE
+        # Only the wl_* functions are exported, not libaom's, libjpeg's and libwebp's: other libraries in the process
+        # (Skia has its own libjpeg and libwebp) can't pick up these copies, nor these theirs.
+        "LINKER:--exclude-libs,ALL"
+        # A missing symbol fails the build here rather than when Worklapse loads the library.
+        "LINKER:--no-undefined")
+endif()
