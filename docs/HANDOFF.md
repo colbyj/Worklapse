@@ -1,133 +1,156 @@
-# Handoff: the Timesheet and the Overview
+# Handoff: designing how Day review assigns time to projects
 
-> **Done 2026-10-18:** phase 5 committed (b903c08), phase 6 built; see PROJECT.md *1a*. Kept for the record.
+Written 2026-10-19 for a new Claude session. The projects work (PROJECT.md *Next steps → 1a*, phases 1–6) is built
+and committed. Using it, the developer found that Day review's **side panel** doesn't yet feel right for the job it
+exists for: saying which project each stretch of the day belongs to. In their words: *"I suspect we're going to have to
+iterate on the sidebar and come up with a way to assign things to projects that feels right. I should have iterated on
+this a bit more before moving forward with implementation."*
 
-Written 2026-10-18 for a new Claude session. Phases 1–4 of the projects work are built, committed and walked
-through by the developer; what's left is **phase 5 (Timesheet view)** and **phase 6 (Overview)**. Do them in that
-order; finish, verify and report each one before starting the next, and commit each when the developer asks (they
-asked for a commit per phase last time).
+So this task is **design first**. Mock the options up, talk them through with the developer, and get one approved
+before changing any code. (The previous handoff, for the Timesheet and Overview, is in git history.)
 
 ## Before you start
 
-1. Read `docs/PROJECT.md` in full, especially **Next steps → 1a** (the agreed design, every decision with its
-   reason, and the build log of phases 1–4). Don't re-open settled decisions without new data.
-2. Look at the approved mockups: https://claude.ai/artifact/2HyWXXPGWRR6bJR232Nomx, page **Round 4** (the developer's
-   own link; read it with the Artifact tool, not a web fetch). Boards that matter now: *Timesheet*, *Overview · week*,
-   *Overview · month*, *Overview · recording paused*. Later feedback overrides the boards where they differ (listed
-   under "What the boards don't show" below).
-3. Working rules from the developer:
-   - Ask before adding anything not described here or in PROJECT.md 1a. When a choice changes what the developer
-     sees or keeps, ask; for internal design choices, pick the sensible option and say so in the report.
-   - Push back if something here looks wrong once you're in the code.
-   - Commit only when asked. From bash: `git commit -F - <<'EOF' … EOF` (never a PowerShell here-string).
-   - Fix bugs in your path properly (root cause), and think through edge cases yourself: first run, an empty
-     day or week, deleted data, async work finishing after the window closed, a change of data folder.
-   - **Desktop idiom** (the developer checks this): no segmented "pill" controls (use toggle tool buttons or combo
-     boxes), real framed tabs, grids with column headers and cells that turn into a text box only while edited, no
-     accent buttons in tool bars, no cards, badges or hover-only controls. UI text terse: one short line, no figures.
-   - Keep `docs/PROJECT.md` current as part of each phase.
-4. Build and test: `dotnet build`; then run the tests with
-   `tests/Worklapse.Tests/bin/Debug/net10.0/Worklapse.Tests.exe` (`dotnet test` reports "Zero tests ran" on this
-   machine). 153 tests pass at `351660f`. The developer's own Worklapse may be running and locks
-   `src/Worklapse.App/bin`; build the app with `-o <scratch folder>` then.
-5. Never touch the real data (`%LOCALAPPDATA%\Worklapse`, settings in `%APPDATA%\Worklapse`). Never bring
-   windows to the front or send keys: the developer may be using the machine.
+1. Read `docs/PROJECT.md` in full. The sections that matter most:
+   - *Next steps → 1a*: the agreed design, the times (Active, Productive, Assigned, Logged), and the build log.
+   - Phase 4's entry: what the side panel is today, and the 2026-10-19 changes.
+   - Phase 1's entry: the data rules.
+2. Look at the approved mockups: https://claude.ai/artifact/2HyWXXPGWRR6bJR232Nomx. It's the developer's design canvas; read
+   it with the Artifact tool, not a web fetch. Page **Round 4**, boards *Day review · Applications tab*, *· Projects
+   tab*, *· Time Log tab* and *· selection across two projects*. Add the new work there as a **Round 5** page and keep the
+   earlier rounds as they are.
+3. Look at what's actually built. Screenshots of the current panel, headless, on a scratch day, light theme, 1440×900:
+   `C:\Users\colby\AppData\Local\Temp\claude\C--Users-colby-Desktop-TimeSnapperClone\868eee90-d3e5-4a9b-8c31-ed087dc64752\scratchpad\sidebar-shots\`
+   - `day-applications-tab.png`, `day-segments-tab.png`, `day-projects-tab.png` and `day-timelog-tab.png`: the four tabs
+     shown with no selection.
+   - `day-selection.png`: a selection that spans two projects.
+   If those are gone, see *Seeing the current UI* below.
+4. Working rules from the developer:
+   - Ask before adding anything they haven't asked for.
+   - When a choice changes what they see or keep, ask; for internal choices, pick the sensible option and say so.
+   - Push back if something looks wrong. Never tell them they're "absolutely right"; keep a neutral, professional tone.
+   - Commit only when asked. From bash: `git commit -F - <<'EOF' … EOF`, never a PowerShell here-string.
+   - **Desktop idiom** (they check it):
+     - no segmented "pill" controls; use toggle tool buttons, radio tool buttons or combo boxes;
+     - real framed tabs;
+     - grids with column headers, and cells that turn into a text box only while edited;
+     - no accent buttons in tool bars;
+     - no cards, badges or hover-only controls;
+     - the app's look is KDE Breeze with a little Windows flavour, at desktop density.
+   - **UI text is terse:** one short line, no figures, no sentences of explanation.
+   - **No suggestions anywhere** (nothing guessed or proposed by the app), and **nothing joined automatically**.
+5. Never touch the real data (`%LOCALAPPDATA%\Worklapse`, settings in `%APPDATA%\Worklapse`). Never bring windows to the
+   front or send keys; the developer may be using the machine.
 
-## How to check UI work (what worked in the last session)
+## How assigning works today (the model the design has to sit on, or change on purpose)
 
-Headless screenshots, no window on the developer's screen and no real data:
+- **Links:** an app (by exe name) or a site (by host name) can be linked to a project. A link marks that app's or
+  site's **active** time with the project, on every day: links are looked up when a day is read.
+  - A site's link beats its browser's; a site without a link leaves it to the browser's.
+  - Idle and unrecorded time never come from links.
+  - Links are set on Settings → Applications, or on Day review's Applications tab.
+- **Ranges set by hand:** a stretch of time set to a project, or to "no project". They override links and can cover
+  idle or unrecorded time (a call while away).
+  - They never overlap. Setting one replaces whatever was set there before (`ProjectStore.SetSpan`), and neighbours
+    with the same project merge.
+  - There is no "back to links" command: once a stretch is set by hand, it stays set.
+- **Project blocks** are computed from links and ranges (`ProjectTimeline.Build`): projects never overlap, and nothing is
+  joined on its own. The Projects tab offers to **join** a gap under 10 minutes between two blocks of the same
+  project, which sets the gap by hand.
+- **Productive** is a flag per app or site: the site decides when there is one. It applies to all history and lives in
+  the database.
+- **Notes** belong to a project block. Each is stored with its project and a moment, and shown on the block that
+  contains that moment (`NotePlacement`). There is also one **day note** per day.
+- **Logged time** is typed per project per day, on the Time Log tab or in the Timesheet.
+- **A selection** is a range of time with typeable ends, so unrecorded time can be selected. Deleting acts on the
+  captures inside it.
 
-- A scratch console project (outside the repo, `net10.0`, with empty `Directory.Build.props` and
-  `Directory.Packages.props` beside it and `ManagePackageVersionsCentrally=false`) referencing
-  `src/Worklapse.App/Worklapse.App.csproj` plus `Avalonia.Headless`, `Avalonia.Skia` and `Avalonia.Desktop`
-  **12.1.4**. Build it with `-o bin` into its own folder.
-- Set `WORKLAPSE_CONFIG_DIR` to a scratch config folder first; save a `WorklapseSettings` whose `DataFolder` is a
-  scratch folder (assert it is before going on); build test data with `RecordingStore` / `HistoryStore` /
-  `ProjectStore` (captures every 10 s, links with `HistoryStore.SetProject`, ranges with `ProjectStore.SetSpan`).
-- `AppBuilder.Configure<Worklapse.App.App>().UseSkia().UseHeadless(new() { UseHeadlessDrawing = false })
-  .LogToTrace(LogEventLevel.Warning, LogArea.Binding, …).SetupWithoutStarting();` then
-  `ThemeManager.Use(settings)` (pass `ThemeMode.Dark` for dark shots).
-- A `Recorder` built with `WindowsPlatform.Create()` and a sink factory that throws (it's never started) gives a
-  `RecordingViewModel`; feed it states with `Update(new RecorderStatus(...))`. Then
-  `new MainWindow(new MainViewModel(recording, createDayReview, () => Task.CompletedTask, MainView.X), store, () => Task.CompletedTask)`,
-  `Show()`, pump `Dispatcher.UIThread.RunJobs()` a few times, `window.CaptureRenderedFrame()?.Save(png)`, and look
-  at the PNGs. Print view-model state to the console to check behaviour as well as looks.
-- Binding warnings in the trace are the thing to watch; "DayReview.… Value is null" while the window closes is
-  expected. Popups (dropdowns, menus, flyouts) don't render in these shots: say so in the report.
-- Shell gotchas: inline Python in a bash heredoc sometimes breaks on quotes — write scripts to a file and run
-  that. Never run `python` (only `python3`) in Git Bash. Git's "LF will be replaced by CRLF" warnings are harmless.
+## What the side panel is today (as of commit 42ac57f)
 
-## What exists to build on
+The panel is a toolbar toggle, 440 px wide, on the right of Day review.
 
-- **Core** (`Worklapse.Core/Projects/`): `Timesheet.Build(history, projects, from, to, maxCaptureLength)` gives a
-  line per project per day (notes joined, Active, Productive, Assigned, Logged); `TimesheetCsv.Write` writes it
-  with decimal hours (two places), `Hours()` formats one value; `ProjectTimeline.Build` works out a day's blocks and
-  totals (`Unassigned` holds productive/other/idle time with no project); `NotePlacement.Place` puts notes on
-  blocks; `ProjectStore` has categories, projects (`ColorOf`), ranges, notes, day notes (`GetDayNotes(from, to)`)
-  and logged time (`GetLogged(from, to)`, `SetLogged`). `HistoryStore.LoadActivity(day)` loads a day's captures
-  without frames (fast enough per day; see the month note below); `HistoryStore.DayRange(day)` gives its bounds.
-  A capture lasts until the next one, at most `interval × 1.5` (`maxCaptureLength`).
-- **App**: `MainWindow` hosts the views; Overview and Timesheet are `PlaceholderView`s to replace
-  (`MainWindow.axaml.cs`, fields `_overview` and `_timesheet`). `MainViewModel.View` switches views;
-  `App.Start` opens on `MainView.DayReview` for now — **switch it to Overview in phase 6** (the agreed start view).
-  Each view has the same frame: tool bar, `RecordingMessages` under it, status bar starting with
-  `RecordingIndicator` (both get the `RecordingViewModel` as their DataContext in code; give them
-  `DataContext="{x:Null}"` in XAML so they don't bind to the view's model first). Day review's side panel
-  (`DayReviewViewModel.Projects.cs`) already has the pieces to copy: `ProjectTimes.Hm` (h:mm) and
-  `ProjectTimes.ParseDuration` (4:45, 4.75, 4h45, 45m), `TimeLogRow` (an editable logged cell), project colours via
-  `ProjectColors.Brush(ProjectStore.ColorOf(project, categories))`, cell styles (`TextBox.cell`, `Grid.gridHeader`,
-  `Border.row`) in `DayReviewView.axaml` (move shared ones to `Styles/Breeze.axaml` if both views need them).
-  `DayReviewViewModel.GoToDay(day)` opens a day.
+**No selection: four tabs, with the day note under them.**
+1. **Applications:** the day's apps and sites, with Active time, a Productive checkbox and a Project link combo. Both
+   controls apply to all history. Hint: "Changes apply to the app on every day".
+2. **Recorded Segments** (added 2026-10-19 at the developer's request): the day from first capture to last, as runs.
+   - Each app or site in a row, listed again each time you switch back, plus Idle and Not recorded rows.
+   - Columns: time, app or site, length, Pr. (Productive), Project.
+   - Project here sets **that stretch only**, as a range set by hand. The combo shows "Mixed" when the stretch is split.
+   - Idle and Not recorded rows have no controls.
+3. **Projects:** the project blocks, each with "via Code.exe" or "set by hand", a note box, and a Join spot between
+   close blocks of the same project.
+4. **Time Log:** project, Assigned, and Logged (an editable cell).
 
-## Phase 5 — Timesheet view
+**With a selection:**
+- Start and end boxes, the length, and a bar of active, idle and unrecorded time.
+- **Recorded:** the same segment rows, clipped to the selection.
+- **Projects and notes:** a note box per block in the selection, plus a "No project" line.
+- Action bar: **Set Project ▾**, **Clear Project**, **Mark for Deletion**. The same commands are on the Edit menu and
+  the timeline's right-click menu.
 
-Replace the Timesheet placeholder (mockup board *Timesheet*, round 4):
+Code: `src/Worklapse.App/Views/DayReviewView.axaml` (+ `.axaml.cs`), `src/Worklapse.App/ViewModels/DayReviewViewModel.Projects.cs`
+(rows, building, saving), `src/Worklapse.App/Controls/TimelineControl.cs` (the projects lane). Data: `src/Worklapse.Core/Projects/`.
 
-- One line per project per day: **Project** (colour, name), **Notes** (block notes joined), **Active**,
-  **Productive**, **Assigned**, **Logged** (editable cell; typed like Day review's Time Log; saved at once with
-  `SetLogged`, empty clears it). The column names and their meaning are agreed (PROJECT.md 1a, *Times*); the status
-  bar spells them out in one line.
-- A heading row per day: the date (double-click or a link opens it in Day review), its day note, the day's totals.
-- Tool bar: ‹ week › and This Week, toggle tool buttons **Week** / **Month**, and **Export CSV…** as a plain tool
-  button (a save dialog; `TimesheetCsv`, decimal hours). Right of the grid, a group box with totals by category →
-  project (Assigned, Logged) for the range.
-- Load off the UI thread with its own database connection (connections are single-thread); a month is ~31
-  `LoadActivity` calls — measure it. Refresh when the view is shown again and when Day review changes logged time
-  or notes (they share the database; reloading on show is enough).
-- Edge cases: days with nothing recorded but logged time or a hand-set range (they still get lines); archived
-  projects (still listed with "(archived)"); a project deleted in Settings while the view is open.
+## What the developer has said, and the loose ends
 
-## Phase 6 — Overview (the start view)
+- **2026-10-19, after using it:**
+  - Choosing a project for a recorded segment should set only that segment. It used to change the app's link for all
+    history; changed now.
+  - The Recorded list was worth having on the panel without a selection too; that became the Recorded Segments tab.
+  - Then: iterate on the panel before building more.
+- **Loose ends visible in the current build:**
+  - In a segment row, Project now applies to that stretch, but Productive still marks the app on every day. Two
+    controls in one row with different reach.
+  - Two different ways to put a project on time sit side by side with different reach: the Applications tab's combo
+    (a link, all history) and a segment's combo (this stretch). Nothing in the UI tells them apart beyond a hint line.
+  - Idle and Not recorded segments can only get a project through a selection plus Set Project.
+  - Four tabs plus a selection mode in 440 px. The Applications tab's Active column cuts "4 h 43 m", and long
+    project names get cut in segment rows.
+  - "Clear Project" means a range set to no project, which overrides links. Undoing a hand-set stretch back to "follow
+    the links" isn't possible; that was agreed, but it may matter more now that segment combos make hand-set ranges
+    easy to create.
 
-Replace the Overview placeholder (boards *Overview · week*, *Overview · month*, *Overview · recording paused*):
+## Questions worth exploring with the developer (don't settle them yourself)
 
-- **Week mode:** one row per day (Mon–Sun): the date and span, a timeline (projects lane above a thin activity
-  lane; reuse `TimelineControl` or a lighter control drawing the same colours), and the day's Assigned and recorded
-  totals. Clicking a day opens it in Day review (`MainViewModel.View = DayReview` + `GoToDay`). ‹ week ›, This Week.
-- Below: a tree, category → project, with a column per day (Assigned), then Assigned and Logged totals; and a
-  **No project** branch with Productive and Other (active time without a project). Categories expand and collapse.
-  Beside it, the day notes; each expands to show that day's block notes.
-- **Month mode** (toggle tool buttons Week / Month): a month grid replaces the timelines (each day: logged and
-  recorded totals and a bar coloured by category); the tree's columns become weeks.
-- Recording state: the status bar indicator and message bars like every view (the paused board shows it).
-- **Month totals need a lighter path than building every day's timeline** — e.g. one SQL pass per day range that
-  sums capture lengths per linked project, plus the hand-set ranges; or cache per day. Measure first; the developer
-  cares about speed and memory.
-- Make the app open on the Overview (`App.Start`, and `MainViewModel`'s default when the tray reopens the window).
+- Where does assigning happen: from segments, from the timeline (drag, then a project), from app links, or a mix with
+  one obvious primary path?
+- In a row about a stretch of time, what should Productive mean? Should it move to the Applications tab only?
+- Should idle and unrecorded stretches have a project control in lists?
+- Should links and hand-set ranges look different wherever a project is shown (e.g. "via Code.exe" vs "set by hand",
+  as the Projects tab does)?
+- Do the no-selection tabs still make sense as Applications → Recorded Segments → Projects → Time Log (raw to
+  curated)? Or should some merge? How does the selection panel relate to them?
+- Is a way back to "follow the links" for a stretch now wanted?
 
-## What the boards don't show (decided after them)
+Offer two or three distinct alternatives as boards rather than one, each with a sentence on its trade-off, and let the
+developer react. They decide; record what's agreed in PROJECT.md *1a* (decisions with their reasons) before
+building.
 
-- Nothing is ever joined automatically; the Projects tab offers to join gaps under 10 minutes.
-- Clear Project leaves the selection with no project (overriding links); there is no "back to links".
-- A selection in Day review is a time range with typeable ends (so unrecorded time can be given a project).
-- Settings stays a dialog; Projects and Applications are tabs in it; Defaults shows only on General and Appearance.
-- Logged time is per project per day, typed in Day review's Time Log or the Timesheet; no per-block logged time.
-- No suggestions anywhere.
+## Seeing the current UI (headless, nothing on the developer's screen, no real data)
 
-## Known gaps to keep in mind
+- The last session's harness: `C:\Users\colby\AppData\Local\Temp\claude\C--Users-colby-Desktop-TimeSnapperClone\868eee90-d3e5-4a9b-8c31-ed087dc64752\scratchpad\shots\`.
+  - It's a console project in `proj/` that references `src/Worklapse.App`, plus `Avalonia.Headless`, `Avalonia.Skia` and
+    `Avalonia.Desktop` 12.1.4. Beside it sit empty `Directory.Build.props` and `Directory.Packages.props`, and
+    `ManagePackageVersionsCentrally=false`.
+  - `Data.cs` builds a scratch October.
+  - Build it with `dotnet build -o ../bin`, then run `bin/Shots.exe day|overview|timesheet [dark]` with the env var
+    `SHOTS_ROOT` set to the `shots` folder. PNGs go to `out/`.
+  - It sets `WORKLAPSE_CONFIG_DIR` to a scratch folder and checks that the data folder is scratch before anything else.
+- Popups (menus, combo drop-downs) don't render in these shots. To check a menu's items, inspect its presenter: see
+  `DayHarness.cs`.
+- Binding warnings in the output are what to watch. Those about `DayReview.…` "Value is null" while the window closes
+  are expected.
+- Inline Python in a bash heredoc sometimes breaks on quotes; write scripts to a file and run that. Use `python3`,
+  never `python`.
 
-- Dropdowns, menus and flyouts haven't been seen in screenshots (headless can't show popups); the developer clicked
-  through phases 3–4 and found them fine.
-- A project renamed in Settings is re-sorted only when the dialog is reopened (re-sorting while typing takes the
-  focus).
-- Schema 9 is one-way; the developer's real data is most likely on it now (they ran the phase 3–4 build).
+## Building and testing
+
+- **Build:** `dotnet build`. If the developer's Worklapse is running, it locks `src/Worklapse.App/bin`; build through the
+  harness instead (`-o` into its own folder).
+- **Tests:** run `tests/Worklapse.Tests/bin/Debug/net10.0/Worklapse.Tests.exe` (`dotnet test` reports "Zero tests ran"
+  on this machine). 160 tests pass at `42ac57f`. The App has no test project, so put logic worth testing in Core.
+- **Avalonia 12 gotchas met so far:**
+  - A `MenuFlyout` takes its item collection when its popup is made, before `Opening`, so keep one collection and
+    refill it there (`DayReviewView.FillWhenOpening`).
+  - The `DispatcherTimer` constructor that takes a callback also starts the timer.
+  - Exclusive tool-button pairs are `RadioButton.tool`, because a `ToggleButton` unchecks when clicked again.

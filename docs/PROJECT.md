@@ -518,8 +518,9 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    on its own when a day was opened from the Overview — its play timer was made with the `DispatcherTimer`
    constructor that takes a callback, which starts it; unseen while Day review opened at a day's last capture (the
    first tick stopped at the end), it played the day through once days opened at their first. The developer expects
-   to iterate on how the side panel assigns time to projects.
-5. Timesheet view. (Phases 5–6 are handed off in `docs/HANDOFF.md`, 2026-10-18.)
+   to iterate on how the side panel assigns time to projects: handed off as a design task in `docs/HANDOFF.md`
+   (2026-10-19).
+5. Timesheet view. (Phases 5–6 were handed off on 2026-10-18; that HANDOFF.md is in git history.)
    **Built 2026-10-18, committed (b903c08) after the developer looked at it.** `TimesheetView` / `TimesheetViewModel`: tool bar ‹ range ›,
    This Week (This Month), Week / Month (a radio pair drawn as toggle tool buttons, so clicking the one that's on
    leaves it on), Export CSV… (a save dialog; the range read again, written by `TimesheetCsv` as UTF-8 with a byte
