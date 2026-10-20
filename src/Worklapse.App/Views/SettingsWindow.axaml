@@ -240,7 +240,7 @@
         <Border Classes="group">
           <StackPanel>
             <TextBlock Classes="groupHeader" Text="Storage" />
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
               <TextBlock Classes="label" Text="History folder:" />
               <DockPanel Grid.Column="1">
                 <Button DockPanel.Dock="Right" Content="Default" Margin="6,0,0,0" Click="OnDefaultFolder"
@@ -256,6 +256,10 @@
                          Text="Choose a history folder (Browse…), or Default for the standard one." />
               <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint"
                          Text="Recordings and the activity log are kept here. Changing it doesn't move existing history." />
+
+              <TextBlock Grid.Row="3" Classes="label" Text="TimeSnapper:" Margin="0,6,10,0" IsVisible="{Binding CanImportTimeSnapper}" />
+              <Button Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" HorizontalAlignment="Left" Content="Import history…"
+                      Click="OnImportTimeSnapper" IsVisible="{Binding CanImportTimeSnapper}" />
             </Grid>
           </StackPanel>
         </Border>

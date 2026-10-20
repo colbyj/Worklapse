@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Reads TimeSnapper's database for the import. TimeSnapper's Firebird 1.5 database opens only with its own
+       32-bit embedded engine and the .NET 2.0 Firebird client it ships, so this is a separate 32-bit .NET Framework
+       program, loading both from TimeSnapper's program folder. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <PlatformTarget>x86</PlatformTarget>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Worklapse.Core/Import/TimeSnapperStream.cs" Link="TimeSnapperStream.cs" />
+  </ItemGroup>
+
+</Project>

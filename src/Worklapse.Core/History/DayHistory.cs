@@ -3,7 +3,11 @@ using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.History;
 
-public sealed record MonitorRecord(long Id, string DeviceName, PixelRect Bounds, bool IsPrimary);
+public sealed record MonitorRecord(long Id, string DeviceName, PixelRect Bounds, bool IsPrimary)
+{
+    /// <summary>Where pictures imported from TimeSnapper are shown: each is a window, at its own size, not a monitor.</summary>
+    public bool IsTimeSnapper => DeviceName == Import.TimeSnapperImport.MonitorName;
+}
 
 public readonly record struct MonitorFrame(long MonitorId, FrameRef Frame);
 

@@ -438,7 +438,8 @@ public partial class DayReviewView : UserControl
             // Idle captures have no frames; show the screen as it was last captured, under the idle overlay.
             if (frame is null && !capture.IsActive)
                 frame = LastFrameBefore(index, monitor.Id);
-            tiles.Add((monitor, frame, frame is null ? "Not recorded" : null));
+            // TimeSnapper kept no picture for windows it couldn't name; the time was recorded all the same.
+            tiles.Add((monitor, frame, frame is null ? monitor.IsTimeSnapper ? "No picture" : "Not recorded" : null));
         }
 
         // The focused window, where it was recorded. Recording only the active application blacks out the rest of
@@ -518,13 +519,16 @@ public partial class DayReviewView : UserControl
     {
         if (_plan is null)
             return;
-        // Focused on a window, monitors with nothing recorded are left out: the window's part on them is empty.
+        // Focused on a window, monitors with nothing recorded are left out: the window's part on them is empty. A
+        // frame fills its monitor's place (on a scaled desktop it has more pixels than the place), except a picture
+        // imported from TimeSnapper: a window, each its own size, shown at that size.
         var tiles = _plan.Tiles
             .Where(t => _plan.Focus is null || t.Frame is not null)
-            .Select(t => new FrameTile(
-                t.Monitor.Bounds,
-                t.Frame is not null && _bitmaps.TryGetValue(t.Monitor.Id, out var bitmap) ? bitmap : null,
-                t.Label))
+            .Select(t => t.Frame is not null && _bitmaps.TryGetValue(t.Monitor.Id, out var bitmap)
+                ? new FrameTile(t.Monitor.IsTimeSnapper
+                    ? new PixelRect(t.Monitor.Bounds.X, t.Monitor.Bounds.Y, bitmap.PixelSize.Width, bitmap.PixelSize.Height)
+                    : t.Monitor.Bounds, bitmap, t.Label)
+                : new FrameTile(t.Monitor.Bounds, null, t.Label))
             .ToList();
         var overlay = error is not null ? "Couldn't read this frame: " + error.Message : _plan.Overlay;
         Frames.SetContent(tiles, overlay, _plan.Focus);

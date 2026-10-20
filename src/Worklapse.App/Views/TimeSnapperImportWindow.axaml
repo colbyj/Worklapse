@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Worklapse.App.ViewModels"
+        x:Class="Worklapse.App.Views.TimeSnapperImportWindow"
+        x:DataType="vm:TimeSnapperImportViewModel"
+        Title="Import from TimeSnapper — Worklapse"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="640" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBlock.label">
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="Import" Classes="accent" IsDefault="True" IsEnabled="{Binding CanImport}" Click="OnImport" />
+        <Button Content="{Binding CloseText}" IsCancel="True" Click="OnClose" />
+      </StackPanel>
+    </Border>
+
+    <Grid Margin="16,14" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+      <TextBlock Classes="label" Text="Database:" />
+      <DockPanel Grid.Column="1" IsEnabled="{Binding !IsRunning}">
+        <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0" Click="OnBrowse" />
+        <TextBox Text="{Binding DatabasePath}" />
+      </DockPanel>
+      <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint"
+                 Text="Pictures stay in TimeSnapper's folder; deleting a capture deletes its picture." />
+
+      <ProgressBar Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Minimum="0" Maximum="100" Value="{Binding Progress}"
+                   IsVisible="{Binding HasProgress}" />
+      <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Status}" TextWrapping="Wrap"
+                 IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <TextBlock Grid.Row="4" Grid.Column="1" Classes="secondary" Text="{Binding Detail}" TextWrapping="Wrap"
+                 IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    </Grid>
+  </DockPanel>
+</Window>

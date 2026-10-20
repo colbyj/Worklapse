@@ -192,6 +192,25 @@ public sealed partial class SettingsViewModel : ObservableObject
             _ = LoadHistoryAsync(_store.Current.DataFolder);
     }
 
+    /// <summary>The settings in use, whatever the dialog shows and hasn't applied (the history folder in its box).</summary>
+    public WorklapseSettings AppliedSettings => _store.Current;
+
+    /// <summary>On Windows with TimeSnapper installed: its database can only be read with its own engine.</summary>
+    public bool CanImportTimeSnapper { get; } =
+        OperatingSystem.IsWindows() && Directory.Exists(Worklapse.Core.Import.TimeSnapperSource.DefaultProgramFolder);
+
+    /// <summary>
+    /// TimeSnapper's history was imported: the Applications page lists its apps and sites and the productive marks it
+    /// brought, unless it has changes of its own not applied yet (they're kept; it shows the rest at the next opening).
+    /// </summary>
+    public async Task HistoryImportedAsync()
+    {
+        if (Programs.IsDirty)
+            return;
+        await Programs.LoadAsync(_store.Current.DataFolder, Projects.Resolve);
+        Projects.RefreshLinked();
+    }
+
     /// <summary>Reads the Projects page, then the Applications page (whose links point at its projects).</summary>
     private async Task LoadHistoryAsync(string dataFolder)
     {

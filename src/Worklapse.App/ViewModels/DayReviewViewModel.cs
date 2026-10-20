@@ -489,7 +489,8 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         MonitorChoices.Add(new MonitorChoice(null, "All monitors"));
         var number = 1;
         foreach (var monitor in attached.Select(id => _monitorsById[id]).OrderByDescending(m => m.IsPrimary).ThenBy(m => m.Bounds.X))
-            MonitorChoices.Add(new MonitorChoice(monitor, $"{number++} — {monitor.Bounds.Width}×{monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}"));
+            MonitorChoices.Add(new MonitorChoice(monitor, monitor.IsTimeSnapper ? "TimeSnapper window"
+                : $"{number++} — {monitor.Bounds.Width}×{monitor.Bounds.Height}{(monitor.IsPrimary ? " (primary)" : "")}"));
         SelectedMonitor = _chosenMonitor is not { } chosen ? MonitorChoices[0]
             : MonitorChoices.FirstOrDefault(c => c.MonitorId == chosen.Id)
               ?? MonitorChoices.FirstOrDefault(c => c.Monitor?.Bounds == chosen.Bounds)

@@ -104,7 +104,10 @@ native/
   worklapse_native.targets    MSBuild: builds the native library when needed, libraries static via vcpkg:
                               native/win-x64/worklapse_native.dll (Windows), native/linux-x64/worklapse_native.so (Linux)
 src/
-  Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading
+  Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading,
+                              TimeSnapper import (Import/)
+  Worklapse.TimeSnapperReader/ 32-bit .NET Framework 4.8 helper: reads TimeSnapper's Firebird database with TimeSnapper's
+                              own engine and streams it to the import; copied next to Worklapse.exe
   Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
                               frame provider for playback
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
@@ -284,7 +287,7 @@ Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse
 `worklapse.db`, `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open) and, when
 recording images, `images/YYYY-MM-DD/HHmmss-m<monitor>.jpg` or `.webp`.
 
-SQLite schema (version 11, migrations in `WorklapseDatabase`; the project tables of 9–11 are described under 1a):
+SQLite schema (version 12, migrations in `WorklapseDatabase`; the project tables of 9–11 are described under 1a):
 
 - `apps` (exe name, path, `productive` and `excluded` flags; classified by exe name; deleted with their last capture unless
   productive or excluded)
@@ -298,6 +301,9 @@ SQLite schema (version 11, migrations in `WorklapseDatabase`; the project tables
 - `frames` (capture × monitor → segment frame; unchanged monitors point at an earlier frame; indexed by segment frame)
 - `reclaim_queue` (segments that may hold unreferenced frames, with a generation counter)
 - `dead_segment_files` (segment paths whose files are to be deleted; see How deleting removes video)
+- `timesnapper_imports` (TimeSnapper `ACTIVITY.ID` → the capture imported from it, NULL once deleted; schema 12).
+  Imported pictures are image segments whose `path` is **absolute** (TimeSnapper's Snapshots folder), on a monitor
+  named `TimeSnapper`; everything that resolves a segment path (`Path.Combine(dataFolder, path)`) handles that.
 
 ---
 
@@ -760,15 +766,44 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
    while recording is paused or locked; deleted rows are zeroed in the database and its log truncated; and
    what couldn't be removed is shown in the status window. The status-window line was checked by build and
    tests only, not looked at on screen. What remains is listed under Known gaps.
-3. **TimeSnapper import** (agreed 2026-10-17: a one-time tool, after image recording). Copy the old database first.
-   The Firebird 1.5 file opens only with TimeSnapper's own 32-bit `fbembed.dll` and its bundled old FirebirdSql
-   driver, from a 32-bit process (32-bit PowerShell works; modern FirebirdClient fails with "user name and password
-   are not defined"; a distro's `libfbclient` is Firebird 3+ and can't open it either). The images become image
-   segments (JPEG); the import adds what images from outside the data folder need. Agreed: skip TimeSnapper's
-   captures where Worklapse has its own. Open: a read-only TimeSnapper folder the images stay in, with an offer to
-   move them into the data folder later (the developer wants them left in place while trying it out); how Day review
-   shows a window-sized picture with no monitor layout. What the data holds (read-only look, 2026-10-17, at the
-   2026-10-15 copy):
+3. **TimeSnapper import — built 2026-10-19** (agreed 2026-10-17 as a one-time tool; the choices below agreed
+   2026-10-19). Settings ▸ General ▸ Storage ▸ *TimeSnapper: Import history…* (shown on Windows when TimeSnapper is
+   installed) opens a dialog: the database path (default `%LOCALAPPDATA%\TimeSnapper\Database\TIMESNAPPER.FDB`,
+   Browse…), Import, a progress bar, a result line and what was left out; Stop / closing stops it, and importing
+   again goes on from there. It imports into the history folder in use.
+   - **Reading:** the Firebird 1.5 file opens only with TimeSnapper's own 32-bit `fbembed.dll` and its bundled
+     FirebirdSql 2.1 (.NET 2.0) driver, from a 32-bit process (modern FirebirdClient fails with "user name and password
+     are not defined"; a distro's `libfbclient` is Firebird 3+ and can't open it). So `Worklapse.TimeSnapperReader.exe`
+     (net48, x86, loads both from `%ProgramFiles(x86)%\TimeSnapper` by reflection + `SetDllDirectory`) reads a **copy**
+     of the database (`TimeSnapperSource` copies it to %TEMP% first: the engine writes to the file, and TimeSnapper
+     may be running; the copy works while it is) and streams programs, classified ids and activities to stdout in
+     `BinaryWriter` encoding (`Import/TimeSnapperStream.cs`, compiled into both). Windows only.
+   - **Pictures stay where they are** (TimeSnapper's Snapshots folder): each becomes a JPEG image segment with an
+     absolute path, on a monitor of its own named `TimeSnapper`; Day review draws such a picture at its own size and
+     fits each one to the view (the developer chose "fit each picture", like TimeSnapper's Day Browser); its Monitor
+     list calls it "TimeSnapper window". **Deleting an imported capture deletes its JPEG** (developer's choice:
+     same privacy rule as Worklapse's own images; TimeSnapper's Day Browser then shows those rows without a picture).
+     Moving the pictures into the data folder later is still only an idea.
+   - **What comes in:** every capture as *active* (TimeSnapper has no idle rows) with its app (exe name and
+     `PROGRAM.PATH`), title and site. Left out: captures whose picture is gone (deleted in TimeSnapper's Day Browser)
+     — except "(Unknown)" programs, which come in without a picture and without an app; captures falling in the time
+     one of Worklapse's own counts for (until its next, at most 1.5 × the interval; idle ones too), so Worklapse
+     decides wherever it recorded and TimeSnapper only fills what it didn't (not running, paused, an excluded app),
+     with no interleaving at longer intervals (agreed 2026-10-19); captures imported before (`timesnapper_imports`, kept after a delete so it doesn't come back).
+     A picture that isn't a JPEG (the three first PNGs) comes in without a picture; one that can't be opened now is
+     left for the next import. The 2025-12 → 2026-01 block (pictures only) comes in as active time with no app.
+   - **Productive:** `CLASSIFICATION`'s programs and sites are marked productive by exe name / site in Worklapse
+     (only apps and sites Worklapse has; nothing is unmarked). Worklapse's rule still applies (the site decides),
+     so imported days can total differently from TimeSnapper's grade, which counted exe *or* site.
+   - **Sites:** `TimeSnapperImport.SiteName`: the name read as an address bar (`SiteDomain`), kept only if it has a dot
+     (or is localhost) and the name starts with the host it gives; page titles ("GITHUB - GITHUB.COM", "X - VISIT"),
+     paths ("C:/USERS"), words ("SETTINGS") and numbers ("1720") are dropped, leaving the browser.
+   - Checked 2026-10-19 by a full import of the real archive into a scratch copy of the history (410,548 captures in
+     about 4–5 min; a second run 7 s, adding nothing) and headless screenshots of the dialog and of Day review on
+     imported days. Not yet clicked through in the real app. That run found a bug the tests can't reach (they don't
+     run the helper): it sent one program instead of ~2,000.
+
+   What the data holds (read-only look, 2026-10-17, at the 2026-10-15 copy):
    - **Productive** = the program or site is in `CLASSIFICATION` (90 rows, one per `PROGRAM.ID`, `KEYWORDS` all
      empty; no unproductive or neutral class). TimeSnapper's daily grade counts a row productive if its exe *or* its
      site is classified (Worklapse: the site decides). Map by lower-case exe name / domain: `PROGRAM` has a row per
@@ -786,7 +821,7 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
    - **The 15,450 rows without a file:** 4,215 are "(Unknown)" programs TimeSnapper couldn't identify (games, Task
      Manager, installers; titles kept); 11,104 are ordinary rows in 102 runs (Jan–May 2026: YouTube, Facebook,
      OpenCode overnight, Parsec, games) whose images were most likely deleted in TimeSnapper's Day Browser, which
-     keeps the row; 131 belong to the block below. Whether to import them is the developer's call.
+     keeps the row; 131 belong to the block below. (Imported: the "(Unknown)" ones, without a picture; see above.)
    - **An earlier import inside TimeSnapper:** rows 48,295–64,810 (2025-12-01 to 2026-01-06, before TimeSnapper was
      installed) are 15 s apart with no program or title, `DURATION` 1: only pictures.
    - **Titles:** characters outside Windows-1252 were stored as `?` (lost); titles are cut at 254 characters.

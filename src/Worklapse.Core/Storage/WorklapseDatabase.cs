@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 11;
+    private const int SchemaVersion = 12;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -348,6 +348,22 @@ public sealed class WorklapseDatabase : IDisposable
                 );
                 """);
             Execute("PRAGMA user_version = 11;");
+            transaction.Commit();
+        }
+
+        if (version < 12)
+        {
+            // Captures imported from TimeSnapper, by its ACTIVITY.ID, so importing again adds only what is new. A row
+            // stays when its capture is deleted (capture_id NULL), so what was deleted doesn't come back. Captures
+            // without a row here are Worklapse's own.
+            using var transaction = BeginTransaction();
+            Execute("""
+                CREATE TABLE timesnapper_imports (
+                    activity_id  INTEGER PRIMARY KEY,
+                    capture_id   INTEGER UNIQUE REFERENCES captures (id) ON DELETE SET NULL
+                );
+                """);
+            Execute("PRAGMA user_version = 12;");
             transaction.Commit();
         }
     }

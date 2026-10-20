@@ -31,6 +31,9 @@
     <ProjectReference Include="../Worklapse.Video/Worklapse.Video.csproj" />
     <ProjectReference Include="../Worklapse.Capture.Linux/Worklapse.Capture.Linux.csproj" />
     <ProjectReference Include="../Worklapse.Capture.Windows/Worklapse.Capture.Windows.csproj" />
+    <!-- The 32-bit helper that reads TimeSnapper's database for the import, copied next to Worklapse.exe. -->
+    <ProjectReference Include="../Worklapse.TimeSnapperReader/Worklapse.TimeSnapperReader.csproj" ReferenceOutputAssembly="false"
+                      SetTargetFramework="TargetFramework=net48" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,7 @@
     <Project Path="src/Worklapse.Capture.Linux/Worklapse.Capture.Linux.csproj" />
     <Project Path="src/Worklapse.Capture.Windows/Worklapse.Capture.Windows.csproj" />
     <Project Path="src/Worklapse.Core/Worklapse.Core.csproj" />
+    <Project Path="src/Worklapse.TimeSnapperReader/Worklapse.TimeSnapperReader.csproj" />
     <Project Path="src/Worklapse.Video/Worklapse.Video.csproj" />
   </Folder>
   <Folder Name="/tests/">

@@ -46,6 +46,16 @@ public partial class SettingsWindow : Window
 
     private void OnDefaultFolder(object? sender, RoutedEventArgs e) => ViewModel.UseDefaultDataFolder();
 
+    /// <summary>Imports into the history folder in use (not one typed in the box and not applied yet).</summary>
+    private async void OnImportTimeSnapper(object? sender, RoutedEventArgs e)
+    {
+        var applied = ViewModel.AppliedSettings;
+        var import = new TimeSnapperImportViewModel(applied.DataFolder, applied.MaxCaptureLength);
+        await new TimeSnapperImportWindow { DataContext = import }.ShowDialog(this);
+        if (import.Imported)
+            await ViewModel.HistoryImportedAsync();
+    }
+
     /// <summary>Shows the folder in the box (applied or not) in the file manager.</summary>
     private async void OnOpenFolder(object? sender, RoutedEventArgs e)
     {
