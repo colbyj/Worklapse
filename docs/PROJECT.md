@@ -435,7 +435,7 @@ Working on Windows:
   with the recorder on a fake desktop (`ExclusionTests`) and the Programs page rendered off-screen; not tried in a
   real recording. Also fixed: Settings stayed dirty after Apply (Apply remained enabled).
 - Errors, tray and notifications (2026-10-20; the developer chose each option offered): see *Errors and the log* and
-  *Tray icon and notifications*. Settings → General → Application: *Start with Windows* (*Start when I log in* on
+  *Tray icon and notifications*. Settings → General → Startup and notifications: *Start with Windows* (*Start when I log in* on
   Linux; see *Starting at login*), *Record when Worklapse starts* (`RecordAtStartup`; off starts paused) and two
   notifications, *When recording starts* and *When closing the window leaves Worklapse in
   the tray*. Checked with tests (`LogTests`, the encoder failure in `ReclaimTests`), the badges, Settings, error
@@ -547,7 +547,8 @@ developer types (hh:mm) to bill, per project per day. Screens show h:mm; CSV exp
   Assigned, Logged (editable cell). Week/month, totals by category, Export CSV.
 - *Settings* tabs: General, **Applications** (was Programs; adds a Project column), **Projects** (categories,
   projects, colour, archived, linked apps), **Appearance** (was Application). The Defaults button only on
-  General and Appearance.
+  General and Appearance. Renamed 2026-10-20 (developer): **Recording** (was General), **General** second (was
+  Appearance; startup, notifications and the theme), Applications, Projects.
 
 Desktop idiom (developer, 2026-10-18): no segmented pills (toggle tool buttons or combo boxes), framed tabs,
 grids with editable cells rather than a text box per row, no accent buttons in tool bars, no cards or badges.
@@ -569,9 +570,9 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    ends up with no project (a range set to "no project", overriding links); there is no "back to links" command.
    Schema 9 is one-way: once a build with it has opened the real data folder, older builds can't.
 2. Settings tabs: Applications (Project column), Projects, Appearance; Defaults moved into its tabs.
-   **Built 2026-10-18.** Tabs General / Applications / Projects / Appearance (dialog
-   760 px wide). Defaults stays at the left of the button bar but only shows on General and Appearance and resets
-   only that page (as KDE's System Settings does). Projects tab (`ProjectsViewModel`): categories with their projects,
+   **Built 2026-10-18.** Tabs General / Applications / Projects / Appearance, since 2026-10-20 Recording / General /
+   Applications / Projects (dialog 760 px wide). Defaults stays at the left of the button bar but only shows on
+   Recording and General and resets only that page (as KDE's System Settings does). Projects tab (`ProjectsViewModel`): categories with their projects,
    then "No category"; New Project / New Category / Delete (asks first, `ConfirmWindow`, when it's in the history);
    Show archived; editors for name, category, colour (the category's or its own, from a 12-colour palette), linked
    apps and sites (read-only), Archived. Projects made in the dialog can be linked on the Applications tab before
@@ -821,7 +822,7 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
    what couldn't be removed is shown in the status window. The status-window line was checked by build and
    tests only, not looked at on screen. What remains is listed under Known gaps.
 3. **TimeSnapper import — built 2026-10-19** (agreed 2026-10-17 as a one-time tool; the choices below agreed
-   2026-10-19). Settings ▸ General ▸ Storage ▸ *TimeSnapper: Import history…* (shown on Windows when TimeSnapper is
+   2026-10-19). Settings ▸ Recording ▸ Storage ▸ *TimeSnapper: Import history…* (shown on Windows when TimeSnapper is
    installed) opens a dialog: the database path (default `%LOCALAPPDATA%\TimeSnapper\Database\TIMESNAPPER.FDB`,
    Browse…), Import, a progress bar, a result line and what was left out; Stop / closing stops it, and importing
    again goes on from there. It imports into the history folder in use.

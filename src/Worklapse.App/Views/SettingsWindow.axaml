@@ -109,7 +109,7 @@
     </Border>
 
     <TabControl Margin="10,10,10,0" SelectedIndex="{Binding SelectedTab}">
-      <TabItem Header="General">
+      <TabItem Header="Recording">
     <ScrollViewer>
       <StackPanel Margin="10" Spacing="8">
 
@@ -264,26 +264,52 @@
           </StackPanel>
         </Border>
 
-        <Border Classes="group">
-          <StackPanel>
-            <TextBlock Classes="groupHeader" Text="Application" />
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
-              <TextBlock Classes="label" Text="Startup:" VerticalAlignment="Top" Margin="0,6,10,0" />
-              <StackPanel Grid.Column="1">
-                <CheckBox Content="{Binding StartAtLoginText}" IsChecked="{Binding StartAtLogin}" IsVisible="{Binding CanStartAtLogin}" />
-                <CheckBox Content="Record when Worklapse starts" IsChecked="{Binding RecordAtStartup}" />
-              </StackPanel>
-              <TextBlock Grid.Row="1" Classes="label" Text="Notifications:" VerticalAlignment="Top" Margin="0,6,10,0" />
-              <StackPanel Grid.Row="1" Grid.Column="1">
-                <CheckBox Content="When recording starts" IsChecked="{Binding NotifyWhenRecordingStarts}" />
-                <CheckBox Content="When closing the window leaves Worklapse in the tray" IsChecked="{Binding NotifyWhenInTray}" />
-              </StackPanel>
-            </Grid>
-          </StackPanel>
-        </Border>
-
       </StackPanel>
     </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="General">
+        <StackPanel Margin="10" Spacing="8">
+          <Border Classes="group">
+            <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Startup and notifications" />
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Classes="label" Text="Startup:" VerticalAlignment="Top" Margin="0,6,10,0" />
+                <StackPanel Grid.Column="1">
+                  <CheckBox Content="{Binding StartAtLoginText}" IsChecked="{Binding StartAtLogin}" IsVisible="{Binding CanStartAtLogin}" />
+                  <CheckBox Content="Record when Worklapse starts" IsChecked="{Binding RecordAtStartup}" />
+                </StackPanel>
+                <TextBlock Grid.Row="1" Classes="label" Text="Notifications:" VerticalAlignment="Top" Margin="0,6,10,0" />
+                <StackPanel Grid.Row="1" Grid.Column="1">
+                  <CheckBox Content="When recording starts" IsChecked="{Binding NotifyWhenRecordingStarts}" />
+                  <CheckBox Content="When closing the window leaves Worklapse in the tray" IsChecked="{Binding NotifyWhenInTray}" />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="group">
+            <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Theme" />
+              <!-- In the order of ThemeStyle and ThemeMode. -->
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Classes="label" Text="Style:" />
+                <ComboBox Grid.Column="1" SelectedIndex="{Binding ThemeStyleIndex}" MinWidth="180" AutomationProperties.Name="Style">
+                  <ComboBoxItem Content="Match the desktop" />
+                  <ComboBoxItem Content="Windows" />
+                  <ComboBoxItem Content="KDE" />
+                  <ComboBoxItem Content="GTK" />
+                </ComboBox>
+                <TextBlock Grid.Row="1" Classes="label" Text="Colours:" />
+                <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding ThemeModeIndex}" MinWidth="180" AutomationProperties.Name="Colours">
+                  <ComboBoxItem Content="Match the desktop" />
+                  <ComboBoxItem Content="Light" />
+                  <ComboBoxItem Content="Dark" />
+                </ComboBox>
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
       </TabItem>
 
       <TabItem Header="Applications">
@@ -527,31 +553,6 @@
         </DockPanel>
       </TabItem>
 
-      <TabItem Header="Appearance">
-        <StackPanel Margin="10" Spacing="8">
-          <Border Classes="group">
-            <StackPanel>
-              <TextBlock Classes="groupHeader" Text="Theme" />
-              <!-- In the order of ThemeStyle and ThemeMode. -->
-              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <TextBlock Classes="label" Text="Style:" />
-                <ComboBox Grid.Column="1" SelectedIndex="{Binding ThemeStyleIndex}" MinWidth="180" AutomationProperties.Name="Style">
-                  <ComboBoxItem Content="Match the desktop" />
-                  <ComboBoxItem Content="Windows" />
-                  <ComboBoxItem Content="KDE" />
-                  <ComboBoxItem Content="GTK" />
-                </ComboBox>
-                <TextBlock Grid.Row="1" Classes="label" Text="Colours:" />
-                <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding ThemeModeIndex}" MinWidth="180" AutomationProperties.Name="Colours">
-                  <ComboBoxItem Content="Match the desktop" />
-                  <ComboBoxItem Content="Light" />
-                  <ComboBoxItem Content="Dark" />
-                </ComboBox>
-              </Grid>
-            </StackPanel>
-          </Border>
-        </StackPanel>
-      </TabItem>
     </TabControl>
   </DockPanel>
 </Window>

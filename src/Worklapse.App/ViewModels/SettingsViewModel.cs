@@ -76,7 +76,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     // Tabs, in order.
-    public const int GeneralTab = 0, ApplicationsTab = 1, ProjectsTab = 2, AppearanceTab = 3;
+    public const int RecordingTab = 0, GeneralTab = 1, ApplicationsTab = 2, ProjectsTab = 3;
 
     public ObservableCollection<MonitorOption> Monitors { get; } = [];
 
@@ -86,12 +86,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>The Projects page; kept in the history in the data folder.</summary>
     public ProjectsViewModel Projects { get; }
 
-    /// <summary>The tab shown; Defaults only applies to (and only shows on) General and Appearance.</summary>
+    /// <summary>The tab shown; Defaults only applies to (and only shows on) Recording and General.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasDefaults))]
     private int _selectedTab;
 
-    public bool HasDefaults => SelectedTab is GeneralTab or AppearanceTab;
+    public bool HasDefaults => SelectedTab is RecordingTab or GeneralTab;
 
     /// <summary>The chosen format and quality applied to the screen; null when the screen couldn't be captured.</summary>
     public RecordingPreviewViewModel? Preview { get; }
@@ -125,7 +125,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _notifyWhenRecordingStarts;
     [ObservableProperty] private bool _notifyWhenInTray;
 
-    // The Appearance page: indexes into its lists, in the order of ThemeStyle and ThemeMode.
+    // The General page's theme: indexes into its lists, in the order of ThemeStyle and ThemeMode.
     [ObservableProperty] private int _themeStyleIndex;
     [ObservableProperty] private int _themeModeIndex;
 
@@ -174,21 +174,31 @@ public sealed partial class SettingsViewModel : ObservableObject
     public string WebPQualityText => ((int)WebPQuality).ToString();
 
     /// <summary>
-    /// Puts the shown tab's settings back to their defaults: everything on General (the look kept), or the look on
-    /// Appearance. Settings the dialog doesn't show (set in the settings file) are kept as they are.
+    /// Puts the shown tab's settings back to their defaults: what is recorded and how on Recording; startup,
+    /// notifications and the look on General. Settings the dialog doesn't show (set in the settings file) are kept.
     /// </summary>
     public void RestoreDefaults()
     {
         var defaults = new WorklapseSettings { UseGpuRendering = _store.Current.UseGpuRendering };
-        if (SelectedTab == AppearanceTab)
+        if (SelectedTab == GeneralTab)
         {
+            StartAtLogin = false;
+            RecordAtStartup = defaults.RecordAtStartup;
+            NotifyWhenRecordingStarts = defaults.NotifyWhenRecordingStarts;
+            NotifyWhenInTray = defaults.NotifyWhenInTray;
             ThemeStyleIndex = (int)defaults.ThemeStyle;
             ThemeModeIndex = (int)defaults.ThemeMode;
         }
-        else if (SelectedTab == GeneralTab)
+        else if (SelectedTab == RecordingTab)
         {
-            StartAtLogin = false;
-            Load(defaults with { ThemeStyle = (ThemeStyle)ThemeStyleIndex, ThemeMode = (ThemeMode)ThemeModeIndex });
+            Load(defaults with
+            {
+                RecordAtStartup = RecordAtStartup,
+                NotifyWhenRecordingStarts = NotifyWhenRecordingStarts,
+                NotifyWhenInTray = NotifyWhenInTray,
+                ThemeStyle = (ThemeStyle)ThemeStyleIndex,
+                ThemeMode = (ThemeMode)ThemeModeIndex,
+            });
         }
     }
 
