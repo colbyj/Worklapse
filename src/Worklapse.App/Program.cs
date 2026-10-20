@@ -1,4 +1,5 @@
 using Avalonia;
+using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Settings;
 
 namespace Worklapse.App;
@@ -12,6 +13,17 @@ internal static class Program
         using var instance = new Mutex(initiallyOwned: true, $"Worklapse-{Environment.UserName}", out var isFirst);
         if (!isFirst)
             return 1;
+
+        Log.Start(typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "?");
+        // An exception on any other thread ends the process; the log keeps it and the next start says so. (The UI
+        // thread's are caught by App.)
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Log.Crash(e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject.ToString()));
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Error("A background task failed and nothing was waiting for it.", e.Exception);
+            e.SetObserved();
+        };
 
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

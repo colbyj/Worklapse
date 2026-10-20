@@ -1,3 +1,4 @@
+using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Imaging;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
@@ -116,7 +117,7 @@ public sealed class Recorder : IAsyncDisposable
                 // One bad capture (a display being reconfigured, a full disk) must not end recording;
                 // close everything so the next tick starts from a clean state, and report the error.
                 CloseStorage();
-                SetStatus(Status with { State = RecorderState.Error, Error = ex.Message });
+                SetError(ex.Message, ex);
             }
         }
         while (await timer.WaitForNextTickAsync(cancel));
@@ -139,7 +140,7 @@ public sealed class Recorder : IAsyncDisposable
         // Said every tick, paused or not: nothing will be recorded until Worklapse runs where it can record.
         if (_platform.CannotRecord is { } reason)
         {
-            SetStatus(Status with { State = RecorderState.Error, Error = reason });
+            SetError(reason);
             return;
         }
 
@@ -160,11 +161,7 @@ public sealed class Recorder : IAsyncDisposable
         // Only possible with a settings file from another desktop; Settings doesn't offer the mode here.
         if (settings.CaptureMode == CaptureMode.PrimaryMonitor && !_platform.KnowsPrimaryMonitor)
         {
-            SetStatus(Status with
-            {
-                State = RecorderState.Error,
-                Error = "This desktop doesn't say which monitor is primary: choose another capture mode in Settings.",
-            });
+            SetError("This desktop doesn't say which monitor is primary: choose another capture mode in Settings.");
             return;
         }
 
@@ -334,8 +331,18 @@ public sealed class Recorder : IAsyncDisposable
         _db = null;
     }
 
+    /// <summary>Not recording, and why. Logged when the reason changes rather than at every tick it lasts.</summary>
+    private void SetError(string message, Exception? exception = null)
+    {
+        if (Status.State != RecorderState.Error || Status.Error != message)
+            Log.Error($"Not recording: {message}", exception);
+        SetStatus(Status with { State = RecorderState.Error, Error = message });
+    }
+
     private void SetStatus(RecorderStatus status)
     {
+        if (Status.State == RecorderState.Error && status.State != RecorderState.Error)
+            Log.Info($"No longer in error ({status.State}).");
         Volatile.Write(ref _status, status);
         StatusChanged?.Invoke(this, status);
     }

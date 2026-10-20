@@ -53,6 +53,14 @@ public sealed partial class RecordingViewModel : ObservableObject
     public bool HasDeletedContentLeft => DeletedContentLeft is not null;
     public string DeletedContentText => $"Some deleted recordings are still on disk: {DeletedContentLeft}.";
 
+    /// <summary>The last recording that couldn't be encoded and why, if one couldn't; see BatchEncoder.EncodingProblem.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EncodingProblemText), nameof(HasEncodingProblem))]
+    private string? _encodingProblem;
+
+    public bool HasEncodingProblem => EncodingProblem is not null;
+    public string EncodingProblemText => $"A recording couldn't be encoded. It's kept and tried again when Worklapse next starts. {EncodingProblem}";
+
     /// <summary>The status bar shows a dot, except while paused (a pause sign instead).</summary>
     public bool ShowsDot => !IsPaused;
 
@@ -87,11 +95,15 @@ public sealed partial class RecordingViewModel : ObservableObject
         OnPropertyChanged(nameof(TrayText));
     }
 
+    /// <summary>Raised when the developer pauses or resumes recording.</summary>
+    public event Action? PauseToggled;
+
     [RelayCommand]
     private void TogglePause()
     {
         _recorder.IsPaused = !_recorder.IsPaused;
         IsPaused = _recorder.IsPaused;
+        PauseToggled?.Invoke();
         if (!IsPaused)
         {
             // The recorder picks this up at its next tick; show that it's coming.

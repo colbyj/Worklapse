@@ -43,6 +43,29 @@ public class ReclaimTests
     }
 
     [Fact]
+    public void ASegmentThatCantBeEncodedIsReportedAndStaysStaged()
+    {
+        using var recording = new Recording();
+        for (var i = 0; i < 3; i++)
+            recording.Add(i);
+        var segment = recording.Captures[0].Frame.SegmentId;
+        var stagingFile = StagingFile.PathFor(recording.FileOf(segment));
+        recording.Sink.Dispose(); // quit with the segment staged
+        File.Delete(stagingFile);
+
+        using var encoder = new BatchEncoder(recording.Folder.Path);
+        Assert.True(encoder.WaitUntilIdle(Timeout));
+
+        Assert.NotNull(encoder.EncodingProblem);
+        Assert.Contains(Path.GetFileName(recording.FileOf(segment)), encoder.EncodingProblem);
+        Assert.Equal((long)SegmentState.Staged,
+            recording.Count($"SELECT state FROM segments WHERE id = {segment}"));
+        // The thread carries on with other work.
+        encoder.RequestReclaim();
+        Assert.True(encoder.WaitUntilIdle(Timeout));
+    }
+
+    [Fact]
     public void APartlyDeletedSegmentIsRebuiltFromTheFramesStillShown()
     {
         // Frames 0–9, then two captures where the monitor didn't change: they show frame 9.

@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Worklapse.App.Views.ErrorWindow"
+        Title="Worklapse"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="520" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="Open Log Folder" Click="OnOpenLogFolder" />
+        <Button Content="Close" Classes="accent" IsDefault="True" IsCancel="True" Click="OnClose" />
+      </StackPanel>
+    </Border>
+
+    <StackPanel Margin="16,14" Spacing="8">
+      <TextBlock x:Name="HeadingText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <SelectableTextBlock x:Name="MessageText" Classes="secondary" TextWrapping="Wrap" />
+      <TextBlock x:Name="ExplanationText" TextWrapping="Wrap" />
+      <TextBlock x:Name="OpenError" Classes="warning" TextWrapping="Wrap" IsVisible="False" />
+    </StackPanel>
+  </DockPanel>
+</Window>

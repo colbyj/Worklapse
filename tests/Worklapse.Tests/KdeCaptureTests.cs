@@ -143,6 +143,14 @@ public class KdeCaptureTests
         Assert.StartsWith("[Desktop Entry]\n", contents);
     }
 
+    [Fact]
+    public void TheAutostartEntryPassesItsArgument()
+    {
+        var contents = DesktopEntry.Contents("/home/me/My Apps/Worklapse", null, "--autostart");
+        Assert.Contains("\nExec=\"/home/me/My Apps/Worklapse\" --autostart\n", contents);
+        Assert.DoesNotContain("Icon=", contents);
+    }
+
     [Theory]
     [InlineData("/opt/worklapse/Worklapse", "/opt/worklapse/Worklapse")]
     [InlineData("/home/me/My Apps/Worklapse", "\"/home/me/My Apps/Worklapse\"")]

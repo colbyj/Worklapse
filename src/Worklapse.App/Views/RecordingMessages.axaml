@@ -50,5 +50,16 @@
         <TextBlock Text="{Binding DeletedContentText}" TextWrapping="Wrap" VerticalAlignment="Center" />
       </StackPanel>
     </Border>
+
+    <Border Classes="messageBar" IsVisible="{Binding HasEncodingProblem}"
+            Background="{x:Static theming:AppBrushes.WarningBar}" BorderBrush="{x:Static theming:AppBrushes.WarningBarFrame}">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Panel Width="16" Height="16" VerticalAlignment="Top">
+          <Ellipse Fill="{x:Static theming:AppBrushes.WarningIcon}" />
+          <Path Fill="White" Width="2" Height="9" Stretch="Fill" Data="M0,0 H2 V6 H0 Z M0,7.5 H2 V9 H0 Z" />
+        </Panel>
+        <TextBlock Text="{Binding EncodingProblemText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
   </StackPanel>
 </UserControl>

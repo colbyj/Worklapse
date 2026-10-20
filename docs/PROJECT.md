@@ -31,7 +31,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Deleting | Mark ranges in Day review → they're hidden from totals at once → confirm later to delete permanently. The batch encoder then removes the deleted frames from disk: a segment with no frame left in use is deleted; one with some is rebuilt from those frames (decoded and encoded again at its quantizer), however few frames were deleted; a segment still staged leaves the deleted frames out when it's encoded. | Matches the review workflow: decide at the end of the day. **The purpose is that deleted content is gone** (nothing a client could be shown by accident); disk space is a bonus (developer, 2026-10-17). So there is no "only when it saves enough" rule, despite the small quality cost of a rebuild. |
 | Productive time | Two classes, Productive and Other. Apps (by exe name) and websites are marked on Settings → Programs or by right-clicking in Day review. **The more specific one decides** (developer, 2026-10-17): a capture with a site follows the site; otherwise its app. So a browser marked productive covers only its pages without a known site. Classification is looked up when a day is read, so a change applies to all history. Kept in the database, not `settings.json` (it belongs with the history). | Decided 2026-10-16/17. |
 | Excluded apps and sites | Marked on Settings → Programs (Excluded column, next to Productive). While an excluded app (by exe name) or site has the focus, **nothing is recorded** (no capture at all), so that time shows as *Not recorded*; once the idle limit passes it is recorded as idle as usual (an idle capture has no app or frames). Excluded if the app or the site is (a browser excluded covers all its pages). A browser tick whose site can't be read (private window, too slow) is recorded as the browser. Recorded history is left as it is. Kept in the database like the productive marks; an excluded app or site keeps its row when its captures are deleted. | Developer, 2026-10-18: nothing kept rather than time-and-name; the Programs list only (something must be recorded once before it can be excluded); no browser-specific handling for now. |
-| Projects and the main window | **Designed and built 2026-10-18** (phases 1–6; 6 not yet reviewed) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
+| Projects and the main window | **Designed and built 2026-10-18** (phases 1–6) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
@@ -307,6 +307,54 @@ SQLite schema (version 12, migrations in `WorklapseDatabase`; the project tables
 
 ---
 
+### Errors and the log
+
+`Core/Diagnostics/Log`: `Logs/worklapse.log` beside `settings.json` (so `WORKLAPSE_CONFIG_DIR` moves it too), started
+in `Program.Main`; nothing is written before that, so tests and tools write nowhere. Past 1 MB it starts over and
+keeps `worklapse.old.log`. Entries: start (version, OS, .NET), quit, errors with their stack traces.
+
+- **Another thread's exception** ends the process (.NET can't prevent that): `AppDomain.UnhandledException` logs it as
+  FATAL and leaves `crash.txt`; the next start shows *Worklapse closed unexpectedly* with its message and time
+  (`ErrorWindow`, with Open Log Folder). Unobserved task exceptions are logged.
+- **A UI-thread exception** (`Dispatcher.UIThread.UnhandledException`) is logged and shown in `ErrorWindow`, and
+  Worklapse carries on: recording doesn't depend on the windows. One that repeats while the window is open is logged
+  once. During startup (before the tray exists) it isn't caught, since a half-started app would run with no window
+  or tray icon; it ends the process and is reported at the next start.
+- **The recorder** logs each error once per distinct message (not every tick it lasts) and when it recovers.
+- **The batch encoder**'s thread can't die from an error any more: its database is opened in the constructor (a
+  failure there reaches the recorder, which retries), an encode failure sets `EncodingProblem`, and an error outside
+  a segment's rebuild (the database busy, say) is reported like deleted content left on disk and retried every minute.
+
+### Tray icon and notifications
+
+`App/Tray`: `IAppTray` with two implementations.
+
+- **Windows, `Win32Tray`**: Shell_NotifyIcon directly (NOTIFYICON_VERSION_4) on a hidden top-level window (top-level
+  so it hears `TaskbarCreated` and adds the icon again when Explorer restarts or wasn't up yet). Notifications are
+  balloons (`NIF_INFO`, the app icon large, respecting quiet hours), which Windows 10/11 show as toasts; clicking one
+  or the icon opens the main window. Avalonia's tray icon can't show notifications, hence its own. The menu is
+  `TrayMenuWindow`, Avalonia's menu look in a borderless window, as Avalonia's own tray draws it.
+- **Linux, `AvaloniaTray`**: Avalonia's tray icon (StatusNotifierItem), notifications through
+  org.freedesktop.Notifications (`Capture.Linux/DesktopNotifications`, its own session-bus connection, clicking opens
+  the main window).
+- **Badge** (`TrayIconImages`): a dot cut out of the .ico's picture for the size: red recording, amber paused, red with
+  a cross on error, none when idle, locked, excluded or starting. Fixed colours (the task bar needn't match the
+  windows' theme).
+- **Notifications**: *recording started* once per run, the first time recording is under way after starting by
+  itself (not after the developer's own pause or resume); *still running in the tray* once per run, when the main
+  window is closed (not when quitting).
+
+### Starting at login
+
+`App/LoginStartup`. The OS holds the setting, not `settings.json`: read when Settings opens, written on Apply (only when
+changed). Windows: the `Worklapse` value under `HKCU\…\CurrentVersion\Run`, `"<exe>" --autostart`; Task Manager's
+Startup apps switch (`Explorer\StartupApproved\Run`, first byte odd = off) counts as off, and turning it on in Worklapse
+clears that switch. Linux: `~/.config/autostart/worklapse.desktop` (`Capture.Linux/AutostartEntry`, the menu entry's
+contents plus `--autostart`); `Hidden=true` or `X-GNOME-Autostart-enabled=false` counts as off. Not offered when
+running through the dotnet host (no executable to start). The entry names the executable that applied it, so applying
+from a debug build points login at that build. With `--autostart` the main window isn't opened; the *recording*
+notification says Worklapse is running (with *Record when Worklapse starts* off it starts silently, paused).
+
 ## Building, running, testing
 
 Requirements: .NET 10 SDK, plus what the native library needs, which `dotnet build` builds when needed (several
@@ -345,24 +393,23 @@ Working on Windows:
 - Status window and tray menu (pause/resume, Day review, settings, quit); Settings dialog (capture mode,
   monitors, interval, idle, lock, recording format and quality, history folder; an empty folder is refused, Default
   fills in the standard one, the folder button opens it in the file manager).
-- Productive apps and websites (2026-10-17, not yet reviewed by the developer): sites read from Chrome, Edge
+- Productive apps and websites (2026-10-17): sites read from Chrome, Edge
   and Firefox; Settings → Programs lists every app and site with its recorded time (filter, sort, checkbox,
   applied with Apply/OK); right-click in Day review on the frame (its site and app) or the timeline (each app and
   site in the selection, up to 12, with its time there); the site shows in Day review's status bar.
 - Day review: timeline of the recorded hours, all or one monitor, zoom/pan, ← / → frame stepping,
   Shift+arrows and drag to select, playback at four speeds, selection/whole-day summary (length, active,
   productive, other, idle, not recorded, marked), mark for deletion / restore / delete permanently, F5 refresh.
-- Deleted captures' video is removed from disk in the background (2026-10-16/17, not yet reviewed by the
-  developer): whole segments deleted, partly deleted ones rebuilt, staged ones (including the one being
+- Deleted captures' video is removed from disk in the background (2026-10-16/17): whole segments deleted, partly deleted ones rebuilt, staged ones (including the one being
   recorded, closed at the next tick) encoded without the deleted frames, also while paused; titles and app
   names zeroed in the database; failures shown in the status window; crash-safe, and Day review reloads when a
   frame it shows has moved.
-- Breeze-style theme across all windows, at desktop density, coloured to match the OS (Windows 11 light/dark + accent, KDE colour scheme, Adwaita on GTK desktops, Breeze elsewhere), switching live (2026-10-18, not yet reviewed by the developer; Windows high contrast is not handled yet).
+- Breeze-style theme across all windows, at desktop density, coloured to match the OS (Windows 11 light/dark + accent, KDE colour scheme, Adwaita on GTK desktops, Breeze elsewhere), switching live (2026-10-18; Windows high contrast is not handled yet).
 - An unreadable `settings.json` (bad JSON, unknown value) no longer crashes at startup: a window shows the
   file and the error and offers Quit (to fix it by hand) or starting with defaults, which renames the file
   to `settings.json.broken-<date>`.
 
-- Recording as JPEG or WebP images (2026-10-17, not yet reviewed by the developer): Settings → Recording, each choice
+- Recording as JPEG or WebP images (2026-10-17): Settings → Recording, each choice
   with a one-line trade-off, a preview of the primary monitor as stored and a running average per capture (2026-10-18;
   measured on a 3440×1440 monitor: while Settings is open, ~+260 MB with Video chosen, the AV1 encoder, ~+45 MB with
   WebP; given back when it closes); a file per changed capture; deletes remove the files; crash-safe naming; Day
@@ -370,12 +417,12 @@ Working on Windows:
   round trip and colours as other viewers show them, recording, format switching, deletes, failed ticks, crash
   leftovers) and benchmarks on real captures (see Benchmarks); the Settings dialog checked as rendered off-screen
   (Avalonia headless), not clicked. Not yet done by hand: an image recording looked at in Day review.
-- Plugging monitors in and out (2026-10-17, not yet reviewed by the developer): layouts recorded per capture,
+- Plugging monitors in and out (2026-10-17): layouts recorded per capture,
   Day review and its Monitor list follow them, older captures' layouts worked out; selected monitors by stable
   identity. Checked with tests (recorder with a fake desktop, the guess) and in Day review on a copy of the
   2026-10-17 recording (screenshots at 10:51, 11:30, 14:00 and a capture recorded with the new build; Monitor
   list; picking a monitor across the replug).
-- Day review panning and Focus on App (2026-10-18, not yet reviewed by the developer): scroll bars while the
+- Day review panning and Focus on App (2026-10-18): scroll bars while the
   picture is larger than the view, drag with the left or middle button; a zoom keeps its magnification as frames
   change size (Fit stays fitted). Focus on App (tool bar monitor menu; remembered as `ReviewFocusOnApplication` in
   `settings.json`) shows only the focused window's rectangle (`captures.window_*`) on the monitors recorded, centred:
@@ -383,10 +430,17 @@ Working on Windows:
   a capture without a window, or whose window misses every recorded monitor, shows all monitors. Checked off-screen
   (Avalonia headless, synthetic two-monitor day: all monitors, app-only, idle; zoom, middle drag, scroll bars), not
   by hand.
-- Excluded apps and sites (2026-10-18, not yet reviewed by the developer): Excluded column on Settings → Programs
+- Excluded apps and sites (2026-10-18): Excluded column on Settings → Programs
   (schema 8); the recorder skips the tick while one has the focus and the status window shows *Excluded*. Tested
   with the recorder on a fake desktop (`ExclusionTests`) and the Programs page rendered off-screen; not tried in a
   real recording. Also fixed: Settings stayed dirty after Apply (Apply remained enabled).
+- Errors, tray and notifications (2026-10-20; the developer chose each option offered): see *Errors and the log* and
+  *Tray icon and notifications*. Settings → General → Application: *Start with Windows* (*Start when I log in* on
+  Linux; see *Starting at login*), *Record when Worklapse starts* (`RecordAtStartup`; off starts paused) and two
+  notifications, *When recording starts* and *When closing the window leaves Worklapse in
+  the tray*. Checked with tests (`LogTests`, the encoder failure in `ReclaimTests`), the badges, Settings, error
+  window and menu rendered off-screen, and the Win32 structures' sizes and offsets against the native ones plus a real
+  add and update of the icon; the notifications, the menu and clicks not tried on the desktop yet.
 
 Tested less or not at all: active-application mode over a longer session, selected monitors (only the matching,
 by tests; not the Settings dialog), an actual replug with the new build, rotated displays (GDI should handle them, untested), Store-app window detection,
@@ -406,9 +460,9 @@ Known gaps and caveats:
   in the instant between its capture being committed and its file being renamed shows "Couldn't read this frame".
 - A video segment's staging file created in a tick that a crash interrupted (not an error: those are cleaned up) is
   left on disk with no segment (pre-existing; images have the cleanup described above).
-- Encoding failures (`BatchEncoder.EncodingFailed`) aren't shown or logged anywhere yet; the segment stays
-  staged (with any deleted frames still in its staging file) and is retried at the next start. Failures to
-  remove deleted video are shown in the status window.
+- A segment that can't be encoded stays staged (with any deleted frames still in its staging file) and is retried
+  at the next start; the main window's message bar says so (`BatchEncoder.EncodingProblem`) and the log has the
+  error. Failures to remove deleted video are shown the same way.
 - Deleted content that can still be found: deleted files aren't overwritten (recoverable with forensic tools
   from the unlocked drive; overwriting isn't reliable on SSDs, and BitLocker covers the drive at rest); deletes
   made before schema 4 (2026-10-16) may have left titles in the database's free pages (a `VACUUM` would clear
@@ -429,7 +483,7 @@ Known gaps and caveats:
 
 The priority is a complete, usable Windows app. Alternatives and ports come after.
 
-### 0. Memory while reviewing — done 2026-10-16 (not yet reviewed by the developer)
+### 0. Memory while reviewing — done 2026-10-16
 
 The Day review reached ~2.8 GB. Measured causes (no leak: everything was freed on dispose): ~1.4 GB of
 native libaom decoders (8 open, 8 threads each), the 400 MB BGRA cache, ~1–2 GB of committed but unused
@@ -502,7 +556,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
 1. Data and time calculations, no UI: schema 9 (`categories`, `projects`, `apps.project_id`, `sites.project_id`,
    hand-set `project_spans` with no overlaps, `notes`, `day_notes`, `timesheet`); a Core calculator for a day's
    project blocks and per-project Active/Productive/Assigned; CSV export. Most of the tests go here.
-   **Built 2026-10-18, not yet reviewed or committed** (153 tests pass). Code: `Worklapse.Core/Projects/`
+   **Built 2026-10-18** (153 tests pass). Code: `Worklapse.Core/Projects/`
    (`ProjectStore` — categories, projects, ranges set by hand, notes, day notes, logged time; `ProjectTimeline` —
    blocks and totals, `NotePlacement`; `Timesheet`, `TimesheetCsv`), `HistoryStore.SetProject`/`LoadSamples` (was `LoadActivity`, replaced in phase 6)/
    `DayRange`, `CaptureRecord.LinkedProjectId`. Choices made while building, to confirm: a site without a link
@@ -515,7 +569,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    ends up with no project (a range set to "no project", overriding links); there is no "back to links" command.
    Schema 9 is one-way: once a build with it has opened the real data folder, older builds can't.
 2. Settings tabs: Applications (Project column), Projects, Appearance; Defaults moved into its tabs.
-   **Built 2026-10-18, not yet reviewed or committed.** Tabs General / Applications / Projects / Appearance (dialog
+   **Built 2026-10-18.** Tabs General / Applications / Projects / Appearance (dialog
    760 px wide). Defaults stays at the left of the button bar but only shows on General and Appearance and resets
    only that page (as KDE's System Settings does). Projects tab (`ProjectsViewModel`): categories with their projects,
    then "No category"; New Project / New Category / Delete (asks first, `ConfirmWindow`, when it's in the history);
@@ -583,7 +637,7 @@ grids with editable cells rather than a text box per row, no accent buttons in t
    empty month; toggles clicked; typing, clearing and invalid logged time; a project deleted while open; export and
    export to a locked file; opening a day). Not seen: the save dialog (headless can't show it).
 6. Overview (week, month; month totals need a lighter query than loading every capture).
-   **Built 2026-10-18, not yet reviewed or committed.** The app opens on it (and so does the tray's Show Worklapse
+   **Built 2026-10-18.** The app opens on it (and so does the tray's Show Worklapse
    when the window was closed). `OverviewView` / `OverviewViewModel`: tool bar ‹ range ›, This Week (This Month),
    Week / Month (the radio pair as in the Timesheet). Week: a row per day (date and first–last time, a `DayStrip`
    — projects lane above a thin activity lane in the timeline's colours, on one axis for the week in whole hours,
@@ -828,9 +882,17 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
 4. **Day review polish:** day picker (calendar) and Alt+←/→ for days if wanted; showing which segment
    is still being encoded; remember window size and monitor choice; a frame-accurate time readout when
    dragging.
-5. **Everyday app behaviour (confirm each with the developer before building):** start with Windows,
-   start hidden in the tray, a second launch bringing up the main window (see 1a), a log file for errors.
-6. **Packaging:** a self-contained publish with the native DLL, and an installer or zip.
+5. **Everyday app behaviour (confirm each with the developer before building):** a second launch bringing up the
+   main window (see 1a). Done 2026-10-20: the log file, crash reports, *Start with Windows* (in the tray when started
+   that way), *Record when Worklapse starts*, the tray badge and notifications.
+6. **Packaging:** a self-contained publish with the native DLL, and an installer or zip. The developer plans
+   Velopack, code signing (already set up for another project) and a GitHub page/website later. PRIVACY.md is written.
+   **License: GPLv3** (developer's choice 2026-10-20, `LICENSE`): it can still be relicensed more permissively later
+   while the developer holds all the copyright (outside contributions would need a CLA). Still to do when packaging: a
+   THIRD-PARTY-NOTICES file made from what the publish actually ships (libaom with the AOM patent license,
+   libjpeg-turbo, libwebp, Avalonia, SkiaSharp/HarfBuzzSharp, SQLite/SQLitePCLRaw, CommunityToolkit, FluentIcons,
+   Tmds.DBus, the .NET runtime). The app icon is a placeholder, per the developer (its black frame nearly vanishes on a
+   dark task bar); the tray badges are drawn from whatever `.ico` is there.
 
 ### 1b. Memory: split the recorder from the UI (proposed, not yet agreed)
 

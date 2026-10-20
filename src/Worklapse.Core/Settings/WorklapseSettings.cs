@@ -58,6 +58,15 @@ public sealed record WorklapseSettings
 
     public bool PauseWhenLocked { get; init; } = true;
 
+    /// <summary>Record as soon as Worklapse starts; otherwise it starts paused.</summary>
+    public bool RecordAtStartup { get; init; } = true;
+
+    /// <summary>A desktop notification when recording begins after Worklapse starts.</summary>
+    public bool NotifyWhenRecordingStarts { get; init; } = true;
+
+    /// <summary>A desktop notification, once per run, that Worklapse keeps running in the tray when its window closes.</summary>
+    public bool NotifyWhenInTray { get; init; } = true;
+
     /// <summary>How captures are stored: AV1 video, or an image file (JPEG or WebP) per changed capture.</summary>
     public FrameFormat Format { get; init; } = FrameFormat.Video;
 

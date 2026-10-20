@@ -30,8 +30,7 @@ internal static class DesktopEntry
     /// <param name="iconPath">An image file for the menu; null for none.</param>
     public static void Install(string? iconPath)
     {
-        var executable = Environment.ProcessPath;
-        if (executable is null || Path.GetFileNameWithoutExtension(executable) == "dotnet")
+        if (Executable is not { } executable)
             return;
 
         var contents = Contents(executable, iconPath);
@@ -50,14 +49,22 @@ internal static class DesktopEntry
         RebuildServiceCache();
     }
 
-    internal static string Contents(string executable, string? iconPath)
+    /// <summary>The running executable, unless Worklapse runs through the dotnet host (dotnet Worklapse.dll).</summary>
+    internal static string? Executable =>
+        Environment.ProcessPath is { } path && Path.GetFileNameWithoutExtension(path) != "dotnet" ? path : null;
+
+    /// <param name="argument">Added to the command line; null for none.</param>
+    internal static string Contents(string executable, string? iconPath, string? argument = null)
     {
         var text = new StringBuilder();
         text.Append("[Desktop Entry]\n");
         text.Append("Type=Application\n");
         text.Append("Name=Worklapse\n");
         text.Append("Comment=Records your screen to show where the day went\n");
-        text.Append("Exec=").Append(Quote(executable)).Append('\n');
+        text.Append("Exec=").Append(Quote(executable));
+        if (argument is not null)
+            text.Append(' ').Append(Quote(argument));
+        text.Append('\n');
         if (iconPath is not null)
             text.Append("Icon=").Append(iconPath).Append('\n');
         text.Append("Terminal=false\n");

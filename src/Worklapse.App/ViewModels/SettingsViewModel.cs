@@ -22,6 +22,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly SettingsStore _store;
     private bool _loading;
     private IReadOnlyList<string> _unpluggedSelected = []; // selected monitors not attached now: kept as they are
+    private bool _startAtLoginApplied; // as the OS has it
 
     /// <param name="sampler">Captures the primary monitor for the recording preview, which takes it over; null for none.</param>
     /// <param name="knowsPrimaryMonitor">
@@ -67,6 +68,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         Projects.ProjectDeleted += Programs.Unlink;
         Projects.LinkedNames = Programs.LinkedTo;
 
+        // Held by the OS, not the settings file: read once, written on Apply.
+        StartAtLogin = _startAtLoginApplied = LoginStartup.IsSupported && LoginStartup.IsEnabled;
         Load(store.Current);
         PropertyChanged += OnAnyPropertyChanged;
         _ = LoadHistoryAsync(store.Current.DataFolder);
@@ -112,6 +115,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private decimal? _intervalSeconds;
     [ObservableProperty] private decimal? _idleMinutes;
     [ObservableProperty] private bool _pauseWhenLocked;
+    [ObservableProperty] private bool _recordAtStartup;
+    [ObservableProperty] private bool _startAtLogin;
+
+    /// <summary>Hidden where Worklapse can't be started at login (see <see cref="LoginStartup.IsSupported"/>).</summary>
+    public bool CanStartAtLogin { get; } = LoginStartup.IsSupported;
+
+    public string StartAtLoginText { get; } = OperatingSystem.IsWindows() ? "Start with Windows" : "Start when I log in";
+    [ObservableProperty] private bool _notifyWhenRecordingStarts;
+    [ObservableProperty] private bool _notifyWhenInTray;
 
     // The Appearance page: indexes into its lists, in the order of ThemeStyle and ThemeMode.
     [ObservableProperty] private int _themeStyleIndex;
@@ -175,6 +187,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
         else if (SelectedTab == GeneralTab)
         {
+            StartAtLogin = false;
             Load(defaults with { ThemeStyle = (ThemeStyle)ThemeStyleIndex, ThemeMode = (ThemeMode)ThemeModeIndex });
         }
     }
@@ -186,6 +199,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         var folder = _store.Current.DataFolder;
         Projects.Apply(folder);
         Programs.Apply(folder);
+        if (StartAtLogin != _startAtLoginApplied)
+        {
+            if (StartAtLogin)
+                LoginStartup.Enable();
+            else
+                LoginStartup.Disable();
+            _startAtLoginApplied = StartAtLogin;
+        }
         _store.Save(ToSettings());
         IsDirty = false;
         if (!string.Equals(_store.Current.DataFolder, folder, StringComparison.OrdinalIgnoreCase))
@@ -229,6 +250,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         IntervalSeconds = (int)(IntervalSeconds ?? 10),
         IdleMinutes = (int)(IdleMinutes ?? 5),
         PauseWhenLocked = PauseWhenLocked,
+        RecordAtStartup = RecordAtStartup,
+        NotifyWhenRecordingStarts = NotifyWhenRecordingStarts,
+        NotifyWhenInTray = NotifyWhenInTray,
         Format = ChosenStorage.Format,
         Quality = (int)Quality,
         JpegQuality = (int)JpegQuality,
@@ -253,6 +277,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         IntervalSeconds = settings.IntervalSeconds;
         IdleMinutes = settings.IdleMinutes;
         PauseWhenLocked = settings.PauseWhenLocked;
+        RecordAtStartup = settings.RecordAtStartup;
+        NotifyWhenRecordingStarts = settings.NotifyWhenRecordingStarts;
+        NotifyWhenInTray = settings.NotifyWhenInTray;
         IsVideo = settings.Format == FrameFormat.Video;
         IsJpeg = settings.Format == FrameFormat.Jpeg;
         IsWebP = settings.Format == FrameFormat.WebP;
@@ -265,7 +292,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _loading = false;
         // Defaults don't touch the Applications and Projects pages (they're history, not settings); their changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)
-            || Programs is { IsDirty: true } || Projects is { IsDirty: true };
+            || Programs is { IsDirty: true } || Projects is { IsDirty: true } || StartAtLogin != _startAtLoginApplied;
     }
 
     private void OnAnyPropertyChanged(object? sender, PropertyChangedEventArgs e)

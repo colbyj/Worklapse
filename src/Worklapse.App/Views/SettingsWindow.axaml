@@ -264,6 +264,24 @@
           </StackPanel>
         </Border>
 
+        <Border Classes="group">
+          <StackPanel>
+            <TextBlock Classes="groupHeader" Text="Application" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <TextBlock Classes="label" Text="Startup:" VerticalAlignment="Top" Margin="0,6,10,0" />
+              <StackPanel Grid.Column="1">
+                <CheckBox Content="{Binding StartAtLoginText}" IsChecked="{Binding StartAtLogin}" IsVisible="{Binding CanStartAtLogin}" />
+                <CheckBox Content="Record when Worklapse starts" IsChecked="{Binding RecordAtStartup}" />
+              </StackPanel>
+              <TextBlock Grid.Row="1" Classes="label" Text="Notifications:" VerticalAlignment="Top" Margin="0,6,10,0" />
+              <StackPanel Grid.Row="1" Grid.Column="1">
+                <CheckBox Content="When recording starts" IsChecked="{Binding NotifyWhenRecordingStarts}" />
+                <CheckBox Content="When closing the window leaves Worklapse in the tray" IsChecked="{Binding NotifyWhenInTray}" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
       </StackPanel>
     </ScrollViewer>
       </TabItem>

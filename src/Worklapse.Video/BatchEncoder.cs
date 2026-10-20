@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Storage;
 
 namespace Worklapse.Video;
@@ -22,7 +23,6 @@ public sealed class BatchEncoder : IDisposable
     /// <summary>How soon to try again when a file to delete was open in another program.</summary>
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(1);
 
-    private readonly string _dataFolder;
     private readonly Action<string>? _rebuildStepHook;
     private readonly BlockingCollection<Job> _queue = new();
     private readonly CancellationTokenSource _stop = new();
@@ -32,6 +32,7 @@ public sealed class BatchEncoder : IDisposable
     private readonly HashSet<long> _reclaimFailed = []; // encoder thread only
     private string? _firstFailure;                      // encoder thread only
     private string? _deletedContentLeft;
+    private string? _encodingProblem;
     private bool _reclaimQueued; // under _gate
     private bool _closed;        // under _gate
 
@@ -47,20 +48,27 @@ public sealed class BatchEncoder : IDisposable
     /// <param name="rebuildStepHook">Called after each step of a rebuild that a crash could follow; lets tests stop there.</param>
     internal BatchEncoder(string dataFolder, Action<string>? rebuildStepHook)
     {
-        _dataFolder = dataFolder;
         _rebuildStepHook = rebuildStepHook;
         _retry = new Timer(_ => RequestReclaim());
-        using (var db = WorklapseDatabase.Open(dataFolder))
-        using (var pending = db.Command("SELECT id FROM segments WHERE state = $staged ORDER BY id;"))
+        // Opened here and handed to the thread, so a database that can't be opened fails the constructor (the recorder
+        // reports that and tries again) instead of the thread, where an exception would end the process.
+        var db = WorklapseDatabase.Open(dataFolder);
+        try
         {
+            using var pending = db.Command("SELECT id FROM segments WHERE state = $staged ORDER BY id;");
             pending.Parameters.AddWithValue("$staged", (int)SegmentState.Staged);
             using var reader = pending.ExecuteReader();
             while (reader.Read())
                 Add(new Job(JobKind.Encode, reader.GetInt64(0)));
         }
+        catch
+        {
+            db.Dispose();
+            throw;
+        }
         RequestReclaim();
 
-        _thread = new Thread(Run) { Name = "Worklapse batch encoder", IsBackground = true, Priority = ThreadPriority.BelowNormal };
+        _thread = new Thread(() => Run(db)) { Name = "Worklapse batch encoder", IsBackground = true, Priority = ThreadPriority.BelowNormal };
         _thread.Start();
     }
 
@@ -85,6 +93,15 @@ public sealed class BatchEncoder : IDisposable
 
     /// <summary>Raised on the encoder thread when <see cref="DeletedContentLeft"/> changes.</summary>
     public event EventHandler? DeletedContentLeftChanged;
+
+    /// <summary>
+    /// The last segment that couldn't be encoded and why, for the user (null while none has failed). It stays staged,
+    /// nothing lost, and is tried again the next time an encoder starts on this folder.
+    /// </summary>
+    public string? EncodingProblem => Volatile.Read(ref _encodingProblem);
+
+    /// <summary>Raised on the encoder thread when <see cref="EncodingProblem"/> changes.</summary>
+    public event EventHandler? EncodingProblemChanged;
 
     public void Enqueue(long segmentId)
     {
@@ -161,9 +178,9 @@ public sealed class BatchEncoder : IDisposable
         _queue.Add(job);
     }
 
-    private void Run()
+    private void Run(WorklapseDatabase db)
     {
-        using var db = WorklapseDatabase.Open(_dataFolder);
+        using var _ = db;
         try
         {
             foreach (var job in _queue.GetConsumingEnumerable(_stop.Token))
@@ -173,7 +190,7 @@ public sealed class BatchEncoder : IDisposable
                     if (job.Kind == JobKind.Encode)
                         EncodeAndReport(db, job.SegmentId);
                     else
-                        ReclaimOne(db);
+                        ReclaimAndReport(db);
                 }
                 catch (OperationCanceledException)
                 {
@@ -200,7 +217,31 @@ public sealed class BatchEncoder : IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            Log.Error($"Couldn't encode segment {segmentId}; it stays staged.", ex);
+            var problem = $"{SegmentPath(db, segmentId)}: {ex.Message}";
+            if (Interlocked.Exchange(ref _encodingProblem, problem) != problem)
+                EncodingProblemChanged?.Invoke(this, EventArgs.Empty);
             EncodingFailed?.Invoke(this, (segmentId, ex));
+        }
+    }
+
+    /// <summary>
+    /// Reclaims, keeping the thread alive through an error outside a segment's rebuild (the database busy or
+    /// unreadable, say): reported where deleted content is, and tried again in a minute.
+    /// </summary>
+    private void ReclaimAndReport(WorklapseDatabase db)
+    {
+        try
+        {
+            ReclaimOne(db);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var left = $"{ex.Message} (trying again every minute)";
+            if (DeletedContentLeft != left)
+                Log.Error("Removing deleted recordings from disk failed.", ex);
+            SetDeletedContentLeft(left);
+            _retry.Change(RetryDelay, Timeout.InfiniteTimeSpan);
         }
     }
 
@@ -236,6 +277,7 @@ public sealed class BatchEncoder : IDisposable
             // Not again in this run, so a segment that fails every time doesn't keep the thread busy.
             _reclaimFailed.Add(next.SegmentId);
             _firstFailure ??= $"{SegmentPath(db, next.SegmentId)}: {ex.Message} (tried again when Worklapse next starts)";
+            Log.Error($"Couldn't remove deleted frames from segment {next.SegmentId}; tried again at the next start.", ex);
             ReclaimFailed?.Invoke(this, (next.SegmentId, ex));
             RequestReclaim();
             return;
@@ -252,11 +294,19 @@ public sealed class BatchEncoder : IDisposable
             DeletedContentLeftChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>A segment's file, for messages; its number when the database can't say (it may be what failed).</summary>
     private static string SegmentPath(WorklapseDatabase db, long segmentId)
     {
-        using var command = db.Command("SELECT path FROM segments WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", segmentId);
-        return command.ExecuteScalar() as string ?? $"segment {segmentId}";
+        try
+        {
+            using var command = db.Command("SELECT path FROM segments WHERE id = $id;");
+            command.Parameters.AddWithValue("$id", segmentId);
+            return command.ExecuteScalar() as string ?? $"segment {segmentId}";
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            return $"segment {segmentId}";
+        }
     }
 
     /// <summary>
