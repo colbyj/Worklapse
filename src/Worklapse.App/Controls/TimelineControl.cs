@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Worklapse.App.Theming;
 
 namespace Worklapse.App.Controls;
@@ -24,11 +25,13 @@ public readonly record struct ProjectLaneBlock(double Start, double End, IBrush 
 /// The day as two lanes: projects above, activity (coloured runs) below, with hour labels, a selection,
 /// marked-for-deletion ranges and the playhead across both, and the time a control in the side panel reaches. Click
 /// to move the playhead (the view model clears a selection clicked outside); drag to select; drag a selection's edge
-/// to move it; Shift+click to move its nearer edge; double-click to select a block or a run.
+/// to move it; Shift+click to move its nearer edge; double-click to select a block or a run. Scroll to zoom in at the
+/// pointer; Shift+scroll (or scrolling sideways) moves along the day while zoomed in, and so does dragging past either
+/// end. The playhead is kept in view when it moves.
 /// </summary>
 public sealed class TimelineControl : ThemedControl
 {
-    private const double Gutter = 58;          // lane names on the left
+    public const double Gutter = 58;           // lane names on the left
     private const double ProjectHeight = 20;
     private const double LaneGap = 3;
     private const double TrackHeight = 30;     // activity
@@ -38,6 +41,16 @@ public sealed class TimelineControl : ThemedControl
     private const double DragThreshold = 3;
     private const double EdgeGrab = 5;         // how near a selection's edge a press takes the edge
     private const double TrackTop = ProjectHeight + LaneGap;
+    private const double MinShown = 5 * 60;    // zoomed in furthest: five minutes across
+    private const double ZoomStep = 1.25;      // per notch of the wheel
+    private const double PanStep = 0.1;        // of the time shown, per notch of the wheel
+    private const double FollowMargin = 0.05;  // of the time shown, between a playhead brought into view and the end
+    private const double LabelSpacing = 10;    // between time labels
+    private const double DragScrollReach = 100;   // how far past an end a drag scrolls fastest
+    private const double DragScrollStep = 0.05;   // of the time shown, per tick at the fastest
+
+    // Time between labelled grid lines: the shortest that leaves the labels room.
+    private static readonly int[] TickSteps = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600];
 
     // The brushes are recoloured in place when the OS theme changes (see ThemedControl).
     private static readonly IBrush TrackBrush = AppBrushes.TimelineTrack;
@@ -57,21 +70,33 @@ public sealed class TimelineControl : ThemedControl
     private static readonly Typeface LabelFace = new(FontFamily.Default);
 
     private Point? _pressAt;
+    private double _pressTime;                 // the time pressed at, kept while a drag scrolls the timeline
+    private double _pointerX;                  // where the pointer is while dragging
     private bool _dragging;
     private int? _edge;                        // the selection's edge being dragged: 0 its start, 1 its end
     private bool _doubleClicked;
+    private (double Start, double End)? _zoom; // the time shown while zoomed in; null shows all of it
+    private readonly DispatcherTimer _dragScroll = new() { Interval = TimeSpan.FromMilliseconds(30) };
 
     public TimelineControl()
     {
         Height = TrackTop + TrackHeight + ReachGap + ReachHeight + LabelHeight + 2;
         Cursor = SelectCursor;
         ClipToBounds = true;
+        _dragScroll.Tick += (_, _) => ScrollWhileDragging();
     }
 
     public IReadOnlyList<TimelineSpan> Spans { get; private set; } = [];
     public IReadOnlyList<ProjectLaneBlock> Projects { get; private set; } = [];
+
+    /// <summary>The time the timeline covers: all of it shows unless zoomed in.</summary>
     public double ViewStart { get; private set; } = 8 * 3600;
     public double ViewEnd { get; private set; } = 17 * 3600;
+
+    /// <summary>The time shown: all the timeline covers, or less while zoomed in.</summary>
+    public double ShownStart => _zoom?.Start ?? ViewStart;
+    public double ShownEnd => _zoom?.End ?? ViewEnd;
+
     public (double Start, double End)? Selection { get; private set; }
     public double? Playhead { get; private set; }
 
@@ -90,11 +115,16 @@ public sealed class TimelineControl : ThemedControl
     /// <summary>A double click at this time, and whether it was on the projects lane.</summary>
     public event Action<double, bool>? DoubleClicked;
 
+    /// <summary>The time shown changed: zoomed, scrolled, or moved by a change of the time covered.</summary>
+    public event Action? ShownChanged;
+
+    /// <summary>The time covered and the activity in it. A zoom is kept, moved inside the new time if it has to be.</summary>
     public void SetData(IReadOnlyList<TimelineSpan> spans, double viewStart, double viewEnd)
     {
         Spans = spans;
         ViewStart = viewStart;
         ViewEnd = Math.Max(viewEnd, viewStart + 60);
+        Show(_zoom);
         InvalidateVisual();
     }
 
@@ -104,17 +134,39 @@ public sealed class TimelineControl : ThemedControl
         InvalidateVisual();
     }
 
+    /// <summary>
+    /// The selection and the playhead. A playhead moved out of view (playing, stepping, Go To) is brought back in, near
+    /// the end it left by, or to the middle when it went far; not during a press here, whose drag scrolls by itself.
+    /// </summary>
     public void SetMarkers((double Start, double End)? selection, double? playhead)
     {
+        var moved = playhead != Playhead;
         Selection = selection;
         Playhead = playhead;
         InvalidateVisual();
+        if (!moved || _pressAt is not null || playhead is not { } at || _zoom is not { } zoom || (at >= zoom.Start && at <= zoom.End))
+            return;
+        var length = zoom.End - zoom.Start;
+        var start = at < zoom.Start - length / 2 || at > zoom.End + length / 2 ? at - length / 2
+            : at < zoom.Start ? at - length * FollowMargin
+            : at + length * FollowMargin - length;
+        Show((start, start + length));
     }
 
     public void SetReach(IReadOnlyList<(double Start, double End)>? reach)
     {
         Reach = reach;
         InvalidateVisual();
+    }
+
+    /// <summary>Zooms all the way out.</summary>
+    public void ShowAll() => Show(null);
+
+    /// <summary>While zoomed in, shows the same length of time from <paramref name="start"/>, as near as the day allows.</summary>
+    public void ScrollTo(double start)
+    {
+        if (_zoom is { } zoom)
+            Show((start, start + zoom.End - zoom.Start));
     }
 
     public override void Render(DrawingContext context)
@@ -128,33 +180,38 @@ public sealed class TimelineControl : ThemedControl
         DrawLaneName("Projects", lane);
         DrawLaneName("Activity", track);
 
-        // Hour grid and labels.
-        var firstHour = (int)Math.Ceiling(ViewStart / 3600);
-        var pixelsPerHour = laneWidth * 3600 / (ViewEnd - ViewStart);
-        var labelEvery = pixelsPerHour < 34 ? 2 : 1;
-        for (var hour = firstHour; hour * 3600 <= ViewEnd; hour++)
+        // Grid and time labels: whole hours, or finer while zoomed in.
+        var (shownStart, shownEnd) = (ShownStart, ShownEnd);
+        var pixelsPerSecond = laneWidth / (shownEnd - shownStart);
+        var labelStep = TickSteps.FirstOrDefault(step => step * pixelsPerSecond >= TickLabelWidth(step) + LabelSpacing, TickSteps[^1]);
+        var gridStep = Math.Min(labelStep, 3600);
+        for (var tick = Math.Ceiling(shownStart / gridStep) * gridStep; tick <= shownEnd; tick += gridStep)
         {
-            var x = X(hour * 3600.0);
+            var x = X(tick);
             context.DrawLine(HourLine, new Point(x, lane.Top), new Point(x, lane.Bottom));
             context.DrawLine(HourLine, new Point(x, track.Top), new Point(x, track.Bottom));
-            if (hour % labelEvery != 0)
+            if (tick % labelStep != 0)
                 continue;
-            var label = new FormattedText(HourLabel(hour), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, LabelFace, 11, LabelBrush);
+            var label = Text(TickLabel(tick), LabelBrush);
             var lx = Math.Clamp(x - label.Width / 2, Gutter, Math.Max(Gutter, width - label.Width));
             context.DrawText(label, new Point(lx, track.Bottom + ReachGap + ReachHeight + 2));
         }
 
-        // Projects: each block in its colour, named when there's room.
+        // Zoomed in, what's on the lanes stops at their ends, clear of the lane names.
+        using var lanesOnly = context.PushClip(new Rect(Gutter, 0, laneWidth + 1, Bounds.Height));
+
+        // Projects: each block in its colour, named when the part shown has room.
         foreach (var block in Projects)
         {
             var x0 = X(block.Start);
             var x1 = Math.Max(X(block.End), x0 + 1);
             var rect = new Rect(x0, lane.Top + 2, x1 - x0, ProjectHeight - 3);
             context.FillRectangle(block.Brush, rect, 2);
-            var name = new FormattedText(block.Label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, LabelFace, 11, OnProjectBrush);
-            if (name.Width + 8 <= rect.Width)
-                using (context.PushClip(rect))
-                    context.DrawText(name, new Point(rect.Left + 4, rect.Top + (rect.Height - name.Height) / 2));
+            var shown = rect.Intersect(lane);
+            var name = Text(block.Label, OnProjectBrush);
+            if (name.Width + 8 <= shown.Width)
+                using (context.PushClip(shown))
+                    context.DrawText(name, new Point(shown.Left + 4, rect.Top + (rect.Height - name.Height) / 2));
         }
         context.DrawRectangle(null, TrackBorder, lane);
 
@@ -196,17 +253,17 @@ public sealed class TimelineControl : ThemedControl
         // What a control in the side panel reaches: everything else veiled, a bar under each stretch it reaches.
         if (Reach is { } reach)
         {
-            var from = ViewStart;
-            foreach (var (start, end) in reach.Where(r => r.End > ViewStart && r.Start < ViewEnd).OrderBy(r => r.Start))
+            var from = shownStart;
+            foreach (var (start, end) in reach.Where(r => r.End > shownStart && r.Start < shownEnd).OrderBy(r => r.Start))
             {
                 if (start > from)
                     context.FillRectangle(ReachVeil, new Rect(X(from), lane.Top, X(start) - X(from), track.Bottom - lane.Top));
-                var x0 = X(Math.Max(start, ViewStart));
-                context.FillRectangle(ReachBar, new Rect(x0, track.Bottom + ReachGap, Math.Max(2, X(Math.Min(end, ViewEnd)) - x0), ReachHeight), 1);
+                var x0 = X(Math.Max(start, shownStart));
+                context.FillRectangle(ReachBar, new Rect(x0, track.Bottom + ReachGap, Math.Max(2, X(Math.Min(end, shownEnd)) - x0), ReachHeight), 1);
                 from = Math.Max(from, end);
             }
-            if (from < ViewEnd)
-                context.FillRectangle(ReachVeil, new Rect(X(from), lane.Top, X(ViewEnd) - X(from), track.Bottom - lane.Top));
+            if (from < shownEnd)
+                context.FillRectangle(ReachVeil, new Rect(X(from), lane.Top, X(shownEnd) - X(from), track.Bottom - lane.Top));
         }
 
         if (Selection is { } selection)
@@ -226,10 +283,17 @@ public sealed class TimelineControl : ThemedControl
 
         void DrawLaneName(string text, Rect beside)
         {
-            var name = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, LabelFace, 11, LabelBrush);
+            var name = Text(text, LabelBrush);
             context.DrawText(name, new Point(0, beside.Top + (beside.Height - name.Height) / 2));
         }
     }
+
+    private static FormattedText Text(string text, IBrush brush) =>
+        new(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, LabelFace, 11, brush);
+
+    /// <summary>How wide the labels are, every <paramref name="step"/> seconds: hours only, or with minutes.</summary>
+    private static double TickLabelWidth(int step) =>
+        Text(step % 3600 == 0 ? HourLabel(12) : TickLabel(12 * 3600 + 45 * 60), LabelBrush).Width;
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -246,6 +310,7 @@ public sealed class TimelineControl : ThemedControl
             return;
         }
         _pressAt = point.Position;
+        _pressTime = Time(point.Position.X);
         _dragging = false;
         _edge = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? null : EdgeAt(point.Position.X);
         e.Pointer.Capture(this);
@@ -263,10 +328,13 @@ public sealed class TimelineControl : ThemedControl
         if (!_dragging && Math.Abs(position.X - start.X) < DragThreshold)
             return;
         _dragging = true;
-        if (_edge is { } edge)
-            EdgeDragged?.Invoke(edge, Time(position.X), false);
+        _pointerX = position.X;
+        ReportDrag(finished: false);
+        // Held past either end while zoomed in, the timeline scrolls that way.
+        if (_zoom is not null && (position.X < Gutter || position.X > Gutter + LaneWidth))
+            _dragScroll.Start();
         else
-            Dragged?.Invoke(Time(start.X), Time(position.X), false);
+            _dragScroll.Stop();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -277,15 +345,18 @@ public sealed class TimelineControl : ThemedControl
             _doubleClicked = false;
             return;
         }
-        if (_pressAt is not { } start)
+        if (_pressAt is null)
             return;
-        var position = e.GetPosition(this);
+        _dragScroll.Stop();
         if (!_dragging)
-            Clicked?.Invoke(Time(start.X), e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-        else if (_edge is { } edge)
-            EdgeDragged?.Invoke(edge, Time(position.X), true);
+        {
+            Clicked?.Invoke(_pressTime, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        }
         else
-            Dragged?.Invoke(Time(start.X), Time(position.X), true);
+        {
+            _pointerX = e.GetPosition(this).X;
+            ReportDrag(finished: true);
+        }
         _pressAt = null;
         _dragging = false;
         _edge = null;
@@ -295,9 +366,86 @@ public sealed class TimelineControl : ThemedControl
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
+        _dragScroll.Stop();
         _pressAt = null;
         _dragging = false;
         _edge = null;
+    }
+
+    /// <summary>
+    /// The wheel zooms in or out at the pointer; with Shift, or sideways, it scrolls. A drag under way follows, its
+    /// pointer being over another time now.
+    /// </summary>
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        e.Handled = true;
+        var sideways = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? (e.Delta.X != 0 ? e.Delta.X : e.Delta.Y) : e.Delta.X;
+        var (start, end) = (ShownStart, ShownEnd);
+        if (sideways != 0)
+        {
+            ScrollTo(start - sideways * PanStep * (end - start));
+        }
+        else if (e.Delta.Y != 0)
+        {
+            // Keep the time under the pointer where it is.
+            var x = e.GetPosition(this).X;
+            var at = Time(x);
+            var length = (end - start) / Math.Pow(ZoomStep, e.Delta.Y);
+            var newStart = at - Math.Clamp((x - Gutter) / LaneWidth, 0, 1) * length;
+            Show((newStart, newStart + length));
+        }
+        if (_dragging)
+            ReportDrag(finished: false);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _dragScroll.Stop();
+    }
+
+    /// <summary>A drag to the view model: its anchor (the time pressed at) and the time under the pointer now.</summary>
+    private void ReportDrag(bool finished)
+    {
+        if (_edge is { } edge)
+            EdgeDragged?.Invoke(edge, Time(_pointerX), finished);
+        else
+            Dragged?.Invoke(_pressTime, Time(_pointerX), finished);
+    }
+
+    /// <summary>A drag held past an end: scrolls that way, faster the further past, and carries the drag along.</summary>
+    private void ScrollWhileDragging()
+    {
+        if (!_dragging || _zoom is not { } zoom)
+        {
+            _dragScroll.Stop();
+            return;
+        }
+        var past = _pointerX < Gutter ? _pointerX - Gutter : Math.Max(0, _pointerX - Gutter - LaneWidth);
+        var length = zoom.End - zoom.Start;
+        ScrollTo(zoom.Start + Math.Clamp(past / DragScrollReach, -1, 1) * DragScrollStep * length);
+        ReportDrag(finished: false);
+    }
+
+    /// <summary>
+    /// Shows this time, at least <see cref="MinShown"/> long and moved inside the time covered; all of it when
+    /// <paramref name="zoom"/> is null or reaches as far.
+    /// </summary>
+    private void Show((double Start, double End)? zoom)
+    {
+        var all = ViewEnd - ViewStart;
+        if (zoom is { } z)
+        {
+            var length = Math.Max(z.End - z.Start, Math.Min(MinShown, all));
+            var start = Math.Clamp(z.Start, ViewStart, Math.Max(ViewStart, ViewEnd - length));
+            zoom = length >= all ? null : (start, start + length);
+        }
+        if (zoom == _zoom)
+            return;
+        _zoom = zoom;
+        InvalidateVisual();
+        ShownChanged?.Invoke();
     }
 
     /// <summary>The selection's edge near this position, if one is: 0 its start, 1 its end (the nearer, when both are).</summary>
@@ -313,9 +461,9 @@ public sealed class TimelineControl : ThemedControl
 
     private double LaneWidth => Math.Max(1, Bounds.Width - Gutter - 1);
 
-    private double X(double seconds) => Gutter + (seconds - ViewStart) / (ViewEnd - ViewStart) * LaneWidth;
+    private double X(double seconds) => Gutter + (seconds - ShownStart) / (ShownEnd - ShownStart) * LaneWidth;
 
-    private double Time(double x) => ViewStart + Math.Clamp((x - Gutter) / LaneWidth, 0, 1) * (ViewEnd - ViewStart);
+    private double Time(double x) => ShownStart + Math.Clamp((x - Gutter) / LaneWidth, 0, 1) * (ShownEnd - ShownStart);
 
     /// <summary>"9 AM" or "09:00", following the user's clock format.</summary>
     internal static string HourLabel(int hour)
@@ -324,4 +472,9 @@ public sealed class TimelineControl : ThemedControl
         var culture = CultureInfo.CurrentCulture;
         return culture.DateTimeFormat.ShortTimePattern.Contains('H') ? time.ToString("HH:mm", culture) : time.ToString("h tt", culture);
     }
+
+    /// <summary>A grid line's label: the hour as <see cref="HourLabel"/>, or the time with its minutes in the user's format.</summary>
+    private static string TickLabel(double seconds) => seconds % 3600 == 0
+        ? HourLabel((int)Math.Floor(seconds / 3600))
+        : DateTime.Today.AddSeconds(seconds).ToString("t", CultureInfo.CurrentCulture);
 }

@@ -739,6 +739,10 @@ grids with editable cells rather than a text box per row, no accent buttons in t
   - Shift+click moves the nearer edge.
   - A drag elsewhere starts a new selection; Esc clears.
   - Double-clicking a project block or an activity run selects it.
+  - Zoom (built 2026-10-20): the wheel zooms at the pointer, down to 5 minutes across; Shift+wheel or a sideways
+    wheel scrolls, and so does the scroll bar under the lanes. A drag held past either end scrolls that way. Labels go
+    down to minutes. The playhead is kept in view when it moves (to the middle after a long jump). Another day starts
+    zoomed out; Refresh keeps the zoom.
 - *Resizable panel.* Drag its left edge, 400–720 px (360 in the mockup left no room for names in segment rows); the width is remembered.
 
 **Built 2026-10-19** (commits after 3a41ae3).

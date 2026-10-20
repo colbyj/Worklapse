@@ -29,6 +29,8 @@ public partial class DayReviewView : UserControl
     private PlannedFrame? _plan;
     private (IReadOnlyList<FrameTile> Tiles, PixelRect? Focus) _shown = ([], null);
     private bool _updatingBars;
+    private bool _updatingTimelineBar;
+    private DateOnly? _timelineDay;            // the day the timeline's zoom is for
     private FrameRef? _reloadedFor;
     private bool _closed;
     private (double X, double Width)? _resizingFrom;   // where a drag of the panel's edge started
@@ -50,6 +52,13 @@ public partial class DayReviewView : UserControl
         Timeline.Dragged += viewModel.DragSelect;
         Timeline.EdgeDragged += viewModel.DragEdge;
         Timeline.DoubleClicked += viewModel.DoubleClick;
+        Timeline.ShownChanged += UpdateTimelineBar;
+        TimelineBar.Margin = new Thickness(TimelineControl.Gutter, 0, 0, TimelineBar.Margin.Bottom);
+        TimelineBar.ValueChanged += (_, _) =>
+        {
+            if (!_updatingTimelineBar)
+                Timeline.ScrollTo(Timeline.ViewStart + TimelineBar.Value);
+        };
         Frames.ViewChanged += UpdateView;
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
@@ -233,9 +242,35 @@ public partial class DayReviewView : UserControl
     private void UpdateTimeline()
     {
         Timeline.SetData(_viewModel.Spans, _viewModel.View.Start, _viewModel.View.End);
+        // Another day starts zoomed out; the same day read again keeps its zoom.
+        if (_viewModel.Day.Day != _timelineDay)
+        {
+            _timelineDay = _viewModel.Day.Day;
+            Timeline.ShowAll();
+        }
         Timeline.SetProjects(_viewModel.ProjectLane);
         Timeline.SetMarkers(_viewModel.SelectionSeconds, _viewModel.PlayheadSeconds);
         Timeline.SetReach(_viewModel.ReachSeconds);
+        UpdateTimelineBar();
+    }
+
+    /// <summary>The timeline's scroll bar, in seconds from the start of the time it covers; full while zoomed out.</summary>
+    private void UpdateTimelineBar()
+    {
+        var shown = Timeline.ShownEnd - Timeline.ShownStart;
+        _updatingTimelineBar = true;
+        try
+        {
+            TimelineBar.Maximum = Timeline.ViewEnd - Timeline.ViewStart - shown;
+            TimelineBar.Value = Timeline.ShownStart - Timeline.ViewStart;
+            TimelineBar.ViewportSize = shown;
+            TimelineBar.SmallChange = shown / 10;
+            TimelineBar.LargeChange = shown * 0.9;
+        }
+        finally
+        {
+            _updatingTimelineBar = false;
+        }
     }
 
     // --- the side panel ---------------------------------------------------------------------------
