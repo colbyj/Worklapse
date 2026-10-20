@@ -246,6 +246,15 @@ public sealed class ProjectStore(WorklapseDatabase db)
         if (end <= start)
             throw new ArgumentException("A range must end after it starts.", nameof(end));
         using var transaction = db.BeginTransaction();
+        SetSpanInTransaction(start, end, projectId);
+        transaction.Commit();
+    }
+
+    /// <summary>As <see cref="SetSpan"/>, inside a transaction the caller holds (accepting a suggestion writes several).</summary>
+    internal void SetSpanInTransaction(DateTimeOffset start, DateTimeOffset end, long? projectId)
+    {
+        if (end <= start)
+            throw new ArgumentException("A range must end after it starts.", nameof(end));
         var (s, e) = (start.ToUnixTimeMilliseconds(), end.ToUnixTimeMilliseconds());
         CutOut(s, e);
 
@@ -269,7 +278,6 @@ public sealed class ProjectStore(WorklapseDatabase db)
         var words = new ScreenWordStore(db);
         if (projectId is { } project && !words.ReadsScreenFor(project))
             words.Prune(start, end);
-        transaction.Commit();
     }
 
     /// <summary>Removes s..e from the ranges set by hand, keeping the parts of them outside it.</summary>

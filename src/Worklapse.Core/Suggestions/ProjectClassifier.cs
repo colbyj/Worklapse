@@ -127,7 +127,9 @@ public sealed class ProjectClassifier
                 for (var i = 0; i < _labels.Length; i++)
                     if (i != target)
                         best = Math.Max(best, LogLikelihood(i, word));
-                pull[word] = pull.GetValueOrDefault(word) + Weight(word) * (own - best);
+                // With no other label to beat, the words most likely for this one.
+                var gain = double.IsNegativeInfinity(best) ? own - Math.Log(Smoothing) + _logTotals[target] : own - best;
+                pull[word] = pull.GetValueOrDefault(word) + Weight(word) * gain;
             }
         return pull.Where(p => p.Value > 0).OrderByDescending(p => p.Value).Take(count).Select(p => p.Key).ToList();
     }
