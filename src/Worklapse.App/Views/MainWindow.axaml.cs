@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly TimesheetView _timesheet = null!;
     private DayReviewView? _dayView;
     private string _dataFolder = "";
+    private TimeOnly _dayStart;
 
     // Needed by the XAML loader; the app always uses the other constructor.
     public MainWindow() => InitializeComponent();
@@ -31,6 +32,7 @@ public partial class MainWindow : Window
         _settings = settings;
         DataContext = viewModel;
         _dataFolder = settings.Current.DataFolder;
+        _dayStart = settings.Current.DayStart;
 
         _overview = new OverviewView(viewModel.Overview, viewModel.Recording);
         _timesheet = new TimesheetView(viewModel.Timesheet, viewModel.Recording);
@@ -69,7 +71,7 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainViewModel.DayReview))
             SyncDayView();
-        // A new Day review (after a folder change) is shown at once if it's the view; one made by opening a day from
+        // A new Day review (after a folder or day start change) is shown at once if it's the view; one made by opening a day from
         // another view is shown by the switch that follows.
         if (e.PropertyName == nameof(MainViewModel.View) || (e.PropertyName == nameof(MainViewModel.DayReview) && _viewModel.IsDayReview))
         {
@@ -78,7 +80,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>A view for the Day review the view model has now (none, or a new one after a folder change).</summary>
+    /// <summary>A view for the Day review the view model has now (none, or a new one after a folder or day start change).</summary>
     private void SyncDayView()
     {
         if (_dayView is not null && _dayView.DataContext != _viewModel.DayReview)
@@ -107,12 +109,14 @@ public partial class MainWindow : Window
 
     private void OnSettingsChanged(object? sender, WorklapseSettings settings) => Dispatcher.UIThread.Post(() =>
     {
-        // Day review reads the history in the data folder it was opened on.
-        if (string.Equals(settings.DataFolder, _dataFolder, StringComparison.OrdinalIgnoreCase))
+        // Day review reads the history in the data folder it was opened on, with the days starting as they did then.
+        var sameFolder = string.Equals(settings.DataFolder, _dataFolder, StringComparison.OrdinalIgnoreCase);
+        if (sameFolder && settings.DayStart == _dayStart)
             return;
         _dataFolder = settings.DataFolder;
-        _viewModel.ReopenDayReview();
-        // The Overview and the Timesheet read the folder the settings name at each load.
+        _dayStart = settings.DayStart;
+        _viewModel.ReopenDayReview(keepDay: sameFolder);
+        // The Overview and the Timesheet read the folder and the day start the settings name at each load.
         if (!_viewModel.IsDayReview)
             _viewModel.RefreshView();
     });

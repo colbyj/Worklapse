@@ -37,7 +37,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public RecordingViewModel Recording { get; }
 
-    // These read their data folder from the settings at each load, so they need nothing after a folder change.
+    // These read their data folder and day start from the settings at each load, so they need nothing after a change of either.
     public OverviewViewModel Overview { get; }
     public TimesheetViewModel Timesheet { get; }
 
@@ -49,7 +49,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool IsDayReview => View == MainView.DayReview;
     public bool IsTimesheet => View == MainView.Timesheet;
 
-    /// <summary>Made the first time Day review is shown; null until then (and after the data folder changes).</summary>
+    /// <summary>Made the first time Day review is shown; null until then (and after the data folder or the day start changes).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Title))]
     private DayReviewViewModel? _dayReview;
@@ -118,14 +118,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Makes Day review again, reading the history from where the settings now say (after a folder change).</summary>
-    public void ReopenDayReview()
+    /// <summary>
+    /// Makes Day review again, reading the history from where the settings now say with days starting when they say
+    /// (after a change of either).
+    /// </summary>
+    /// <param name="keepDay">Open on the day shown (its date), rather than the latest recorded.</param>
+    public void ReopenDayReview(bool keepDay = false)
     {
-        if (DayReview is null)
+        if (DayReview is not { } old)
             return;
+        var day = old.Day.Day;
         CloseDayReview();
         if (View == MainView.DayReview)
-            EnsureDayReview();
+            EnsureDayReview(keepDay ? day : null);
     }
 
     public void Dispose()

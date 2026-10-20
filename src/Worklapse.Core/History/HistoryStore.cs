@@ -15,17 +15,23 @@ public readonly record struct DeleteResult(int Captures, bool StagedSegmentsAffe
 /// Reads recorded days and edits them (marking ranges for deletion). Uses its own connection; meant for
 /// the UI thread, alongside the recorder writing through another connection.
 /// </summary>
-public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
+/// <param name="dayStart">When each day begins (<see cref="LocalDay"/>); midnight by default.</param>
+public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = default) : IDisposable
 {
     public WorklapseDatabase Database => db;
 
-    /// <summary>Local calendar days that have at least one capture, oldest first.</summary>
+    public TimeOnly DayStart => dayStart;
+
+    public DateOnly Today => LocalDay.Today(dayStart);
+
+    /// <summary>Local days that have at least one capture, oldest first.</summary>
     public IReadOnlyList<DateOnly> GetDays()
     {
         // Local day of each capture, using the offset recorded with it.
         using var command = db.Command("""
-            SELECT DISTINCT date((ts_ms / 1000) + utc_offset_min * 60, 'unixepoch') FROM captures ORDER BY 1;
+            SELECT DISTINCT date((ts_ms / 1000) + utc_offset_min * 60 - $dayStart, 'unixepoch') FROM captures ORDER BY 1;
             """);
+        command.Parameters.AddWithValue("$dayStart", (long)dayStart.ToTimeSpan().TotalSeconds);
         using var reader = command.ExecuteReader();
         var days = new List<DateOnly>();
         while (reader.Read())
@@ -340,26 +346,13 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
 
     public void Dispose() => db.Dispose();
 
-    /// <summary>The start and end of a local day, as <see cref="LoadDay"/> bounds it.</summary>
-    public static (DateTimeOffset Start, DateTimeOffset End) DayRange(DateOnly day)
-    {
-        var (start, end) = DayBounds(day);
-        var zone = TimeZoneInfo.Local;
-        var startTime = DateTimeOffset.FromUnixTimeMilliseconds(start);
-        var endTime = DateTimeOffset.FromUnixTimeMilliseconds(end);
-        return (startTime.ToOffset(zone.GetUtcOffset(startTime)), endTime.ToOffset(zone.GetUtcOffset(endTime)));
-    }
+    /// <summary>The start and end of a local day, as <see cref="LoadDay"/> bounds it (<see cref="LocalDay.Range"/>).</summary>
+    public (DateTimeOffset Start, DateTimeOffset End) DayRange(DateOnly day) => LocalDay.Range(day, dayStart);
 
-    /// <summary>
-    /// UTC milliseconds bounding a local day. Captures store their own offset, but the day itself is the
-    /// local day as this computer sees it now (a day recorded in another time zone can straddle two).
-    /// </summary>
-    private static (long Start, long End) DayBounds(DateOnly day)
+    /// <summary>UTC milliseconds bounding a local day.</summary>
+    private (long Start, long End) DayBounds(DateOnly day)
     {
-        var zone = TimeZoneInfo.Local;
-        var start = day.ToDateTime(TimeOnly.MinValue);
-        var end = day.AddDays(1).ToDateTime(TimeOnly.MinValue);
-        return (new DateTimeOffset(start, zone.GetUtcOffset(start)).ToUnixTimeMilliseconds(),
-                new DateTimeOffset(end, zone.GetUtcOffset(end)).ToUnixTimeMilliseconds());
+        var (start, end) = DayRange(day);
+        return (start.ToUnixTimeMilliseconds(), end.ToUnixTimeMilliseconds());
     }
 }

@@ -143,10 +143,10 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
     public async Task ExportAsync(string fileName, Func<Task<Stream>> openFile)
     {
         ExportError = "";
-        var (period, folder, maxCaptureLength) = (Period, Settings.Current.DataFolder, MaxCaptureLength);
+        var (period, settings) = (Period, Settings.Current);
         try
         {
-            var data = await Task.Run(() => Load(folder, period, maxCaptureLength));
+            var data = await Task.Run(() => Load(settings.DataFolder, period, settings.MaxCaptureLength, settings.DayStart));
             // A spreadsheet holding the file open makes this fail; said so in the bar under the tool bar.
             await using var stream = await openFile();
             // With a byte order mark, so spreadsheets read names with accents correctly.
@@ -159,8 +159,8 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
         }
     }
 
-    protected override TimesheetData Load(string dataFolder, Period period, TimeSpan maxCaptureLength) =>
-        TimesheetData.Load(dataFolder, period.Start, period.End, maxCaptureLength);
+    protected override TimesheetData Load(string dataFolder, Period period, TimeSpan maxCaptureLength, TimeOnly dayStart) =>
+        TimesheetData.Load(dataFolder, period.Start, period.End, maxCaptureLength, dayStart);
 
     protected override void ShowError(string message)
     {
@@ -344,10 +344,10 @@ public sealed record TimesheetData(
     ProjectCatalog Catalog)
 {
     /// <summary>Reads a range with a connection of its own (connections are single-thread); for a background thread.</summary>
-    public static TimesheetData Load(string dataFolder, DateOnly from, DateOnly to, TimeSpan maxCaptureLength)
+    public static TimesheetData Load(string dataFolder, DateOnly from, DateOnly to, TimeSpan maxCaptureLength, TimeOnly dayStart)
     {
         using var db = WorklapseDatabase.Open(dataFolder);
-        var history = new HistoryStore(db);
+        var history = new HistoryStore(db, dayStart);
         var projects = new ProjectStore(db);
         return new TimesheetData(dataFolder,
             Timesheet.Build(history, projects, from, to, maxCaptureLength),

@@ -372,12 +372,12 @@ public class ProjectTests
         recording.InsertCapture(Nine.AddSeconds(70), CaptureKind.Idle, null, null, null);
         recording.InsertCapture(Nine.AddSeconds(80), CaptureKind.Active, code, "t", null);
         history.SetPendingDelete(Nine.AddSeconds(80), Nine.AddSeconds(81), true);
-        var (_, midnight) = HistoryStore.DayRange(Day);
+        var (_, midnight) = history.DayRange(Day);
         recording.InsertCapture(midnight.AddSeconds(-5), CaptureKind.Active, code, "t", null);
         projects.SetNote(Day, worklapse, "Panning");
 
         // Day 2: nothing recorded, only a call set by hand in the evening, with a note. Day 3: nothing at all.
-        var (dayTwo, _) = HistoryStore.DayRange(Day.AddDays(1));
+        var (dayTwo, _) = history.DayRange(Day.AddDays(1));
         projects.SetSpan(dayTwo.AddHours(18), dayTwo.AddHours(18.5), client);
         projects.SetNote(Day.AddDays(1), client, "Call");
 
@@ -385,7 +385,7 @@ public class ProjectTests
         Assert.Equal([Day, Day.AddDays(1), Day.AddDays(2)], days.Select(d => d.Day));
 
         // The same totals as Day review works out from the full day.
-        var (start, end) = HistoryStore.DayRange(Day);
+        var (start, end) = history.DayRange(Day);
         var full = ProjectTimeline.Build(history.LoadDay(Day).Captures, projects.GetSpans(start, end), start, end, Max);
         var one = days[0];
         Assert.Equal(full.Blocks, one.Time.Blocks);

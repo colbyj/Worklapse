@@ -12,8 +12,6 @@ public enum PeriodKind
 /// <param name="Start">The Monday, or the first of the month.</param>
 public readonly record struct Period(PeriodKind Kind, DateOnly Start)
 {
-    public static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
-
     /// <summary>The week or month containing <paramref name="day"/>.</summary>
     public static Period Containing(PeriodKind kind, DateOnly day) =>
         new(kind, kind == PeriodKind.Week ? WeekStart(day) : new DateOnly(day.Year, day.Month, 1));
@@ -32,8 +30,8 @@ public readonly record struct Period(PeriodKind Kind, DateOnly Start)
     /// Thursday is in, and a month the week holding its first Thursday (ISO's rule, so switching back and forth
     /// returns to where it started).
     /// </summary>
-    public Period As(PeriodKind kind) => kind == Kind ? this
-        : Contains(Today) ? Containing(kind, Today)
+    public Period As(PeriodKind kind, DateOnly today) => kind == Kind ? this
+        : Contains(today) ? Containing(kind, today)
         : kind == PeriodKind.Month ? Containing(PeriodKind.Month, Start.AddDays(3))
         : Containing(PeriodKind.Week, Start.AddDays((4 - (int)Start.DayOfWeek + 7) % 7));
 

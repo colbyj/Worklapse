@@ -34,6 +34,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Projects and the main window | **Designed and built 2026-10-18** (phases 1–6) — see Next steps, *1a*. One main window (Overview, Day review, Timesheet) replaces the status window; time is labelled with projects by linking apps/sites to them, overridden by hand in Day review; a timesheet holds one line per project per day with the hours to bill. | The developer logs contract hours; the status window was "somewhat useless". |
 | Websites | Read from the browser's address bar through UI Automation at capture time (Chrome, Edge, Firefox), storing the **host name only, minus a leading `www.`** (mail.google.com and docs.google.com are separate; www.github.com is github.com). New captures only; older ones fall back to their browser's classification. Private windows record no site. | Agreed 2026-10-16/17. Measured: ~1 ms per capture, no measurable cost to the browsers' memory (see Benchmarks). |
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
+| When a day starts | Settings → General → Days: *Day starts at*, any minute 00:00–23:59 typed as a 24-hour time (`DayStart` in `settings.json`, default midnight). A day is named by the date it starts on, so with 04:00 the hours after midnight belong to the day before, and with 22:00 Monday 21:00 is Sunday's. Applies to every view at once (Day review, Overview, Timesheet, "today"); nothing stored changes, and notes and logged time stay with their date. Timelines measure from the date's midnight, so a late night runs past 24 h (12 AM, 1 AM …). `Core/History/LocalDay`; `HistoryStore` takes the day start. | Developer, 2026-10-20: works into the early hours and wants them in the day before; asked for any time, not whole hours. |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
 | Shared history across OSes | Wanted eventually (likely on D:, BitLocker-unlocked under Linux, with Fast Startup off). Not started. | — |
 
@@ -441,6 +442,10 @@ Working on Windows:
   the tray*. Checked with tests (`LogTests`, the encoder failure in `ReclaimTests`), the badges, Settings, error
   window and menu rendered off-screen, and the Win32 structures' sizes and offsets against the native ones plus a real
   add and update of the icon; the notifications, the menu and clicks not tried on the desktop yet.
+- Day start (2026-10-20): see *When a day starts*. Checked with tests (`DayStartTests`: days split at 04:00 and at
+  22:00, summaries, settings to the minute) and Overview, Day review and Settings rendered off-screen on a synthetic
+  late night, including Day review reopening on the same date when the setting changes. Also fixed: Day review's
+  typed selection times crashed on text no format matched, such as "4" or "25:00" (`ParseClock`'s "H" format).
 
 Tested less or not at all: active-application mode over a longer session, selected monitors (only the matching,
 by tests; not the Settings dialog), an actual replug with the new build, rotated displays (GDI should handle them, untested), Store-app window detection,

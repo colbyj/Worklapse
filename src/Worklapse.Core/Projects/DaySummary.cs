@@ -30,8 +30,8 @@ public static class DaySummaries
         TimeSpan maxCaptureLength, bool withActivity = false)
     {
         var samples = history.LoadSamples(from, to);
-        var (rangeStart, _) = HistoryStore.DayRange(from);
-        var (rangeEnd, _) = HistoryStore.DayRange(to);
+        var (rangeStart, _) = history.DayRange(from);
+        var (rangeEnd, _) = history.DayRange(to);
         var spans = projects.GetSpans(rangeStart, rangeEnd);
         var notes = projects.GetNotes(from, to);
 
@@ -39,7 +39,7 @@ public static class DaySummaries
         var next = 0;
         for (var day = from; day < to; day = day.AddDays(1))
         {
-            var (start, end) = HistoryStore.DayRange(day);
+            var (start, end) = history.DayRange(day);
             var first = next;
             while (next < samples.Count && samples[next].Time < end)
                 next++;

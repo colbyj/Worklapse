@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
@@ -125,6 +126,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _notifyWhenRecordingStarts;
     [ObservableProperty] private bool _notifyWhenInTray;
 
+    // The General page's day start, typed as a 24-hour time.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DayStartIsValid), nameof(CanApply), nameof(CanConfirm))]
+    private string _dayStartText = "";
+
+    /// <summary>The day start typed, if it reads as a time.</summary>
+    private TimeOnly? ChosenDayStart => ProjectTimes.ParseClock(DayStartText);
+
+    public bool DayStartIsValid => ChosenDayStart is not null;
+
     // The General page's theme: indexes into its lists, in the order of ThemeStyle and ThemeMode.
     [ObservableProperty] private int _themeStyleIndex;
     [ObservableProperty] private int _themeModeIndex;
@@ -163,8 +174,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool DataFolderExists => HasDataFolder && Directory.Exists(DataFolder.Trim());
     public bool CanApply => IsDirty && CanConfirm;
 
-    /// <summary>OK can be pressed: there's a history folder, and every project and category has a name.</summary>
-    public bool CanConfirm => HasDataFolder && Projects.IsValid;
+    /// <summary>OK can be pressed: there's a history folder, the day start reads, and every project and category has a name.</summary>
+    public bool CanConfirm => HasDataFolder && DayStartIsValid && Projects.IsValid;
 
     public void UseDefaultDataFolder() => DataFolder = WorklapseSettings.DefaultDataFolder;
 
@@ -175,7 +186,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>
     /// Puts the shown tab's settings back to their defaults: what is recorded and how on Recording; startup,
-    /// notifications and the look on General. Settings the dialog doesn't show (set in the settings file) are kept.
+    /// notifications, the day start and the look on General. Settings the dialog doesn't show (set in the settings file) are kept.
     /// </summary>
     public void RestoreDefaults()
     {
@@ -186,6 +197,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             RecordAtStartup = defaults.RecordAtStartup;
             NotifyWhenRecordingStarts = defaults.NotifyWhenRecordingStarts;
             NotifyWhenInTray = defaults.NotifyWhenInTray;
+            DayStartText = ClockText(defaults.DayStart);
             ThemeStyleIndex = (int)defaults.ThemeStyle;
             ThemeModeIndex = (int)defaults.ThemeMode;
         }
@@ -196,6 +208,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 RecordAtStartup = RecordAtStartup,
                 NotifyWhenRecordingStarts = NotifyWhenRecordingStarts,
                 NotifyWhenInTray = NotifyWhenInTray,
+                DayStart = ChosenDayStart ?? _store.Current.DayStart,
                 ThemeStyle = (ThemeStyle)ThemeStyleIndex,
                 ThemeMode = (ThemeMode)ThemeModeIndex,
             });
@@ -268,6 +281,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         JpegQuality = (int)JpegQuality,
         WebPQuality = (int)WebPQuality,
         DataFolder = DataFolder.Trim(),
+        DayStart = ChosenDayStart ?? _store.Current.DayStart,
         ThemeStyle = (ThemeStyle)ThemeStyleIndex,
         ThemeMode = (ThemeMode)ThemeModeIndex,
     };
@@ -297,6 +311,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         JpegQuality = settings.JpegQuality;
         WebPQuality = settings.WebPQuality;
         DataFolder = settings.DataFolder;
+        DayStartText = ClockText(settings.DayStart);
         ThemeStyleIndex = (int)settings.ThemeStyle;
         ThemeModeIndex = (int)settings.ThemeMode;
         _loading = false;
@@ -314,6 +329,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             or nameof(IntervalSeconds))
             Preview?.Request(ChosenStorage.Format, ChosenStorage.Quality, ChosenInterval);
     }
+
+    private static string ClockText(TimeOnly time) => time.ToString("HH:mm", CultureInfo.InvariantCulture);
 
     private void MarkDirty()
     {

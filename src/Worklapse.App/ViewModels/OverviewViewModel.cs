@@ -136,8 +136,8 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
 
     public bool HasError => ErrorText.Length > 0;
 
-    protected override OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength) =>
-        OverviewData.Load(dataFolder, period, maxCaptureLength);
+    protected override OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength, TimeOnly dayStart) =>
+        OverviewData.Load(dataFolder, period, maxCaptureLength, dayStart);
 
     /// <summary>Shows why the period can't be read, and nothing of the one shown before (it isn't this one).</summary>
     protected override void ShowError(string message)
@@ -167,24 +167,26 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
         if (data.Period.Kind != PeriodKind.Week)
             return;
 
-        // One axis for the week: the earliest start to the latest end, in whole hours (up to 25 on the day the clocks
-        // go back).
-        var midnights = data.Days.ToDictionary(d => d.Day, d => HistoryStore.DayRange(d.Day));
+        // One axis for the week: the earliest start to the latest end, in whole hours (the latest end up to 25 hours
+        // after midnight on the day the clocks go back, more on days that start after midnight). An empty week shows
+        // the working day, or from the day's start if that's later.
+        var midnights = data.Days.ToDictionary(d => d.Day, d => LocalDay.Midnight(d.Day));
         var extents = data.Days.Where(d => d.Extent is not null)
-            .Select(d => (Start: Seconds(midnights[d.Day].Start, d.Extent!.Value.First), End: Seconds(midnights[d.Day].Start, d.Extent.Value.Last)))
+            .Select(d => (Start: Seconds(midnights[d.Day], d.Extent!.Value.First), End: Seconds(midnights[d.Day], d.Extent.Value.Last)))
             .ToList();
-        var longestDay = midnights.Values.Max(r => Seconds(r.Start, r.End));
-        (AxisStart, AxisEnd) = extents.Count == 0 ? (8 * 3600.0, 18 * 3600.0)
+        var latestDayEnd = data.Days.Max(d => Seconds(midnights[d.Day], LocalDay.Range(d.Day, data.DayStart).End));
+        var morning = Math.Max(8 * 3600.0, data.DayStart.ToTimeSpan().TotalSeconds);
+        (AxisStart, AxisEnd) = extents.Count == 0 ? (morning, morning + 10 * 3600)
             : (Math.Floor(extents.Min(e => e.Start) / 3600) * 3600,
-               Math.Min(longestDay, Math.Ceiling(extents.Max(e => e.End) / 3600) * 3600));
+               Math.Min(latestDayEnd, Math.Ceiling(extents.Max(e => e.End) / 3600) * 3600));
         if (AxisEnd - AxisStart < 3600)
             AxisEnd = AxisStart + 3600;
 
-        var today = Period.Today;
+        var today = LocalDay.Today(data.DayStart);
         foreach (var summary in data.Days)
         {
             var day = summary.Day;
-            var midnight = midnights[day].Start;
+            var midnight = midnights[day];
             var blocks = summary.Time.Blocks
                 .Select(b => new ProjectLaneBlock(Seconds(midnight, b.Start), Seconds(midnight, b.End), data.Catalog.BrushOf(b.ProjectId), data.Catalog.NameOf(b.ProjectId)))
                 .ToList();
@@ -208,7 +210,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
         MonthCells.Clear();
         if (data.Period.Kind != PeriodKind.Month)
             return;
-        var today = Period.Today;
+        var today = LocalDay.Today(data.DayStart);
         var byDay = data.Days.ToDictionary(d => d.Day);
         for (var cursor = data.Period.GridStart; cursor < data.Period.GridEnd; cursor = cursor.AddDays(1))
         {
@@ -308,7 +310,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
         HasNoNotes = Notes.Count == 0;
     }
 
-    /// <summary>Seconds since the day's start (local midnight), as the timelines measure time.</summary>
+    /// <summary>Seconds since the midnight the day's date begins with, as the timelines measure time.</summary>
     private static double Seconds(DateTimeOffset midnight, DateTimeOffset time) => (time - midnight).TotalSeconds;
 
     private static string Clock(DateTimeOffset time) => time.ToLocalTime().ToString("t", CultureInfo.CurrentCulture);
@@ -327,21 +329,23 @@ public sealed record OverviewData(
     List<DaySummary> Days,
     PeriodTotals Totals,
     Dictionary<DateOnly, string> DayNotes,
-    ProjectCatalog Catalog)
+    ProjectCatalog Catalog,
+    TimeOnly DayStart)
 {
     /// <summary>
     /// Reads a period with a connection of its own (connections are single-thread); for a background thread. A week
     /// also works out each day's activity for its timeline; a month only its totals.
     /// </summary>
-    public static OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength)
+    public static OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength, TimeOnly dayStart)
     {
         using var db = WorklapseDatabase.Open(dataFolder);
-        var history = new HistoryStore(db);
+        var history = new HistoryStore(db, dayStart);
         var projects = new ProjectStore(db);
         var days = DaySummaries.Build(history, projects, period.Start, period.End, maxCaptureLength, withActivity: period.Kind == PeriodKind.Week);
         return new OverviewData(period, days,
             PeriodTotals.Build(period, days, projects.GetLogged(period.Start, period.End)),
             projects.GetDayNotes(period.Start, period.End),
-            ProjectCatalog.Read(projects));
+            ProjectCatalog.Read(projects),
+            dayStart);
     }
 }

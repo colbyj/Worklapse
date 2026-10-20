@@ -84,7 +84,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         Speeds = ["Slow", "Normal", "Fast", "Very fast"];
         _speed = "Normal";
         LoadDays();
-        LoadDay(day ?? (_days.Count > 0 ? _days[^1] : DateOnly.FromDateTime(DateTime.Today)));
+        LoadDay(day ?? (_days.Count > 0 ? _days[^1] : history.Today));
         if (Captures.Count > 0)
             MoveTo(day is null ? Captures.Count - 1 : 0);
     }
@@ -140,7 +140,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     public bool CanGoPreviousDay => _days.Any(d => d < Day.Day);
 
     /// <summary>Today is shown: it grows while recording, so it can be read again.</summary>
-    public bool IsToday => Day.Day == Period.Today;
+    public bool IsToday => Day.Day == _history.Today;
 
     public string PlayText => IsPlaying ? "Pause" : "Play";
 
@@ -577,8 +577,10 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
                 spans.Add(new TimelineSpan(start, end, kind, c.PendingDelete));
         }
         Spans = spans;
+        // An empty day shows the working day, or from the day's start if that's later.
+        var morning = Math.Max(8 * 3600, _history.DayStart.ToTimeSpan().TotalSeconds);
         View = Captures.Count == 0
-            ? (8 * 3600, 17 * 3600)
+            ? (morning, morning + 9 * 3600)
             : (Math.Floor(spans[0].Start / 1800) * 1800, Math.Ceiling(spans[^1].End / 1800) * 1800);
 
         MarkedRanges.Clear();

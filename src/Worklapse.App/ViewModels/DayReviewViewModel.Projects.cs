@@ -213,7 +213,8 @@ internal static class ProjectTimes
     public static TimeOnly? ParseClock(string text)
     {
         text = text.Trim();
-        string[] formats = ["H:mm", "HH:mm", "Hmm", "HHmm", "H", "h:mm tt", "h:mmtt", "h tt", "htt", "H.mm", "H:mm:ss"];
+        // "%H", not "H": a one-letter format is read as a standard one, and "H" isn't one (TryParseExact throws).
+        string[] formats = ["H:mm", "HH:mm", "Hmm", "HHmm", "%H", "h:mm tt", "h:mmtt", "h tt", "htt", "H.mm", "H:mm:ss"];
         foreach (var culture in new[] { CultureInfo.CurrentCulture, CultureInfo.InvariantCulture })
         {
             if (TimeOnly.TryParseExact(text, formats, culture, DateTimeStyles.AllowWhiteSpaces, out var exact))
@@ -311,7 +312,8 @@ public sealed partial class DayReviewViewModel
             return;
         if (ProjectTimes.ParseClock(text) is { } clock)
         {
-            var at = TimeAt(clock.ToTimeSpan().TotalSeconds);
+            // A time before the day starts is in the early hours after its date.
+            var at = TimeAt(clock.ToTimeSpan().TotalSeconds + (clock < _history.DayStart ? 24 * 3600 : 0));
             var (s, e) = start ? (at, range.End) : (range.Start, at);
             // An end typed earlier than the start means the next day's early hours rarely; treat it as a mistake.
             if (e > s)
@@ -353,7 +355,7 @@ public sealed partial class DayReviewViewModel
     /// </summary>
     private void RebuildProjects()
     {
-        var (dayStart, dayEnd) = HistoryStore.DayRange(Day.Day);
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
         _categoriesById = Projects.GetCategories().ToDictionary(c => c.Id);
         _projectsById = Projects.GetProjects().ToDictionary(p => p.Id);
         _handSpans = Projects.GetSpans(dayStart, dayEnd);
@@ -396,10 +398,11 @@ public sealed partial class DayReviewViewModel
     private void WidenViewForHandSpans()
     {
         var (start, end) = View;
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
         foreach (var span in _handSpans.Where(s => s.ProjectId is not null))
         {
-            start = Math.Min(start, Math.Floor(Math.Max(0, SecondsOf(span.Start)) / 1800) * 1800);
-            end = Math.Max(end, Math.Ceiling(Math.Min(24 * 3600, SecondsOf(span.End)) / 1800) * 1800);
+            start = Math.Min(start, Math.Floor(Math.Max(SecondsOf(dayStart), SecondsOf(span.Start)) / 1800) * 1800);
+            end = Math.Max(end, Math.Ceiling(Math.Min(SecondsOf(dayEnd), SecondsOf(span.End)) / 1800) * 1800);
         }
         View = (start, end);
     }
@@ -424,7 +427,7 @@ public sealed partial class DayReviewViewModel
         DaySegments.Clear();
         DateTimeOffset? start = Captures.Count > 0 ? Captures[0].Time : null;
         DateTimeOffset? end = Captures.Count > 0 ? Captures[^1].Time + CaptureLength(Captures.Count - 1) : null;
-        var (dayStart, dayEnd) = HistoryStore.DayRange(Day.Day);
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
         foreach (var span in _handSpans.Where(s => s.ProjectId is not null))
         {
             var (from, to) = (span.Start > dayStart ? span.Start : dayStart, span.End < dayEnd ? span.End : dayEnd);

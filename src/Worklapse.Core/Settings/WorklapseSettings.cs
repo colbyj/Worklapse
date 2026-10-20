@@ -82,6 +82,12 @@ public sealed record WorklapseSettings
     public string DataFolder { get; init; } = DefaultDataFolder;
 
     /// <summary>
+    /// When each day begins, to the minute (<see cref="History.LocalDay"/>): later than midnight puts the early hours of a
+    /// late night in the day before, in every view.
+    /// </summary>
+    public TimeOnly DayStart { get; init; }
+
+    /// <summary>
     /// Draw the windows with the GPU instead of the CPU. Set in the settings file only; takes effect at the
     /// next start, and only on Windows so far. Off by default: GPU rendering measured ~80 MB more while
     /// recording and ~450 MB more while reviewing four monitors, for no CPU saving in a normal-sized window.
@@ -130,5 +136,6 @@ public sealed record WorklapseSettings
         ReviewPanelWidth = double.IsFinite(ReviewPanelWidth)
             ? Math.Clamp(ReviewPanelWidth, MinReviewPanelWidth, MaxReviewPanelWidth) : DefaultReviewPanelWidth,
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,
+        DayStart = new TimeOnly(DayStart.Hour, DayStart.Minute), // seconds in a hand-edited file
     };
 }

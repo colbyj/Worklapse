@@ -290,6 +290,21 @@
 
           <Border Classes="group">
             <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Days" />
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Classes="label" Text="Day starts at:" />
+                <TextBox Grid.Column="1" Text="{Binding DayStartText}" Width="72" HorizontalAlignment="Left"
+                         AutomationProperties.Name="Day starts at" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint" IsVisible="{Binding DayStartIsValid}"
+                           Text="Earlier hours count toward the day before" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="warning" IsVisible="{Binding !DayStartIsValid}"
+                           Text="A 24-hour time, 00:00 to 23:59" />
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="group">
+            <StackPanel>
               <TextBlock Classes="groupHeader" Text="Theme" />
               <!-- In the order of ThemeStyle and ThemeMode. -->
               <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="8">

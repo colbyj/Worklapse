@@ -6,7 +6,7 @@ namespace Worklapse.Tests;
 
 public class PeriodTests
 {
-    private static readonly DateOnly Today = Period.Today;
+    private static readonly DateOnly Today = new(2026, 10, 20);
 
     [Fact]
     public void WeeksRunMondayToSundayAndStepAcrossYears()
@@ -48,17 +48,17 @@ public class PeriodTests
     {
         // A week straddling two months becomes the month its Thursday is in, and back.
         var straddling = Period.Containing(PeriodKind.Week, new DateOnly(2030, 9, 30)); // Mon 30 Sep – Sun 6 Oct 2030
-        Assert.Equal(new DateOnly(2030, 10, 1), straddling.As(PeriodKind.Month).Start);
-        Assert.Equal(straddling, straddling.As(PeriodKind.Month).As(PeriodKind.Week));
+        Assert.Equal(new DateOnly(2030, 10, 1), straddling.As(PeriodKind.Month, Today).Start);
+        Assert.Equal(straddling, straddling.As(PeriodKind.Month, Today).As(PeriodKind.Week, Today));
 
         // A month starting on a Sunday becomes the week of its first Thursday, not the week ending on the 1st.
         var march = Period.Containing(PeriodKind.Month, new DateOnly(2026, 3, 1)); // 1 March 2026 is a Sunday
-        Assert.Equal(new DateOnly(2026, 3, 2), march.As(PeriodKind.Week).Start);
-        Assert.Equal(march, march.As(PeriodKind.Week).As(PeriodKind.Month));
+        Assert.Equal(new DateOnly(2026, 3, 2), march.As(PeriodKind.Week, Today).Start);
+        Assert.Equal(march, march.As(PeriodKind.Week, Today).As(PeriodKind.Month, Today));
 
         // The period holding today becomes the one holding today.
-        Assert.Equal(Period.Containing(PeriodKind.Week, Today), Period.Containing(PeriodKind.Month, Today).As(PeriodKind.Week));
-        Assert.Equal(Period.Containing(PeriodKind.Month, Today), Period.Containing(PeriodKind.Week, Today).As(PeriodKind.Month));
+        Assert.Equal(Period.Containing(PeriodKind.Week, Today), Period.Containing(PeriodKind.Month, Today).As(PeriodKind.Week, Today));
+        Assert.Equal(Period.Containing(PeriodKind.Month, Today), Period.Containing(PeriodKind.Week, Today).As(PeriodKind.Month, Today));
     }
 
     [Fact]

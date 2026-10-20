@@ -274,11 +274,14 @@ public partial class App : Application
         return File.Exists(icon) ? icon : null;
     }
 
-    /// <summary>Day review on a day (or the latest recorded), reading the history in the data folder the settings name now.</summary>
+    /// <summary>
+    /// Day review on a day (or the latest recorded), reading the history in the data folder the settings name now, with
+    /// days starting when they say now.
+    /// </summary>
     private DayReviewViewModel CreateDayReview(DateOnly? day)
     {
         var settings = _settings!.Current;
-        var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder));
+        var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder), settings.DayStart);
         // The recorder's batch encoder (open even while paused or locked) removes the deleted video and images from
         // disk. Frames in the segments still being recorded go once those are closed and encoded.
         return new DayReviewViewModel(history, _settings, result =>
