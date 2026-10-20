@@ -114,12 +114,6 @@ public sealed class SegmentRow(DateTimeOffset from, DateTimeOffset to, string ra
     public FontStyle NameStyle => HasProgram ? FontStyle.Normal : FontStyle.Italic;
 }
 
-/// <summary>A project's time inside the selection; <see cref="IsNone"/> for the active time with no project.</summary>
-public sealed record SelectionProjectRow(long? ProjectId, string Name, IBrush Brush, string LengthText)
-{
-    public bool IsNone => ProjectId is null;
-}
-
 /// <summary>
 /// A project's time on the day, on the Time Log tab, with its note for the day. Logged is typed (h:mm); both are saved
 /// to the timesheet.
@@ -248,7 +242,7 @@ public sealed partial class DayReviewViewModel
 
     [ObservableProperty] private bool _isSidePanelOpen = true;
 
-    /// <summary>The day's tab: 0 Recorded Segments, 1 Applications, 2 Time Log, 3 Marked.</summary>
+    /// <summary>The panel's tab: 0 Segments, 1 Applications, 2 Suggestions, 3 Time Log, 4 Marked.</summary>
     [ObservableProperty] private int _panelTab;
 
     public ObservableCollection<DayAppRow> AppRows { get; } = [];
@@ -268,36 +262,12 @@ public sealed partial class DayReviewViewModel
     [ObservableProperty] private string _selectionStartText = "";
     [ObservableProperty] private string _selectionEndText = "";
     [ObservableProperty] private string _selectionLengthText = "";
-    [ObservableProperty] private string _selectionActiveText = "";
-    [ObservableProperty] private string _selectionIdleText = "";
-    [ObservableProperty] private string _selectionNotRecordedText = "";
-    [ObservableProperty] private string _selectionProductiveText = "";
-
-    /// <summary>The selection's active, idle and unrecorded parts as fractions, for its bar (as wide as the panel).</summary>
-    [ObservableProperty] private (double Active, double Idle, double NotRecorded) _selectionShares;
-
-    public double SelectionActiveWidth => SelectionShares.Active * SelectionBarWidth;
-    public double SelectionIdleWidth => SelectionShares.Idle * SelectionBarWidth;
-    public double SelectionNotRecordedWidth => SelectionShares.NotRecorded * SelectionBarWidth;
-    private double SelectionBarWidth => Math.Max(0, PanelWidth - 18);
 
     /// <summary>The apps and sites used in the selection, with their marks (which apply to every day).</summary>
     public ObservableCollection<DayAppRow> SelectionApps { get; } = [];
     [ObservableProperty] private string _selectionAppsTotalText = "";
 
     public ObservableCollection<SegmentRow> SelectionRuns { get; } = [];
-    public ObservableCollection<SelectionProjectRow> SelectionProjects { get; } = [];
-
-    partial void OnSelectionSharesChanged((double Active, double Idle, double NotRecorded) value) => ShowSelectionBar();
-
-    partial void OnPanelWidthChanged(double value) => ShowSelectionBar();
-
-    private void ShowSelectionBar()
-    {
-        OnPropertyChanged(nameof(SelectionActiveWidth));
-        OnPropertyChanged(nameof(SelectionIdleWidth));
-        OnPropertyChanged(nameof(SelectionNotRecordedWidth));
-    }
 
     // The ends of the selection, typed: applied when the box loses the focus; shown back as they are when they don't read.
     partial void OnSelectionStartTextChanged(string value) => ApplyTypedSelection(value, start: true);
@@ -374,9 +344,7 @@ public sealed partial class DayReviewViewModel
         ProjectOptions = options;
         OnPropertyChanged(nameof(AssignableProjects));
 
-        ProjectLane = _projectTime.Blocks
-            .Select(b => new ProjectLaneBlock(SecondsOf(b.Start), SecondsOf(b.End), BrushOf(b.ProjectId), NameOf(b.ProjectId)))
-            .ToList();
+        BuildProjectLane();
         WidenViewForHandSpans();
 
         BuildAppRows(AppRows, dayStart, dayEnd);
@@ -391,7 +359,8 @@ public sealed partial class DayReviewViewModel
         _reach.Clear();
         UpdateFrameSegment(force: true);
         SelectionChanged();
-        TimelineChanged?.Invoke();
+        // What has a project changed, so the suggestions may have too.
+        RefreshSuggestions();
     }
 
     /// <summary>Time set by hand outside the recording (an evening call) widens the timeline to show it.</summary>
@@ -503,12 +472,11 @@ public sealed partial class DayReviewViewModel
         return false;
     }
 
-    /// <summary>Fills the selection panel from the selection, if there is one, and marks the day's rows inside it.</summary>
+    /// <summary>Fills the selection's lists from the selection, if there is one, and marks the day's rows inside it.</summary>
     private void SelectionChanged()
     {
         SelectionApps.Clear();
         SelectionRuns.Clear();
-        SelectionProjects.Clear();
         ClearSelectionProjectCommand.NotifyCanExecuteChanged();
         foreach (var row in DaySegments)
             row.IsPicked = _range is { } picked && row.From >= picked.Start && row.To <= picked.End;
@@ -518,36 +486,10 @@ public sealed partial class DayReviewViewModel
             return;
 
         ShowSelection();
-        var summary = SpanSummary.For(Captures, range.Start, range.End, _maxCaptureLength);
-        var length = range.End - range.Start;
-        SelectionLengthText = ProjectTimes.Hm(length);
-        SelectionActiveText = DurationText.Of(summary.Active);
-        SelectionIdleText = DurationText.Of(summary.Idle);
-        SelectionNotRecordedText = DurationText.Of(summary.NotRecorded + summary.Marked);
-        SelectionProductiveText = DurationText.Of(summary.Productive);
-        var total = Math.Max(1, length.TotalSeconds);
-        SelectionShares = (summary.Active.TotalSeconds / total, summary.Idle.TotalSeconds / total,
-            Math.Max(0, 1 - (summary.Active + summary.Idle).TotalSeconds / total));
-
+        SelectionLengthText = ProjectTimes.Hm(range.End - range.Start);
         BuildAppRows(SelectionApps, range.Start, range.End);
-        SelectionAppsTotalText = DurationText.Of(summary.Active);
+        SelectionAppsTotalText = DurationText.Of(SpanSummary.For(Captures, range.Start, range.End, _maxCaptureLength).Active);
         BuildSegments(range, SelectionRuns);
-
-        // Each project's time inside the selection, in the order they come; then the active time with none.
-        var perProject = new Dictionary<long, TimeSpan>();
-        foreach (var block in _projectTime.Blocks)
-        {
-            var from = block.Start > range.Start ? block.Start : range.Start;
-            var to = block.End < range.End ? block.End : range.End;
-            if (to > from)
-                perProject[block.ProjectId] = perProject.GetValueOrDefault(block.ProjectId) + (to - from);
-        }
-        foreach (var (id, time) in perProject)
-            SelectionProjects.Add(new SelectionProjectRow(id, NameOf(id), BrushOf(id), ProjectTimes.Hm(time)));
-        var unassigned = ProjectTimeline.Build(Captures, _handSpans, range.Start, range.End, _maxCaptureLength).Unassigned;
-        var none = unassigned.Productive + unassigned.Other;
-        if (none >= TimeSpan.FromSeconds(1))
-            SelectionProjects.Add(new SelectionProjectRow(null, "No project", Brushes.Transparent, ProjectTimes.Hm(none)));
     }
 
     /// <summary>Shows the selection's ends in the boxes, without that counting as typing.</summary>

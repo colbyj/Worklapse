@@ -112,6 +112,13 @@
     <Style Selector="Border.row.segment.picked">
       <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
     </Style>
+    <Style Selector="Border.row.suggestion">
+      <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+    </Style>
+    <Style Selector="Border.row.suggestion.first">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
     <Style Selector="CheckBox.cell">
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="MinWidth" Value="0" />
@@ -230,24 +237,35 @@
       </DockPanel>
     </Border>
 
-    <!-- The side panel: the frame under the playhead, then the day or the selection. Its left edge resizes it. -->
+    <!--
+      The side panel: the current frame, then five tabs. Segments and Applications list the day or the selection (their
+      Day / Selection buttons); Suggestions, Time Log and Marked are always the whole day. While there's a selection, its
+      ends and what to do with it sit at the bottom, whichever tab shows. Its left edge resizes the panel.
+    -->
     <Border DockPanel.Dock="Right" Width="{Binding PanelWidth}" IsVisible="{Binding IsSidePanelOpen}" Background="{DynamicResource UiViewBrush}"
             BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="1,0,0,0">
       <DockPanel>
-        <!-- The frame: its app or site, its segment, and that segment's two marks. -->
+        <!-- The current frame, marked like the playhead: its app or site, its segment, and that segment's two marks. -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}"
-                BorderThickness="0,0,0,1" Padding="8,5,8,5">
-          <StackPanel Spacing="3">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" Height="20">
-              <TextBlock Text="{Binding FrameTime}" Classes="strong" VerticalAlignment="Center" />
-              <Ellipse Grid.Column="1" Width="9" Height="9" Fill="{Binding FrameStateBrush}" ToolTip.Tip="{Binding FrameState}"
-                       VerticalAlignment="Center" Margin="7,0" />
-              <TextBlock Grid.Column="2" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FrameName}">
+                BorderThickness="0,0,0,1" Padding="8,4,8,5">
+          <StackPanel Spacing="2">
+            <DockPanel Height="18">
+              <TextBlock DockPanel.Dock="Right" Classes="hint" VerticalAlignment="Center">
+                <Run Text="Segment " /><Run Text="{Binding FrameRangeText}" /><Run Text=" · " /><Run Text="{Binding FrameLengthText}" />
+              </TextBlock>
+              <Canvas Width="9" Height="14" VerticalAlignment="Center" Margin="0,0,6,0">
+                <Rectangle Width="8" Height="5" RadiusX="1.5" RadiusY="1.5" Fill="{x:Static theming:AppBrushes.Marked}" />
+                <Rectangle Canvas.Left="3" Canvas.Top="4" Width="2" Height="10" Fill="{x:Static theming:AppBrushes.Marked}" />
+              </Canvas>
+              <TextBlock Text="Current frame" Classes="strong" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding FrameTime}" Classes="strong" VerticalAlignment="Center" Margin="6,0,0,0" />
+            </DockPanel>
+            <Grid ColumnDefinitions="Auto,*" Height="20">
+              <Ellipse Width="9" Height="9" Fill="{Binding FrameStateBrush}" ToolTip.Tip="{Binding FrameState}" VerticalAlignment="Center" Margin="0,0,7,0" />
+              <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FrameName}">
                 <Run Text="{Binding FrameName}" FontWeight="SemiBold" />
                 <Run Text="{Binding FrameIn}" Foreground="{DynamicResource UiSecondaryTextBrush}" />
               </TextBlock>
-              <TextBlock Grid.Column="3" Text="{Binding FrameRangeText}" Classes="secondary" VerticalAlignment="Center" Margin="8,0" />
-              <TextBlock Grid.Column="4" Text="{Binding FrameLengthText}" VerticalAlignment="Center" />
             </Grid>
             <ContentControl Content="{Binding FrameSegment}" Height="24">
               <ContentControl.ContentTemplate>
@@ -270,340 +288,348 @@
           </StackPanel>
         </Border>
 
-        <!-- What the rest of the panel is about, and the stretch of time that is: the day's, or the selection's (typeable). -->
-        <Border DockPanel.Dock="Top" Classes="toolBar">
-          <DockPanel>
-            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="2">
-              <RadioButton Classes="tool" GroupName="panelScope" IsChecked="{Binding ShowsDay}" ToolTip.Tip="The whole day"
-                           AutomationProperties.Name="Day">
-                <StackPanel>
-                  <ic:SymbolIcon Symbol="CalendarDay" />
-                  <TextBlock Text="Day" />
-                </StackPanel>
-              </RadioButton>
-              <RadioButton Classes="tool" GroupName="panelScope" IsChecked="{Binding ShowsSelection}" IsEnabled="{Binding HasSelection}"
-                           ToolTip.Tip="What's in the selection" AutomationProperties.Name="Selection">
-                <StackPanel>
-                  <ic:SymbolIcon Symbol="SelectObject" />
-                  <TextBlock Text="Selection" />
-                </StackPanel>
-              </RadioButton>
-            </StackPanel>
-            <Panel>
-              <TextBlock Text="{Binding DaySpanText}" Classes="secondary" IsVisible="{Binding ShowsDay}"
-                         HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0" />
-              <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" IsVisible="{Binding ShowsSelection}">
+        <!-- A selection: its ends (typeable), and what to do with it, whichever tab shows. -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}"
+                BorderThickness="0,1,0,0" Padding="8,6,8,8" IsVisible="{Binding HasSelection}">
+          <StackPanel Spacing="6">
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Classes="tool" Command="{Binding ClearSelectionCommand}" ToolTip.Tip="Clear selection (Esc)"
+                      AutomationProperties.Name="Clear selection">
+                <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+              </Button>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="Selection" Classes="strong" VerticalAlignment="Center" Margin="0,0,4,0" />
                 <TextBox Classes="cell" Width="64" Text="{Binding SelectionStartText, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center"
                          AutomationProperties.Name="Selection start" ToolTip.Tip="Type a time to move the start" />
                 <TextBlock Text="–" VerticalAlignment="Center" />
                 <TextBox Classes="cell" Width="64" Text="{Binding SelectionEndText, UpdateSourceTrigger=LostFocus}" VerticalAlignment="Center"
                          AutomationProperties.Name="Selection end" ToolTip.Tip="Type a time to move the end" />
                 <TextBlock Text="{Binding SelectionLengthText}" Classes="secondary" VerticalAlignment="Center" Margin="2,0" />
-                <Button Classes="tool" Command="{Binding ClearSelectionCommand}" ToolTip.Tip="Clear selection (Esc)"
-                        AutomationProperties.Name="Clear selection">
-                  <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
-                </Button>
               </StackPanel>
-            </Panel>
-          </DockPanel>
+            </DockPanel>
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Command="{Binding MarkSelectionCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <ic:SymbolIcon Symbol="Delete" />
+                  <TextBlock Text="Mark for Deletion" />
+                </StackPanel>
+              </Button>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="SetProjectButton">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="Tag" />
+                    <TextBlock Text="Set Project" />
+                    <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
+                  </StackPanel>
+                  <Button.Flyout>
+                    <MenuFlyout Placement="TopEdgeAlignedLeft" />
+                  </Button.Flyout>
+                </Button>
+                <Button Content="Clear Project" Command="{Binding ClearSelectionProjectCommand}" />
+              </StackPanel>
+            </DockPanel>
+          </StackPanel>
         </Border>
 
-        <Panel>
-          <!-- The day: what was recorded, by segment and by app, to what's billed, then what's marked for removal; the day note under them. -->
-          <DockPanel IsVisible="{Binding ShowsDay}">
-            <Border DockPanel.Dock="Bottom" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}"
-                    BorderThickness="0,1,0,0" Padding="8,6,8,8">
-              <StackPanel Spacing="4">
-                <TextBlock Text="Day note" />
-                <TextBox Text="{Binding DayNote, UpdateSourceTrigger=LostFocus}" AcceptsReturn="True" TextWrapping="Wrap"
-                         Height="56" AutomationProperties.Name="Day note" />
-              </StackPanel>
-            </Border>
-
-            <TabControl Classes="panel" SelectedIndex="{Binding PanelTab}" Padding="0" Margin="6,4,6,0">
-              <TabItem Header="Recorded Segments">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="122" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="40" />
-                      <ColumnDefinition Width="28" />
-                      <ColumnDefinition Width="0.6*" MinWidth="120" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Time" />
-                    <TextBlock Grid.Column="1" Text="Application or site" />
-                    <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
-                    <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
-                    <TextBlock Grid.Column="4" Text="Project" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding DaySegments}" ItemTemplate="{StaticResource SegmentTemplate}">
-                      <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                          <VirtualizingStackPanel />
-                        </ItemsPanelTemplate>
-                      </ItemsControl.ItemsPanel>
-                    </ItemsControl>
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-
-              <TabItem Header="Applications">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="58" />
-                      <ColumnDefinition Width="74" />
-                      <ColumnDefinition Width="0.6*" MinWidth="120" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Application or site" />
-                    <TextBlock Grid.Column="1" Text="Active" HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="2" Text="Productive" />
-                    <TextBlock Grid.Column="3" Text="Project" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <DockPanel>
-                      <TextBlock DockPanel.Dock="Left" Text="Active" Classes="strong" />
-                      <TextBlock DockPanel.Dock="Left" Text="{Binding AppsTotalText}" Classes="strong" Margin="8,0,0,0" />
-                      <TextBlock Text="Changes apply to the app on every day" Classes="hint" HorizontalAlignment="Right" />
-                    </DockPanel>
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding AppRows}" ItemTemplate="{StaticResource AppTemplate}" />
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-
-              <TabItem Header="Time Log">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,72,84">
-                    <TextBlock Text="Project and note" />
-                    <TextBlock Grid.Column="1" Text="Assigned" HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="2" Text="Logged" HorizontalAlignment="Right" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" Padding="8,6">
-                    <TextBlock Classes="hint" TextWrapping="Wrap" Text="Type the time to bill, as 4:45 or 4.75; it goes straight to the timesheet" />
-                  </Border>
-                  <ScrollViewer>
+        <TabControl Classes="panel" SelectedIndex="{Binding PanelTab}" Padding="0" Margin="6,4,6,0">
+          <TabItem Header="Segments" ToolTip.Tip="Recorded segments">
+            <DockPanel>
+              <!-- The day or the selection: only this tab and Applications follow it. -->
+              <DockPanel DockPanel.Dock="Top" Margin="0,2,0,2">
+                <Panel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="0,0,6,0">
+                  <TextBlock Text="{Binding DaySpanText}" Classes="secondary" IsVisible="{Binding ShowsDay}" />
+                  <TextBlock Text="{Binding SelectionLengthText}" Classes="secondary" IsVisible="{Binding ShowsSelection}" />
+                </Panel>
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                  <RadioButton Classes="tool" GroupName="segmentsScope" IsChecked="{Binding ShowsDay}" ToolTip.Tip="The whole day" AutomationProperties.Name="Day">
                     <StackPanel>
-                      <ItemsControl ItemsSource="{Binding TimeLogRows}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate x:DataType="vm:TimeLogRow">
-                            <Border Classes="row" Padding="0,1,0,2" Background="Transparent" Tag="row"
-                                    PointerEntered="OnReachEnter" PointerExited="OnReachExit">
-                              <Grid ColumnDefinitions="*,72,84" RowDefinitions="Auto,Auto">
-                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="6,0">
-                                  <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
-                                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="1" Text="{Binding AssignedText}" Classes="secondary" HorizontalAlignment="Right" Margin="6,0" />
-                                <TextBox Grid.Column="2" Classes="cell" Margin="4,1" TextAlignment="Right" FontWeight="SemiBold"
-                                         Text="{Binding LoggedText, UpdateSourceTrigger=LostFocus}" PlaceholderText="–"
-                                         AutomationProperties.Name="{Binding Name, StringFormat='Logged for {0}'}" />
-                                <TextBox Grid.Row="1" Grid.ColumnSpan="3" Classes="cell" Margin="18,0,4,0" TextWrapping="Wrap"
-                                         Text="{Binding NoteText, UpdateSourceTrigger=LostFocus}" PlaceholderText="Add a note"
-                                         AutomationProperties.Name="{Binding Name, StringFormat='Note for {0}'}" />
-                              </Grid>
-                            </Border>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                      <Grid ColumnDefinitions="*,72,84" Height="26">
-                        <TextBlock Text="Total" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="{Binding AssignedTotalText}" Classes="secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="6,0" />
-                        <TextBlock Grid.Column="2" Text="{Binding LoggedTotalText}" Classes="strong" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0" />
-                      </Grid>
+                      <ic:SymbolIcon Symbol="CalendarDay" />
+                      <TextBlock Text="Day" />
                     </StackPanel>
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-
-              <TabItem Header="Marked" ToolTip.Tip="Marked for removal">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="130,*,44,Auto">
-                    <TextBlock Text="Time" />
-                    <TextBlock Grid.Column="1" Text="Applications" />
-                    <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,4">
-                    <Border.IsVisible>
-                      <MultiBinding Converter="{x:Static BoolConverters.Or}">
-                        <Binding Path="HasMarked" />
-                        <Binding Path="ConfirmMessage" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
-                      </MultiBinding>
-                    </Border.IsVisible>
-                    <StackPanel Spacing="4">
-                      <DockPanel IsVisible="{Binding HasMarked}">
-                        <Button DockPanel.Dock="Right" Command="{Binding ConfirmDeletesCommand}">
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource UiNegativeBrush}" />
-                            <TextBlock Text="Delete Permanently" />
-                          </StackPanel>
-                        </Button>
-                        <TextBlock DockPanel.Dock="Left" Text="Marked" Classes="strong" VerticalAlignment="Center" />
-                        <TextBlock DockPanel.Dock="Left" Text="{Binding MarkedTotalText}" Classes="strong" VerticalAlignment="Center" Margin="8,0,0,0" />
-                        <TextBlock Text="Left out of the totals" Classes="hint" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,10,0" />
-                      </DockPanel>
-                      <TextBlock Text="{Binding ConfirmMessage}" Classes="secondary" IsVisible="{Binding ConfirmMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </RadioButton>
+                  <RadioButton Classes="tool" GroupName="segmentsScope" IsChecked="{Binding ShowsSelection}" IsEnabled="{Binding HasSelection}"
+                               ToolTip.Tip="What's in the selection" AutomationProperties.Name="Selection">
+                    <StackPanel>
+                      <ic:SymbolIcon Symbol="SelectObject" />
+                      <TextBlock Text="Selection" />
                     </StackPanel>
-                  </Border>
-                  <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="8,8" IsVisible="{Binding HasNoMarked}"
-                             Text="Nothing is marked for removal this day." />
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding MarkedRanges}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:MarkedRange">
-                          <Border Classes="row segment" Classes.picked="{Binding IsPicked}" Tag="row" PointerPressed="OnMarkedPressed"
-                                  PointerEntered="OnReachEnter" PointerExited="OnReachExit">
-                            <Grid ColumnDefinitions="130,*,44,Auto">
-                              <TextBlock Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
-                              <TextBlock Grid.Column="1" Text="{Binding AppsText}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AppsText}" />
-                              <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
-                              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="4,1">
-                                <Button Content="Go To" Command="{Binding GoTo}" MinWidth="0" MinHeight="0" Padding="10,1" />
-                                <Button Content="Restore" Command="{Binding Restore}" MinWidth="0" MinHeight="0" Padding="10,1" />
-                              </StackPanel>
-                            </Grid>
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-            </TabControl>
-          </DockPanel>
-
-          <!-- The selection: its make-up, what's in it, and what to do with it. -->
-          <DockPanel IsVisible="{Binding ShowsSelection}">
-            <StackPanel DockPanel.Dock="Top" Margin="8,6,8,0" Spacing="4">
-              <StackPanel Orientation="Horizontal" Height="6" HorizontalAlignment="Left">
-                <Rectangle Width="{Binding SelectionActiveWidth}" Fill="{x:Static theming:AppBrushes.Productive}" />
-                <Rectangle Width="{Binding SelectionIdleWidth}" Fill="{x:Static theming:AppBrushes.Idle}" />
-                <Rectangle Width="{Binding SelectionNotRecordedWidth}" Fill="{DynamicResource UiSeparatorBrush}" />
-              </StackPanel>
-              <WrapPanel>
-                <TextBlock Text="Active " /><TextBlock Text="{Binding SelectionActiveText}" Classes="strong" Margin="0,0,12,0" />
-                <TextBlock Text="Idle " /><TextBlock Text="{Binding SelectionIdleText}" Classes="strong" Margin="0,0,12,0" />
-                <TextBlock Text="Not recorded " /><TextBlock Text="{Binding SelectionNotRecordedText}" Classes="strong" Margin="0,0,12,0" />
-                <TextBlock Text="Productive " Classes="secondary" /><TextBlock Text="{Binding SelectionProductiveText}" Classes="secondary" />
-              </WrapPanel>
-            </StackPanel>
-
-            <Border DockPanel.Dock="Bottom" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0" Padding="8">
-              <DockPanel>
-                <Button DockPanel.Dock="Right" Command="{Binding MarkSelectionCommand}">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <ic:SymbolIcon Symbol="Delete" />
-                    <TextBlock Text="Mark for Deletion" />
-                  </StackPanel>
-                </Button>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Button x:Name="SetProjectButton">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <ic:SymbolIcon Symbol="Tag" />
-                      <TextBlock Text="Set Project" />
-                      <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
-                    </StackPanel>
-                    <Button.Flyout>
-                      <MenuFlyout Placement="TopEdgeAlignedLeft" />
-                    </Button.Flyout>
-                  </Button>
-                  <Button Content="Clear Project" Command="{Binding ClearSelectionProjectCommand}" />
+                  </RadioButton>
                 </StackPanel>
               </DockPanel>
-            </Border>
+              <Grid DockPanel.Dock="Top" Classes="gridHeader">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="122" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="40" />
+                  <ColumnDefinition Width="28" />
+                  <ColumnDefinition Width="0.6*" MinWidth="120" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Time" />
+                <TextBlock Grid.Column="1" Text="Application or site" />
+                <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+                <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
+                <TextBlock Grid.Column="4" Text="Project" />
+              </Grid>
+              <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
+                <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
+              </Border>
+              <Panel>
+                <ScrollViewer IsVisible="{Binding ShowsDay}">
+                  <ItemsControl ItemsSource="{Binding DaySegments}" ItemTemplate="{StaticResource SegmentTemplate}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                  </ItemsControl>
+                </ScrollViewer>
+                <ScrollViewer IsVisible="{Binding ShowsSelection}">
+                  <ItemsControl ItemsSource="{Binding SelectionRuns}" ItemTemplate="{StaticResource SegmentTemplate}" />
+                </ScrollViewer>
+              </Panel>
+            </DockPanel>
+          </TabItem>
 
-            <TabControl Classes="panel" SelectedIndex="{Binding SelectionTab}" Padding="0" Margin="6,6,6,0">
-              <TabItem Header="Recorded Segments">
+          <TabItem Header="Applications">
+            <DockPanel>
+              <DockPanel DockPanel.Dock="Top" Margin="0,2,0,2">
+                <Panel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="0,0,6,0">
+                  <TextBlock Text="{Binding DaySpanText}" Classes="secondary" IsVisible="{Binding ShowsDay}" />
+                  <TextBlock Text="{Binding SelectionLengthText}" Classes="secondary" IsVisible="{Binding ShowsSelection}" />
+                </Panel>
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                  <RadioButton Classes="tool" GroupName="appsScope" IsChecked="{Binding ShowsDay}" ToolTip.Tip="The whole day" AutomationProperties.Name="Day">
+                    <StackPanel>
+                      <ic:SymbolIcon Symbol="CalendarDay" />
+                      <TextBlock Text="Day" />
+                    </StackPanel>
+                  </RadioButton>
+                  <RadioButton Classes="tool" GroupName="appsScope" IsChecked="{Binding ShowsSelection}" IsEnabled="{Binding HasSelection}"
+                               ToolTip.Tip="What's in the selection" AutomationProperties.Name="Selection">
+                    <StackPanel>
+                      <ic:SymbolIcon Symbol="SelectObject" />
+                      <TextBlock Text="Selection" />
+                    </StackPanel>
+                  </RadioButton>
+                </StackPanel>
+              </DockPanel>
+              <Grid DockPanel.Dock="Top" Classes="gridHeader">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="58" />
+                  <ColumnDefinition Width="74" />
+                  <ColumnDefinition Width="0.6*" MinWidth="120" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Application or site" />
+                <TextBlock Grid.Column="1" Text="Active" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="2" Text="Productive" />
+                <TextBlock Grid.Column="3" Text="Project" />
+              </Grid>
+              <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
                 <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="122" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="40" />
-                      <ColumnDefinition Width="28" />
-                      <ColumnDefinition Width="0.6*" MinWidth="120" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Time" />
-                    <TextBlock Grid.Column="1" Text="Application or site" />
-                    <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
-                    <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
-                    <TextBlock Grid.Column="4" Text="Project" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding SelectionRuns}" ItemTemplate="{StaticResource SegmentTemplate}" />
-                  </ScrollViewer>
+                  <TextBlock DockPanel.Dock="Left" Text="Active" Classes="strong" />
+                  <Panel DockPanel.Dock="Left" Margin="8,0,0,0">
+                    <TextBlock Text="{Binding AppsTotalText}" Classes="strong" IsVisible="{Binding ShowsDay}" />
+                    <TextBlock Text="{Binding SelectionAppsTotalText}" Classes="strong" IsVisible="{Binding ShowsSelection}" />
+                  </Panel>
+                  <TextBlock Text="Changes apply to the app on every day" Classes="hint" HorizontalAlignment="Right" />
                 </DockPanel>
-              </TabItem>
+              </Border>
+              <Panel>
+                <ScrollViewer IsVisible="{Binding ShowsDay}">
+                  <ItemsControl ItemsSource="{Binding AppRows}" ItemTemplate="{StaticResource AppTemplate}" />
+                </ScrollViewer>
+                <ScrollViewer IsVisible="{Binding ShowsSelection}">
+                  <ItemsControl ItemsSource="{Binding SelectionApps}" ItemTemplate="{StaticResource AppTemplate}" />
+                </ScrollViewer>
+              </Panel>
+            </DockPanel>
+          </TabItem>
 
-              <TabItem Header="Applications">
+          <!-- Suggested projects for the day's time without one: accept or reject each, deciding its breaks and switches. -->
+          <TabItem ToolTip.Tip="Suggested projects for time without one">
+            <TabItem.Header>
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="Suggestions" VerticalAlignment="Center" />
+                <Border Classes="countBadge" IsVisible="{Binding HasOpenSuggestions}" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding OpenSuggestionCount}" />
+                </Border>
+              </StackPanel>
+            </TabItem.Header>
+            <DockPanel>
+              <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,104,40,124">
+                <TextBlock Text="Suggested project" />
+                <TextBlock Grid.Column="1" Text="Block" />
+                <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+              </Grid>
+              <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,4">
                 <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="58" />
-                      <ColumnDefinition Width="74" />
-                      <ColumnDefinition Width="0.6*" MinWidth="120" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Application or site" />
-                    <TextBlock Grid.Column="1" Text="Active" HorizontalAlignment="Right" />
-                    <TextBlock Grid.Column="2" Text="Productive" />
-                    <TextBlock Grid.Column="3" Text="Project" />
-                  </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <DockPanel>
-                      <TextBlock DockPanel.Dock="Left" Text="Active" Classes="strong" />
-                      <TextBlock DockPanel.Dock="Left" Text="{Binding SelectionAppsTotalText}" Classes="strong" Margin="8,0,0,0" />
-                      <TextBlock Text="Changes apply to the app on every day" Classes="hint" HorizontalAlignment="Right" />
-                    </DockPanel>
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding SelectionApps}" ItemTemplate="{StaticResource AppTemplate}" />
-                  </ScrollViewer>
+                  <Button DockPanel.Dock="Right" Content="Accept All" Command="{Binding AcceptAllSuggestionsCommand}" />
+                  <TextBlock Text="{Binding SuggestionSummary}" VerticalAlignment="Center" />
                 </DockPanel>
-              </TabItem>
+              </Border>
+              <StackPanel DockPanel.Dock="Top" Margin="8,8" Spacing="4" IsVisible="{Binding HasNoOpenSuggestions}">
+                <TextBlock Classes="hint" Text="Working out suggestions…" IsVisible="{Binding IsWorkingOutSuggestions}" />
+                <TextBlock Classes="hint" Text="No suggestions for this day." IsVisible="{Binding !IsWorkingOutSuggestions}" />
+                <TextBlock Classes="hint" Text="Suggestions are off in Settings." IsVisible="{Binding SuggestionsOff}" />
+              </StackPanel>
+              <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding SuggestionRows}">
+                  <ItemsControl.DataTemplates>
+                    <DataTemplate DataType="vm:SuggestionHeadRow">
+                      <Border Classes="row suggestion" Classes.first="{Binding IsFirst}" Background="Transparent" Tag="row"
+                              PointerEntered="OnReachEnter" PointerExited="OnReachExit" Padding="0,3,0,2">
+                        <StackPanel>
+                          <Grid ColumnDefinitions="*,104,40,124">
+                            <ComboBox Classes="cell" Margin="2,1,4,1" ItemTemplate="{StaticResource ProjectOptionTemplate}"
+                                      ItemsSource="{Binding $parent[UserControl].((vm:DayReviewViewModel)DataContext).AssignableProjects}"
+                                      SelectedItem="{Binding Project}" ToolTip.Tip="Change the project before accepting"
+                                      AutomationProperties.Name="Suggested project" />
+                            <TextBlock Grid.Column="1" Text="{Binding RangeText}" Classes="secondary" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0" />
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" Margin="4,1">
+                              <Button Content="Accept" Command="{Binding Accept}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                              <Button Content="Reject" Command="{Binding Reject}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                            </StackPanel>
+                          </Grid>
+                          <StackPanel Orientation="Horizontal" Margin="24,2,8,0">
+                            <TextBlock Text="{Binding AddsText}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text=" · unsure" FontStyle="Italic" Classes="secondary" IsVisible="{Binding IsUnsure}"
+                                       ToolTip.Tip="The words point to this project less clearly" />
+                          </StackPanel>
+                          <TextBlock Text="{Binding EvidenceText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EvidenceText}" />
+                          <TextBlock Text="{Binding ScreenText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ScreenText}"
+                                     IsVisible="{Binding HasScreenText}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                    <DataTemplate DataType="vm:SuggestionPartRow">
+                      <Border Classes="row" Background="Transparent" Tag="row" PointerEntered="OnReachEnter" PointerExited="OnReachExit">
+                        <Grid ColumnDefinitions="Auto,*,104,40,124">
+                          <Panel Width="12" Height="9" Margin="24,0,6,0" VerticalAlignment="Center">
+                            <Rectangle RadiusX="2" RadiusY="2" Stroke="{Binding Brush}" StrokeThickness="1" StrokeDashArray="2,2" IsVisible="{Binding IsBreak}" />
+                            <Rectangle RadiusX="2" RadiusY="2" Stroke="{Binding Brush}" StrokeThickness="1.5" IsVisible="{Binding IsSwitch}" />
+                          </Panel>
+                          <TextBlock Grid.Column="1" Text="{Binding WhatText}" FontStyle="Italic" VerticalAlignment="Center"
+                                     TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding WhatText}" />
+                          <TextBlock Grid.Column="2" Text="{Binding RangeText}" Classes="secondary" VerticalAlignment="Center" Margin="6,0" />
+                          <TextBlock Grid.Column="3" Text="{Binding LengthText}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0" />
+                          <CheckBox Grid.Column="4" Content="{Binding DecideText}" IsChecked="{Binding Decided}" HorizontalAlignment="Right"
+                                    Margin="0,0,8,0" MinHeight="0" ToolTip.Tip="{Binding Tip}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.DataTemplates>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </TabItem>
 
-              <TabItem Header="Projects">
-                <DockPanel>
-                  <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,90">
-                    <TextBlock Text="Project" />
-                    <TextBlock Grid.Column="1" Text="In selection" HorizontalAlignment="Right" />
+          <TabItem Header="Time Log">
+            <DockPanel>
+              <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,72,84">
+                <TextBlock Text="Project and note" />
+                <TextBlock Grid.Column="1" Text="Assigned" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="2" Text="Logged" HorizontalAlignment="Right" />
+              </Grid>
+              <!-- The day note lives here, with the projects' notes: this tab is the day's billing. -->
+              <Border DockPanel.Dock="Bottom" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}"
+                      BorderThickness="0,1,0,0" Padding="8,6,8,8">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Day note" />
+                  <TextBox Text="{Binding DayNote, UpdateSourceTrigger=LostFocus}" AcceptsReturn="True" TextWrapping="Wrap"
+                           Height="56" AutomationProperties.Name="Day note" />
+                  <TextBlock Classes="hint" TextWrapping="Wrap" Text="Type the time to bill, as 4:45 or 4.75; it goes straight to the timesheet" />
+                </StackPanel>
+              </Border>
+              <ScrollViewer>
+                <StackPanel>
+                  <ItemsControl ItemsSource="{Binding TimeLogRows}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:TimeLogRow">
+                        <Border Classes="row" Padding="0,1,0,2" Background="Transparent" Tag="row"
+                                PointerEntered="OnReachEnter" PointerExited="OnReachExit">
+                          <Grid ColumnDefinitions="*,72,84" RowDefinitions="Auto,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="6,0">
+                              <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding AssignedText}" Classes="secondary" HorizontalAlignment="Right" Margin="6,0" />
+                            <TextBox Grid.Column="2" Classes="cell" Margin="4,1" TextAlignment="Right" FontWeight="SemiBold"
+                                     Text="{Binding LoggedText, UpdateSourceTrigger=LostFocus}" PlaceholderText="–"
+                                     AutomationProperties.Name="{Binding Name, StringFormat='Logged for {0}'}" />
+                            <TextBox Grid.Row="1" Grid.ColumnSpan="3" Classes="cell" Margin="18,0,4,0" TextWrapping="Wrap"
+                                     Text="{Binding NoteText, UpdateSourceTrigger=LostFocus}" PlaceholderText="Add a note"
+                                     AutomationProperties.Name="{Binding Name, StringFormat='Note for {0}'}" />
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Grid ColumnDefinitions="*,72,84" Height="26">
+                    <TextBlock Text="Total" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding AssignedTotalText}" Classes="secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="6,0" />
+                    <TextBlock Grid.Column="2" Text="{Binding LoggedTotalText}" Classes="strong" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0" />
                   </Grid>
-                  <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                    <TextBlock Text="Notes are on the day's Time Log" Classes="hint" />
-                  </Border>
-                  <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding SelectionProjects}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SelectionProjectRow">
-                          <Border Classes="row" Background="Transparent" Tag="row" PointerEntered="OnReachEnter" PointerExited="OnReachExit">
-                            <Grid ColumnDefinitions="Auto,*,90">
-                              <Panel VerticalAlignment="Center" Margin="6,0">
-                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" IsVisible="{Binding !IsNone}" />
-                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Stroke="{DynamicResource UiFrameBrush}" StrokeThickness="1" IsVisible="{Binding IsNone}" />
-                              </Panel>
-                              <TextBlock Grid.Column="1" Text="{Binding Name}" Classes.secondary="{Binding IsNone}" />
-                              <TextBlock Grid.Column="2" Text="{Binding LengthText}" Classes.secondary="{Binding IsNone}" HorizontalAlignment="Right" Margin="6,0" />
-                            </Grid>
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </ScrollViewer>
-                </DockPanel>
-              </TabItem>
-            </TabControl>
-          </DockPanel>
-        </Panel>
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+          </TabItem>
+
+          <TabItem Header="Marked" ToolTip.Tip="Marked for removal">
+            <DockPanel>
+              <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="130,*,44,Auto">
+                <TextBlock Text="Time" />
+                <TextBlock Grid.Column="1" Text="Applications" />
+                <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+              </Grid>
+              <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,4">
+                <Border.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                    <Binding Path="HasMarked" />
+                    <Binding Path="ConfirmMessage" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                  </MultiBinding>
+                </Border.IsVisible>
+                <StackPanel Spacing="4">
+                  <DockPanel IsVisible="{Binding HasMarked}">
+                    <Button DockPanel.Dock="Right" Command="{Binding ConfirmDeletesCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ic:SymbolIcon Symbol="Delete" Foreground="{DynamicResource UiNegativeBrush}" />
+                        <TextBlock Text="Delete Permanently" />
+                      </StackPanel>
+                    </Button>
+                    <TextBlock DockPanel.Dock="Left" Text="Marked" Classes="strong" VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding MarkedTotalText}" Classes="strong" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBlock Text="Left out of the totals" Classes="hint" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,10,0" />
+                  </DockPanel>
+                  <TextBlock Text="{Binding ConfirmMessage}" Classes="secondary" IsVisible="{Binding ConfirmMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+              </Border>
+              <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="8,8" IsVisible="{Binding HasNoMarked}"
+                         Text="Nothing is marked for removal this day." />
+              <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding MarkedRanges}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MarkedRange">
+                      <Border Classes="row segment" Classes.picked="{Binding IsPicked}" Tag="row" PointerPressed="OnMarkedPressed"
+                              PointerEntered="OnReachEnter" PointerExited="OnReachExit">
+                        <Grid ColumnDefinitions="130,*,44,Auto">
+                          <TextBlock Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
+                          <TextBlock Grid.Column="1" Text="{Binding AppsText}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AppsText}" />
+                          <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
+                          <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="4,1">
+                            <Button Content="Go To" Command="{Binding GoTo}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                            <Button Content="Restore" Command="{Binding Restore}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </TabItem>
+        </TabControl>
       </DockPanel>
     </Border>
     <Border x:Name="PanelEdge" DockPanel.Dock="Right" Width="4" Background="Transparent" Cursor="SizeWestEast" IsVisible="{Binding IsSidePanelOpen}"

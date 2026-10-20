@@ -11,6 +11,7 @@ using Worklapse.App.Playback;
 using Worklapse.App.ViewModels;
 using Worklapse.Core.History;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
 using Worklapse.Video;
 using PixelRect = Worklapse.Core.Platform.PixelRect;
 
@@ -204,10 +205,17 @@ public partial class DayReviewView : UserControl
     private ContextMenu ClassificationMenu(bool forSelection)
     {
         var menu = new ContextMenu();
+        menu.Closed += (_, _) => _viewModel.ShowReach(ReachSource.Menu, ranges: null);
         menu.Opening += (_, e) =>
         {
             var (choices, more) = _viewModel.ClassificationChoices(forSelection && _viewModel.HasSelection);
             var items = new List<Control>();
+            // A suggestion right-clicked on the projects lane: decide it there, as on the Suggestions tab.
+            if (forSelection && Timeline.ContextPoint is { ProjectLane: true } point && _viewModel.SuggestionAt(point.Seconds) is { } found)
+            {
+                items.AddRange(SuggestionMenuItems(found.Suggestion, found.Part));
+                _viewModel.ShowReach(ReachSource.Menu, (found.Suggestion.Start, found.Suggestion.End));
+            }
             if (forSelection && _viewModel.HasSelection)
             {
                 items.Add(new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(_viewModel.SetSelectionProjectCommand.Execute) });
@@ -237,6 +245,26 @@ public partial class DayReviewView : UserControl
             menu.ItemsSource = items;
         };
         return menu;
+    }
+
+    /// <summary>A suggestion's entries on the timeline's menu: accept or reject it, and decide the break or switch clicked on.</summary>
+    private List<Control> SuggestionMenuItems(StoredSuggestion suggestion, StoredPart? part)
+    {
+        var project = _viewModel.ProjectName(suggestion.ProjectId);
+        var items = new List<Control>
+        {
+            MenuEntry($"Accept Suggestion: {project}", () => _viewModel.AcceptSuggestion(suggestion)),
+            MenuEntry("Reject Suggestion", () => _viewModel.RejectSuggestion(suggestion)),
+        };
+        if (part is { } p)
+        {
+            var header = p.Kind == SuggestionPartKind.Switch && p.ProjectId is { } other
+                ? p.Decided ? $"Split Out as {_viewModel.ProjectName(other)}" : $"Keep in {project}"
+                : p.Decided ? "Don't Count This Break" : $"Count This Break toward {project}";
+            items.Add(MenuEntry(header, () => _viewModel.DecidePart(suggestion, p, !p.Decided)));
+        }
+        items.Add(new Separator());
+        return items;
     }
 
     private void UpdateTimeline()

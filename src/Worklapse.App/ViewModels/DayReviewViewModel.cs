@@ -769,6 +769,8 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _playTimer.Stop();
+        // Suggestions still being worked out are dropped when they arrive.
+        Interlocked.Increment(ref _suggestionVersion);
         _history.Dispose();
     }
 }

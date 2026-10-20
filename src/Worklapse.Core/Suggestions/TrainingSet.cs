@@ -162,14 +162,21 @@ public static class TrainingSet
 internal static class CaptureLengths
 {
     /// <summary>Seconds per capture: until the next one, at most <paramref name="maxCaptureLength"/>.</summary>
-    public static double[] Of(IReadOnlyList<CaptureRecord> captures, TimeSpan maxCaptureLength)
+    public static double[] Of(IReadOnlyList<CaptureRecord> captures, TimeSpan maxCaptureLength) =>
+        Spans(captures, maxCaptureLength).Select(length => length.TotalSeconds).ToArray();
+
+    /// <summary>
+    /// The same as lengths of time, exact: a capture's end computed from seconds can fall a tick short of the next one's
+    /// start, which would leave a sliver of "not recorded" between them.
+    /// </summary>
+    public static TimeSpan[] Spans(IReadOnlyList<CaptureRecord> captures, TimeSpan maxCaptureLength)
     {
-        var seconds = new double[captures.Count];
+        var lengths = new TimeSpan[captures.Count];
         for (var i = 0; i < captures.Count; i++)
         {
             var length = i + 1 < captures.Count ? captures[i + 1].Time - captures[i].Time : maxCaptureLength;
-            seconds[i] = (length > maxCaptureLength ? maxCaptureLength : length).TotalSeconds;
+            lengths[i] = length > maxCaptureLength ? maxCaptureLength : length;
         }
-        return seconds;
+        return lengths;
     }
 }

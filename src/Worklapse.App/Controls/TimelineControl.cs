@@ -18,11 +18,24 @@ public enum TimelineKind
 /// <summary>A run of time drawn in one style. Times are seconds since the day's local midnight.</summary>
 public readonly record struct TimelineSpan(double Start, double End, TimelineKind Kind, bool Marked);
 
+/// <summary>How a block on the projects lane is drawn.</summary>
+public enum LaneStyle
+{
+    /// <summary>Time marked with the project: filled in its colour.</summary>
+    Filled,
+
+    /// <summary>Time a suggestion would give the project: outlined in its colour, faintly tinted.</summary>
+    Suggested,
+
+    /// <summary>A break inside a suggestion, not decided yet: a dashed outline with a question mark.</summary>
+    Break,
+}
+
 /// <summary>A block of time marked with a project, in its colour. Times as in <see cref="TimelineSpan"/>.</summary>
-public readonly record struct ProjectLaneBlock(double Start, double End, IBrush Brush, string Label);
+public readonly record struct ProjectLaneBlock(double Start, double End, IBrush Brush, string Label, LaneStyle Style = LaneStyle.Filled);
 
 /// <summary>
-/// The day as two lanes: projects above, activity (coloured runs) below, with hour labels, a selection,
+/// The day as two lanes: projects above (suggestions outlined), activity (coloured runs) below, with hour labels, a selection,
 /// marked-for-deletion ranges and the playhead across both, and the time a control in the side panel reaches. Click
 /// to move the playhead (the view model clears a selection clicked outside); drag to select; drag a selection's edge
 /// to move it; Shift+click to move its nearer edge; double-click to select a block or a run. Scroll to zoom in at the
@@ -67,6 +80,8 @@ public sealed class TimelineControl : ThemedControl
     private static readonly Cursor EdgeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly IBrush LabelBrush = AppBrushes.TimelineLabel;
     private static readonly IBrush OnProjectBrush = Brushes.White;
+    private const double SuggestedTint = 0.14;      // how strongly a suggestion's colour fills it
+    private const double SuggestedOutline = 1.5;
     private static readonly Typeface LabelFace = new(FontFamily.Default);
 
     private Point? _pressAt;
@@ -117,6 +132,9 @@ public sealed class TimelineControl : ThemedControl
 
     /// <summary>The time shown changed: zoomed, scrolled, or moved by a change of the time covered.</summary>
     public event Action? ShownChanged;
+
+    /// <summary>Where the last right-click was: its time, and whether on the projects lane (for the menu that opens).</summary>
+    public (double Seconds, bool ProjectLane)? ContextPoint { get; private set; }
 
     /// <summary>The time covered and the activity in it. A zoom is kept, moved inside the new time if it has to be.</summary>
     public void SetData(IReadOnlyList<TimelineSpan> spans, double viewStart, double viewEnd)
@@ -200,18 +218,38 @@ public sealed class TimelineControl : ThemedControl
         // Zoomed in, what's on the lanes stops at their ends, clear of the lane names.
         using var lanesOnly = context.PushClip(new Rect(Gutter, 0, laneWidth + 1, Bounds.Height));
 
-        // Projects: each block in its colour, named when the part shown has room.
+        // Projects: each block in its colour, named when the part shown has room; suggestions outlined, their breaks dashed.
         foreach (var block in Projects)
         {
             var x0 = X(block.Start);
             var x1 = Math.Max(X(block.End), x0 + 1);
             var rect = new Rect(x0, lane.Top + 2, x1 - x0, ProjectHeight - 3);
-            context.FillRectangle(block.Brush, rect, 2);
+            string label;
+            IBrush labelBrush;
+            switch (block.Style)
+            {
+                case LaneStyle.Suggested:
+                    using (context.PushOpacity(SuggestedTint))
+                        context.FillRectangle(block.Brush, rect, 2);
+                    var outline = rect.Deflate(SuggestedOutline / 2);
+                    context.DrawRectangle(null, new Pen(block.Brush, SuggestedOutline), outline.Width > 0 ? outline : rect, 2, 2);
+                    (label, labelBrush) = (block.Label, block.Brush);
+                    break;
+                case LaneStyle.Break:
+                    context.DrawRectangle(null, new Pen(block.Brush, 1, DashStyle.Dash), rect.Deflate(new Thickness(0.5, 3)), 2, 2);
+                    (label, labelBrush) = ("?", block.Brush);
+                    break;
+                default:
+                    context.FillRectangle(block.Brush, rect, 2);
+                    (label, labelBrush) = (block.Label, OnProjectBrush);
+                    break;
+            }
             var shown = rect.Intersect(lane);
-            var name = Text(block.Label, OnProjectBrush);
+            var name = Text(label, labelBrush);
             if (name.Width + 8 <= shown.Width)
                 using (context.PushClip(shown))
-                    context.DrawText(name, new Point(shown.Left + 4, rect.Top + (rect.Height - name.Height) / 2));
+                    context.DrawText(name, new Point(block.Style == LaneStyle.Break ? shown.Center.X - name.Width / 2 : shown.Left + 4,
+                        rect.Top + (rect.Height - name.Height) / 2));
         }
         context.DrawRectangle(null, TrackBorder, lane);
 
@@ -299,6 +337,8 @@ public sealed class TimelineControl : ThemedControl
     {
         base.OnPointerPressed(e);
         var point = e.GetCurrentPoint(this);
+        if (point.Properties.IsRightButtonPressed)
+            ContextPoint = (Time(point.Position.X), point.Position.Y < ProjectHeight + LaneGap / 2);
         if (!point.Properties.IsLeftButtonPressed)
             return;
         e.Handled = true;

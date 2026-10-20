@@ -188,6 +188,24 @@ public class SuggestionTests
     }
 
     [Fact]
+    public void ProjectsWorkedOnInTurnAreBlocksOfTheirOwn()
+    {
+        // Presayo, then 15 minutes of Frankensystem (past the switch limit), then Presayo again: three blocks, not one
+        // Presayo block swallowing Frankensystem as a switch.
+        List<CaptureRecord> captures = [
+            .. Run(0, 600, "WindowsTerminal.exe", "Group label presets by printer type"),
+            .. Run(600, 1500, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),
+            .. Run(1500, 2100, "WindowsTerminal.exe", "Group label presets by printer type"),
+        ];
+
+        var suggestions = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
+
+        Assert.Equal([(Presayo, 0, 600), (Frankensystem, 600, 1500), (Presayo, 1500, 2105)],
+            suggestions.Select(s => (s.ProjectId, Seconds(s.Start), Seconds(s.End))));
+        Assert.All(suggestions, s => Assert.Empty(s.Parts));
+    }
+
+    [Fact]
     public void TimeSetByHandIsLeftAloneEvenWhenSetToNoProject()
     {
         List<CaptureRecord> captures = [

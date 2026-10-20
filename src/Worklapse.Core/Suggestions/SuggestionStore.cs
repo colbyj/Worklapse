@@ -9,6 +9,9 @@ public enum SuggestionState
     Open = 0,
     Accepted = 1,
     Rejected = 2,
+
+    /// <summary>Open, with its project picked by the developer: kept when the day is worked out again, as decided ones are.</summary>
+    Chosen = 3,
 }
 
 /// <summary>A break or switch inside a stored suggestion, with the developer's decision on it.</summary>
@@ -20,6 +23,9 @@ public sealed record StoredSuggestion(long Id, DateTimeOffset Start, DateTimeOff
     IReadOnlyList<string> Evidence, SuggestionState State, IReadOnlyList<StoredPart> Parts)
 {
     public bool IsUnsure => Confidence < Suggestion.UnsureBelow;
+
+    /// <summary>Still to be accepted or rejected.</summary>
+    public bool IsOpen => State is SuggestionState.Open or SuggestionState.Chosen;
 }
 
 /// <summary>
@@ -80,7 +86,7 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     public Dictionary<DateOnly, int> CountOpen(IEnumerable<(DateOnly Day, DateTimeOffset Start, DateTimeOffset End)> days)
     {
         var counts = new Dictionary<DateOnly, int>();
-        using var command = db.Command("SELECT count(*) FROM suggestions WHERE state = 0 AND start_ms >= $start AND start_ms < $end;");
+        using var command = db.Command("SELECT count(*) FROM suggestions WHERE state IN (0, 3) AND start_ms >= $start AND start_ms < $end;");
         var start = command.Parameters.Add("$start", Microsoft.Data.Sqlite.SqliteType.Integer);
         var end = command.Parameters.Add("$end", Microsoft.Data.Sqlite.SqliteType.Integer);
         foreach (var (day, from, to) in days)
@@ -93,15 +99,15 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     }
 
     /// <summary>
-    /// Makes <paramref name="computed"/> the open suggestions of start..end: the open ones there before go, except that a
-    /// break or switch kept in the same place keeps its decision; a computed block matching one decided already (the same
-    /// project, overlapping by <see cref="SameBlockOverlap"/>) is left out.
+    /// Makes <paramref name="computed"/> the open suggestions of start..end: the open ones there before go (not those whose
+    /// project was chosen), except that a break or switch kept in the same place keeps its decision; a computed block matching
+    /// one decided or chosen already (the same project, overlapping by <see cref="SameBlockOverlap"/>) is left out.
     /// </summary>
     public void Replace(DateTimeOffset start, DateTimeOffset end, IReadOnlyList<Suggestion> computed)
     {
         using var transaction = db.BeginTransaction();
         var before = Get(start, end).Where(s => s.Start >= start && s.Start < end).ToList();
-        var decided = before.Where(s => s.State != SuggestionState.Open).ToList();
+        var decided = before.Where(s => s.State != SuggestionState.Open).ToList(); // accepted, rejected or chosen
         var decisions = before.Where(s => s.State == SuggestionState.Open)
             .SelectMany(s => s.Parts).Where(p => p.Decided)
             .Select(p => (p.Start, p.End, p.Kind)).ToHashSet();
@@ -155,10 +161,13 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         command.ExecuteNonQuery();
     }
 
-    /// <summary>Changes an open suggestion's project before it's accepted.</summary>
+    /// <summary>
+    /// Changes an open suggestion's project before it's accepted. That's a decision: the suggestion is kept as it is
+    /// (<see cref="SuggestionState.Chosen"/>) when the day is worked out again.
+    /// </summary>
     public void SetProject(long suggestionId, long projectId)
     {
-        using var command = db.Command("UPDATE suggestions SET project_id = $project WHERE id = $id AND state = 0;");
+        using var command = db.Command("UPDATE suggestions SET project_id = $project, state = 3 WHERE id = $id AND state IN (0, 3);");
         command.Parameters.AddWithValue("$id", suggestionId);
         command.Parameters.AddWithValue("$project", projectId);
         command.ExecuteNonQuery();
@@ -206,11 +215,11 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans, TimeSpan maxCaptureLength)
     {
         var assignments = TrainingSet.Assignments(captures, spans);
-        var seconds = CaptureLengths.Of(captures, maxCaptureLength);
+        var lengths = CaptureLengths.Spans(captures, maxCaptureLength);
         var stretches = new List<(DateTimeOffset, DateTimeOffset, long?)>();
         for (var i = 0; i < captures.Count; i++)
             if (assignments[i].IsAssigned)
-                stretches.Add((captures[i].Time, captures[i].Time.AddSeconds(seconds[i]), assignments[i].ProjectId));
+                stretches.Add((captures[i].Time, captures[i].Time + lengths[i], assignments[i].ProjectId));
         // Ranges by hand cover time without captures too.
         foreach (var span in spans)
             stretches.Add((span.Start, span.End, span.ProjectId));
@@ -218,7 +227,7 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     }
 
     /// <summary><paramref name="ranges"/> without <paramref name="holes"/>, in time order, empty pieces dropped.</summary>
-    internal static List<(DateTimeOffset Start, DateTimeOffset End)> Subtract(IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> ranges,
+    public static List<(DateTimeOffset Start, DateTimeOffset End)> Subtract(IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> ranges,
         IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> holes)
     {
         var sortedHoles = holes.Where(h => h.End > h.Start).OrderBy(h => h.Start).ToList();
@@ -243,9 +252,13 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         return result;
     }
 
+    /// <summary>
+    /// Whether a computed block is one already decided: the same project and overlapping enough. A block whose project the
+    /// developer chose stands for its time whatever project is computed for it now.
+    /// </summary>
     private static bool SameBlock(StoredSuggestion decided, Suggestion computed)
     {
-        if (decided.ProjectId != computed.ProjectId)
+        if (decided.ProjectId != computed.ProjectId && decided.State != SuggestionState.Chosen)
             return false;
         var overlap = (decided.End < computed.End ? decided.End : computed.End) - (decided.Start > computed.Start ? decided.Start : computed.Start);
         var (a, b) = (decided.End - decided.Start, computed.End - computed.Start);

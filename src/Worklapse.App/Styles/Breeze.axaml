@@ -197,4 +197,17 @@
     <Setter Property="Padding" Value="4,1" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
+
+  <!-- A small count in the accent colour: open suggestions beside the Suggestions tab, and on the Overview's month days. -->
+  <Style Selector="Border.countBadge">
+    <Setter Property="Background" Value="{DynamicResource UiAccentBrush}" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="MinWidth" Value="14" />
+    <Setter Property="Padding" Value="4,0" />
+  </Style>
+  <Style Selector="Border.countBadge > TextBlock">
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
 </Styles>

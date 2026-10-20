@@ -396,7 +396,7 @@ public sealed class WorklapseDatabase : IDisposable
                     project_id  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
                     confidence  REAL NOT NULL,
                     evidence    TEXT NOT NULL,                      -- the words that pointed to the project, space-separated
-                    state       INTEGER NOT NULL                    -- 0 = open, 1 = accepted, 2 = rejected
+                    state       INTEGER NOT NULL                    -- 0 = open, 1 = accepted, 2 = rejected, 3 = open with its project chosen
                 );
                 CREATE INDEX ix_suggestions_start ON suggestions (start_ms);
 

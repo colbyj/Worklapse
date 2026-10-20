@@ -26,7 +26,10 @@ public sealed partial class DayReviewViewModel
 
     // --- what the panel is about ---------------------------------------------------------------
 
-    /// <summary>The panel shows the day: the Day button of the Day / Selection pair.</summary>
+    /// <summary>
+    /// Segments and Applications list the day: the Day button of their Day / Selection pair. The other tabs (Suggestions,
+    /// Time Log, Marked) are always about the whole day.
+    /// </summary>
     public bool ShowsDay
     {
         get => !ShowsSelection;
@@ -37,7 +40,7 @@ public sealed partial class DayReviewViewModel
         }
     }
 
-    /// <summary>The panel shows the selection, while there is one: the Selection button.</summary>
+    /// <summary>Segments and Applications list the selection, while there is one: the Selection button.</summary>
     public bool ShowsSelection
     {
         get => _panelOnSelection && HasSelection;
@@ -50,21 +53,6 @@ public sealed partial class DayReviewViewModel
 
     /// <summary>The day's first capture to the end of its last, beside the Day button.</summary>
     [ObservableProperty] private string _daySpanText = "";
-
-    /// <summary>The selection's tab: 0 Recorded Segments, 1 Applications, 2 Projects. The first two follow the day's.</summary>
-    [ObservableProperty] private int _selectionTab;
-
-    partial void OnPanelTabChanged(int value)
-    {
-        if (value <= 1)
-            SelectionTab = value;
-    }
-
-    partial void OnSelectionTabChanged(int value)
-    {
-        if (value <= 1)
-            PanelTab = value;
-    }
 
     private void ShowSelectionPanel(bool on)
     {
@@ -373,8 +361,8 @@ public sealed partial class DayReviewViewModel
         (DayAppRow { Program: { } program }, "project") => MarkReach.Link(Captures, _handSpans, program, _maxCaptureLength),
         (SegmentRow segment, _) => [(segment.From, segment.To)],
         (TimeLogRow log, _) => BlocksOf(log.ProjectId, null),
-        (SelectionProjectRow { ProjectId: null }, _) when _range is { } range => Clip(MarkReach.Unassigned(Captures, _projectTime.Blocks, _maxCaptureLength), range),
-        (SelectionProjectRow selected, _) when _range is { } range => BlocksOf(selected.ProjectId, range),
+        (SuggestionHeadRow head, _) => [(head.Suggestion.Start, head.Suggestion.End)],
+        (SuggestionPartRow partRow, _) => [(partRow.Part.Start, partRow.Part.End)],
         (MarkedRange marked, _) => [(marked.Start, marked.End)],
         _ => null,
     };

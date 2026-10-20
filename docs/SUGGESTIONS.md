@@ -235,6 +235,33 @@ outside ranges teach too, and each project starts from its name, links and rules
   `WindowsScreenTextReader`, grayscale crops of the window): June 17 94% guess / 93% filled, as with the scratch OCR, and
   87% / 85% over all days. Reading the 34 labelled days took ~70 minutes of OCR (~23,000 captures).
 - Evaluation: `WORKLAPSE_EVAL_OCR=db` scores with the words stored in the database copy.
+- With every capture of the 34 labelled days read through the pipeline (the October AV1 days took 4–16 minutes each):
+  86% guess / 84% filled over all days, 95% / 95% on June 17. October 15 dropped (78% → 70% guess) where the others
+  rose: worth a look.
+
+**Phase 3 built 2026-10-20** (suggestions in Day review, and the Overview count):
+- `SuggestionStore` and `SuggestionEngine` (Core), as designed. Also `SuggestionState.Chosen`: an open suggestion whose
+  project the developer changed. It's kept when the day is worked out again (otherwise any edit would undo the choice),
+  and stands for its time whatever project is computed there.
+- Block building, settled on June 17's real interleaving of two projects:
+  - A project's stretches are joined while the time away stays within the split limit, the other projects' work in each
+    stretch away within 10 minutes (`SuggestionLimits.Switch`), and the block is still mostly its own project. Without the
+    last two, whichever project started first swallowed the other's work as switches.
+  - One part per stretch away without a project (split only at time that has one): a switch when mostly another
+    project's work, else a break. Parts under a minute aren't asked about (they go with the block).
+  - Evidence words shorter than 4 letters aren't shown.
+- Day review: the five tabs, the Day/Selection pair inside Segments and Applications, the selection strip at the bottom, the
+  day note on Time Log, the "Current frame" header, the Suggestions tab (project changeable, Accept/Reject, Count/Keep,
+  Accept All, what it adds, the words it rests on, a count on the tab), suggestions drawn on the lane (outlined; undecided
+  breaks dashed with "?"; switches split out in their project's colour), and the timeline's right-click on a suggestion
+  (Accept, Reject, and Count/Keep for the part clicked). Suggestions are worked out in the background whenever the day's
+  projects change; the stored ones show at once. The selection's activity bar and per-project breakdown went (the status
+  bar shows the selection's totals).
+- Overview: week mode works out the week's suggestions in the background and shows "N suggestions" under each day; month
+  mode shows the stored counts beside the day numbers (working out 35 days on every visit would be slow).
+- Checked in headless screenshots on a copy of June 17 with its ranges removed: three suggestions matching the developer's
+  frame labels (12:01–12:17 Frankensystem with the DBeaver minutes as a switch to Presayo; 2:36–4:11 Presayo with the
+  Facebook breaks); accepting the Presayo block added exactly the 0:47 it said, and its switch went to Frankensystem.
 
 ## Risks and unknowns
 

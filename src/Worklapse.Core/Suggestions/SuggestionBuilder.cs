@@ -33,13 +33,20 @@ public sealed record Suggestion(DateTimeOffset Start, DateTimeOffset End, long P
 public sealed record SuggestionLimits(TimeSpan Glance, TimeSpan Split)
 {
     public static SuggestionLimits Default { get; } = new(TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(30));
+
+    /// <summary>
+    /// Other projects' work inside the time away longer than this ends the block too: a switch is a short excursion, and
+    /// projects worked on in turn are blocks of their own, not one block swallowing the other.
+    /// </summary>
+    public TimeSpan Switch { get; init; } = TrainingSet.ShortSwitch;
 }
 
 /// <summary>
 /// Turns a day's captures into suggested blocks. Captures with a project (by hand, link or title rule) keep it; the
 /// classifier guesses the rest; a path that charges for every change of project (<see cref="SwitchCost"/>) turns the
 /// guesses into stretches rather than flicker; then each project's stretches are joined across time away up to the
-/// split limit, with what lies between as breaks and switches for the developer to decide.
+/// split limit (while other projects' work in it stays short), with what lies between as breaks and switches for the
+/// developer to decide.
 /// </summary>
 public static class SuggestionBuilder
 {
@@ -48,6 +55,9 @@ public static class SuggestionBuilder
 
     /// <summary>A block that would add less than this and has nothing to decide isn't worth showing.</summary>
     public static readonly TimeSpan MinimumAdds = TimeSpan.FromMinutes(1);
+
+    /// <summary>A break or switch shorter than this isn't asked about: it's part of the block, like a glance.</summary>
+    public static readonly TimeSpan MinimumPart = TimeSpan.FromMinutes(1);
 
     /// <summary>How many words a suggestion shows as evidence.</summary>
     private const int EvidenceWords = 8;
@@ -68,11 +78,26 @@ public static class SuggestionBuilder
                 continue;
             }
 
-            // The block: this project's stretches, joined while the time away between them stays within the split limit.
+            // The block: this project's stretches, joined while the time away between them stays within the split limit, the
+            // other projects' work in each stretch away within the switch limit, and the block still mostly this project's:
+            // where two projects take turns, the one with more time has the block and the other's turns are its switches.
             var end = i;
+            var own = pieces[i].Length;
+            var (others, othersJoined) = (TimeSpan.Zero, TimeSpan.Zero);
             for (var k = i + 1; k < pieces.Count && pieces[k].From - pieces[end].To <= limits.Split; k++)
+            {
                 if (day.Labels[k] == project)
+                {
+                    if (othersJoined + others > own)
+                        break;
                     end = k;
+                    own += pieces[k].Length;
+                    othersJoined += others;
+                    others = TimeSpan.Zero;
+                }
+                else if (day.Labels[k] is not null && (others += pieces[k].Length) > limits.Switch)
+                    break;
+            }
 
             if (!optOuts.UnsuggestedProjects.Contains(project)
                 && Block(day, i, end, project, limits, classifier) is { } suggestion
@@ -137,7 +162,7 @@ public static class SuggestionBuilder
             }
             else
             {
-                AwayParts(day, a, b, project, parts);
+                adds += AwayParts(day, a, b, project, parts);
             }
             a = b;
         }
@@ -149,49 +174,52 @@ public static class SuggestionBuilder
     }
 
     /// <summary>
-    /// The breaks and switches in the time away between pieces <paramref name="a"/> - 1 and <paramref name="b"/>: time
-    /// guessed as another project is a switch; time without a project and time not recorded are breaks; time that already
-    /// has a project (or was set to none by hand) is left alone and parts nothing around it.
+    /// The breaks and switches in the time away between pieces <paramref name="a"/> - 1 and <paramref name="b"/>: one part
+    /// for each stretch of it that has no project (time not recorded included), split only where time already has one (or
+    /// was set to none by hand), which is left alone. A stretch mostly guessed as another project is a switch to it;
+    /// otherwise a break. Stretches shorter than <see cref="MinimumPart"/> aren't asked about: they go with the block.
     /// </summary>
-    private static void AwayParts(Day day, int a, int b, long project, List<SuggestionPart> parts)
+    /// <returns>The recorded time of those short stretches, which the block adds.</returns>
+    private static TimeSpan AwayParts(Day day, int a, int b, long project, List<SuggestionPart> parts)
     {
         var pieces = day.Pieces;
-        SuggestionPart? open = null;
+        var absorbed = TimeSpan.Zero;
         var cursor = pieces[a - 1].To;
+        DateTimeOffset? start = null;
+        var recorded = TimeSpan.Zero;
+        var otherProjects = new Dictionary<long, TimeSpan>();
         for (var k = a; k <= b; k++)
         {
-            // Not recorded between the last piece and this one: a break.
-            if (pieces[k].From > cursor)
-                Extend(cursor, pieces[k].From, SuggestionPartKind.Break, null);
-            if (k == b)
-                break;
+            if (k == b || pieces[k].State == PieceState.Assigned)
+            {
+                Close(pieces[k].From);
+                cursor = pieces[k].To;
+                continue;
+            }
             var piece = pieces[k];
-            if (piece.State == PieceState.Assigned)
-                Close();
-            else if (piece.State == PieceState.Guessed && day.Labels[k] is { } other && other != project)
-                Extend(piece.From, piece.To, SuggestionPartKind.Switch, other);
-            else
-                Extend(piece.From, piece.To, SuggestionPartKind.Break, null);
+            start ??= cursor; // from the end of what came before: time not recorded is part of it
+            recorded += piece.Length;
+            if (piece.State == PieceState.Guessed && day.Labels[k] is { } other && other != project)
+                otherProjects[other] = otherProjects.GetValueOrDefault(other) + piece.Length;
             cursor = piece.To;
         }
-        Close();
+        return absorbed;
 
-        void Extend(DateTimeOffset from, DateTimeOffset to, SuggestionPartKind kind, long? other)
+        void Close(DateTimeOffset end)
         {
-            if (open is { } current && current.Kind == kind && current.ProjectId == other && current.End == from)
+            var from = start ?? cursor;
+            if (end - from >= MinimumPart)
             {
-                open = current with { End = to };
-                return;
+                var (main, time) = otherProjects.OrderByDescending(o => o.Value).FirstOrDefault();
+                parts.Add(time > TimeSpan.Zero && time * 2 >= end - from
+                    ? new SuggestionPart(from, end, SuggestionPartKind.Switch, main)
+                    : new SuggestionPart(from, end, SuggestionPartKind.Break, null));
             }
-            Close();
-            open = new SuggestionPart(from, to, kind, other);
-        }
-
-        void Close()
-        {
-            if (open is not null)
-                parts.Add(open);
-            open = null;
+            else
+                absorbed += recorded;
+            start = null;
+            recorded = TimeSpan.Zero;
+            otherProjects.Clear();
         }
     }
 
@@ -223,7 +251,7 @@ public static class SuggestionBuilder
             TimeSpan maxCaptureLength, SuggestionOptOuts optOuts, Func<long, IReadOnlyCollection<string>?>? screenWords, bool useAssignments)
         {
             var assignments = TrainingSet.Assignments(captures, spans);
-            var seconds = CaptureLengths.Of(captures, maxCaptureLength);
+            var lengths = CaptureLengths.Spans(captures, maxCaptureLength);
             var pieces = new List<Piece>();
             for (var i = 0; i < captures.Count; i++)
             {
@@ -236,7 +264,7 @@ public static class SuggestionBuilder
                 var words = state == PieceState.Guessed && optOuts.Learns(capture)
                     ? CaptureWords.Of(capture, screenWords?.Invoke(capture.Id))
                     : (IReadOnlyList<string>)[];
-                pieces.Add(new Piece(i, capture.Time, capture.Time.AddSeconds(seconds[i]), state, words));
+                pieces.Add(new Piece(i, capture.Time, capture.Time + lengths[i], state, words));
             }
 
             // Every label the path may use: the classifier's, none, and whatever is already assigned that day.

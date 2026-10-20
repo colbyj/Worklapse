@@ -48,6 +48,25 @@ public class SuggestionStoreTests
     }
 
     [Fact]
+    public void AProjectChosenForASuggestionSurvivesWorkingTheDayOutAgain()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var projects = new ProjectStore(db);
+        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo)]);
+        store.SetProject(Assert.Single(store.Get(Nine, Nine.AddDays(1))).Id, frankensystem);
+
+        // The classifier still says Presayo, about the same block: the developer's choice stands, and isn't offered twice.
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 620, frankensystem), Block(10, 600, presayo)]);
+
+        var kept = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
+        Assert.Equal((frankensystem, SuggestionState.Chosen, true), (kept.ProjectId, kept.State, kept.IsOpen));
+        Assert.Equal(1, store.CountOpen([(Day, Nine.AddHours(-9), Nine.AddHours(15))])[Day]);
+    }
+
+    [Fact]
     public void AcceptingWritesTheBlockAroundTimeThatHasAProjectAndSplitsOutSwitches()
     {
         using var folder = new TempFolder();

@@ -19,6 +19,9 @@ public sealed class ProjectClassifier
     /// <summary>Added to every word's count, so a word never seen with a project doesn't rule it out.</summary>
     private const double Smoothing = 0.1;
 
+    /// <summary>Evidence words shorter than this aren't shown.</summary>
+    private const int MinEvidenceLength = 4;
+
     /// <summary>Examples are counted in units of this many seconds, so smoothing means the same at any capture interval.</summary>
     private const double SecondsPerCount = 10;
 
@@ -120,7 +123,8 @@ public sealed class ProjectClassifier
         foreach (var list in words)
             foreach (var word in list)
             {
-                if (!Known(word))
+                // Short words ("of", "to") pull, but say nothing to the developer.
+                if (!Known(word) || word.Length - word.IndexOf(':') - 1 < MinEvidenceLength)
                     continue;
                 var own = LogLikelihood(target, word);
                 var best = double.NegativeInfinity;
