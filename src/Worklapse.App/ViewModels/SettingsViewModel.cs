@@ -51,7 +51,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             Monitors.Add(option);
         }
 
-        Projects = new ProjectsViewModel();
+        Projects = new ProjectsViewModel(store.Current.MaxCaptureLength);
         Programs = new ProgramsViewModel(store.Current.MaxCaptureLength) { ProjectChoices = Projects.ProjectChoices };
         Programs.Changed += () =>
         {

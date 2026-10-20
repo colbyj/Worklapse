@@ -360,7 +360,7 @@ public sealed partial class DayReviewViewModel
         _projectTime = ProjectTimeline.Build(Captures, _handSpans, dayStart, dayEnd, _maxCaptureLength);
 
         // Lists: every project not archived, and archived ones something on this day is linked to or marked with.
-        var linked = Captures.SelectMany(c => new[] { c.AppProjectId, c.SiteProjectId }).Where(id => id is not null).Select(id => id!.Value).ToHashSet();
+        var linked = Captures.SelectMany(c => new[] { c.AppProjectId, c.SiteProjectId, c.RuleProjectId }).Where(id => id is not null).Select(id => id!.Value).ToHashSet();
         linked.UnionWith(_projectTime.Blocks.Select(b => b.ProjectId));
         var options = new List<ProjectOption> { new(null, "None", Avalonia.Media.Brushes.Transparent, "") };
         options.AddRange(_projectsById.Values

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
 
@@ -174,6 +175,29 @@ public sealed partial class ProjectItem : ProjectsEntry
 
     internal void RefreshLinked() => OnPropertyChanged(nameof(LinkedText));
 
+    /// <summary>Its window title rules, in the order of its list.</summary>
+    public ObservableCollection<TitleRuleItem> TitleRules { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelectedRule))]
+    private TitleRuleItem? _selectedRule;
+
+    public bool HasSelectedRule => SelectedRule is not null;
+
+    /// <summary>The recorded titles the selected rule matches, longest time first.</summary>
+    [ObservableProperty] private IReadOnlyList<TitleMatchRow> _matches = [];
+
+    [ObservableProperty] private string _matchesHeading = "Titles matched";
+
+    /// <summary>Shown instead of <see cref="Matches"/> when there are none; empty when there are.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoMatches))]
+    private string _noMatchesText = "";
+
+    public bool HasNoMatches => NoMatchesText.Length > 0;
+
+    partial void OnSelectedRuleChanged(TitleRuleItem? value) => _owner.RefreshMatches(this);
+
     // "None" never changes and outlives every dialog, so it isn't watched (it would keep the items alive).
     private void Watch(CategoryItem category)
     {
@@ -195,12 +219,16 @@ public sealed partial class ProjectItem : ProjectsEntry
 /// The Projects tab of the Settings dialog: categories and projects, their colours, and archiving. Like the other
 /// pages its changes take effect on Apply or OK; the Applications tab can link apps to projects made here before then.
 /// </summary>
-public sealed partial class ProjectsViewModel : ObservableObject
+public sealed partial class ProjectsViewModel(TimeSpan maxCaptureLength) : ObservableObject
 {
+    /// <summary>Where rules not saved yet go among the saved ones when they tie: after them (as newer).</summary>
+    private const long UnsavedRuleOrder = long.MaxValue / 2;
+
     private readonly List<CategoryItem> _categories = [];
     private readonly List<ProjectItem> _projects = [];
     private readonly List<long> _deletedCategories = [];
     private readonly List<long> _deletedProjects = [];
+    private List<TitleUsage> _titles = []; // what window title rules can match, all history
     private int _loads;
 
     /// <summary>Raised on any change, for the dialog's Apply button.</summary>
@@ -232,6 +260,12 @@ public sealed partial class ProjectsViewModel : ObservableObject
     /// <summary>"None" and every project, by name: the choices for an app's or site's project.</summary>
     public ObservableCollection<ProjectItem> ProjectChoices { get; } = [ProjectItem.None];
 
+    /// <summary>
+    /// "Any app" and every app with a recorded title (and any a rule names), by name: what a window title rule can be
+    /// limited to. Only ever added to, so no rule's list loses its selection.
+    /// </summary>
+    public ObservableCollection<AppChoice> AppChoices { get; } = [AppChoice.Any];
+
     /// <summary>Every category and project has a name (they can't be saved without one).</summary>
     public bool IsValid => _categories.All(c => !string.IsNullOrWhiteSpace(c.Name)) && _projects.All(p => !string.IsNullOrWhiteSpace(p.Name));
 
@@ -253,13 +287,15 @@ public sealed partial class ProjectsViewModel : ObservableObject
         var load = ++_loads;
         List<Category> categories;
         List<Project> projects;
+        List<TitleRule> rules;
+        List<TitleUsage> titles;
         try
         {
-            (categories, projects) = await Task.Run(() =>
+            (categories, projects, rules, titles) = await Task.Run(() =>
             {
                 using var db = WorklapseDatabase.Open(dataFolder);
                 var store = new ProjectStore(db);
-                return (store.GetCategories(), store.GetProjects());
+                return (store.GetCategories(), store.GetProjects(), store.GetTitleRules(), new HistoryStore(db).GetTitles(maxCaptureLength));
             });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
@@ -287,6 +323,20 @@ public sealed partial class ProjectsViewModel : ObservableObject
             var category = _categories.FirstOrDefault(c => c.Id == project.CategoryId) ?? CategoryItem.None;
             Track(new ProjectItem(this, project.Id, project.Name, category, project.Color, project.Archived));
         }
+
+        _titles = titles;
+        foreach (var app in titles.Select(t => t.App))
+            AppChoiceFor(app);
+        foreach (var rule in rules)
+        {
+            if (_projects.FirstOrDefault(p => p.Id == rule.ProjectId) is not { } project)
+                continue;
+            var item = new TitleRuleItem(this, rule.Id, rule.Text, AppChoiceFor(rule.App));
+            item.PropertyChanged += OnRuleChanged;
+            project.TitleRules.Add(item);
+        }
+        foreach (var project in _projects)
+            project.SelectedRule = project.TitleRules.FirstOrDefault();
         RebuildChoices();
         Rebuild();
         Selected = Entries.FirstOrDefault(e => e is not NoCategoryHeading);
@@ -318,6 +368,14 @@ public sealed partial class ProjectsViewModel : ObservableObject
                 var categoryId = project.Category.IsNone ? null : project.Category.Id;
                 project.Id ??= store.AddProject(project.Name, categoryId, project.OwnColor);
                 store.UpdateProject(new Project(project.Id.Value, project.Name, categoryId, project.OwnColor, project.Archived));
+
+                // Rules with nothing to look for aren't saved; a saved one emptied is deleted, and saved anew if it gets text again.
+                var rules = project.TitleRules.Where(r => r.Trimmed.Length > 0).ToList();
+                var ids = store.SetTitleRules(project.Id.Value, rules.Select(r => (r.Id, r.Trimmed, r.App.Name)).ToList());
+                for (var i = 0; i < rules.Count; i++)
+                    rules[i].Id = ids[i];
+                foreach (var blank in project.TitleRules.Where(r => r.Trimmed.Length == 0))
+                    blank.Id = null;
             }
             transaction.Commit();
         }
@@ -402,7 +460,119 @@ public sealed partial class ProjectsViewModel : ObservableObject
         Selected = selected is not null && Entries.Contains(selected) ? selected : Entries.FirstOrDefault();
     }
 
-    partial void OnSelectedChanged(ProjectsEntry? value) => (value as ProjectItem)?.RefreshLinked();
+    partial void OnSelectedChanged(ProjectsEntry? value)
+    {
+        if (value is not ProjectItem project)
+            return;
+        project.RefreshLinked();
+        RefreshMatches(project);
+    }
+
+    // ---- Window title rules ----
+
+    /// <summary>Adds an empty window title rule to the selected project and selects it; null with no project selected.</summary>
+    public TitleRuleItem? AddTitleRule()
+    {
+        if (Selected is not ProjectItem project)
+            return null;
+        var rule = new TitleRuleItem(this, null, "", AppChoice.Any);
+        rule.PropertyChanged += OnRuleChanged;
+        project.TitleRules.Add(rule);
+        project.SelectedRule = rule;
+        MarkChanged();
+        return rule;
+    }
+
+    /// <summary>Removes the selected project's selected window title rule, selecting the next one.</summary>
+    public void RemoveTitleRule()
+    {
+        if (Selected is not ProjectItem { SelectedRule: { } rule } project)
+            return;
+        var index = project.TitleRules.IndexOf(rule);
+        rule.PropertyChanged -= OnRuleChanged;
+        project.TitleRules.Remove(rule);
+        project.SelectedRule = project.TitleRules.Count == 0 ? null : project.TitleRules[Math.Min(index, project.TitleRules.Count - 1)];
+        MarkChanged();
+        RefreshMatches(project);
+    }
+
+    private void OnRuleChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(TitleRuleItem.Text) or nameof(TitleRuleItem.App)) || sender is not TitleRuleItem rule)
+            return;
+        // A rule of a project deleted or read again since isn't the dialog's any more.
+        if (_projects.FirstOrDefault(p => p.TitleRules.Contains(rule)) is not { } project)
+            return;
+        MarkChanged();
+        RefreshMatches(project);
+    }
+
+    /// <summary>
+    /// Works out, for the selected project, the time each of its rules matches and the titles its selected rule matches,
+    /// with the rules as the dialog has them now (every project's, saved or not, archived ones included: they still apply).
+    /// </summary>
+    internal void RefreshMatches(ProjectItem project)
+    {
+        if (!ReferenceEquals(project, Selected))
+            return;
+
+        // Every rule, with the index of its project for an id (new projects have none yet).
+        var all = new List<TitleRule>();
+        var unsaved = 0L;
+        for (var p = 0; p < _projects.Count; p++)
+            foreach (var rule in _projects[p].TitleRules)
+                all.Add(new TitleRule(rule.Id ?? UnsavedRuleOrder + unsaved++, p, rule.Trimmed, rule.App.Name));
+        var deciding = new TitleRuleSet(all);
+        var own = _projects.IndexOf(project);
+
+        foreach (var rule in project.TitleRules)
+        {
+            var matcher = new TitleRule(0, own, rule.Trimmed, rule.App.Name);
+            rule.MatchedText = rule.Trimmed.Length == 0 ? "—"
+                : DurationText.Of(_titles.Where(t => matcher.Matches(t.App, t.Title)).Aggregate(TimeSpan.Zero, (sum, t) => sum + t.Recorded));
+        }
+
+        if (project.SelectedRule is not { } selected)
+        {
+            project.MatchesHeading = "Titles matched";
+            project.Matches = [];
+            project.NoMatchesText = project.TitleRules.Count == 0 ? "Add a rule to mark windows by their titles" : "Pick a rule to see the titles it matches";
+            return;
+        }
+        if (selected.Trimmed.Length == 0)
+        {
+            project.MatchesHeading = "Titles matched";
+            project.Matches = [];
+            project.NoMatchesText = "Type the text to look for";
+            return;
+        }
+
+        var current = new TitleRule(0, own, selected.Trimmed, selected.App.Name);
+        project.MatchesHeading = $"Titles matched by “{selected.Trimmed}”";
+        project.Matches = _titles
+            .Where(t => current.Matches(t.App, t.Title))
+            .OrderByDescending(t => t.Recorded).ThenBy(t => t.Title, StringComparer.CurrentCultureIgnoreCase)
+            .Select(t => new TitleMatchRow(t.App, t.Title, DurationText.Of(t.Recorded),
+                deciding.Match(t.App, t.Title) is { } winner && winner.ProjectId != own ? _projects[(int)winner.ProjectId] : null))
+            .ToList();
+        project.NoMatchesText = project.Matches.Count > 0 ? ""
+            : selected.App.IsAny ? "No recorded title contains it" : $"No title recorded in {selected.App.Name} contains it";
+    }
+
+    /// <summary>The choice for an app (null: any app), added to <see cref="AppChoices"/> in name order if it's new.</summary>
+    private AppChoice AppChoiceFor(string? app)
+    {
+        if (app is null)
+            return AppChoice.Any;
+        if (AppChoices.FirstOrDefault(c => string.Equals(c.Name, app, StringComparison.OrdinalIgnoreCase)) is { } known)
+            return known;
+        var choice = new AppChoice(app);
+        var at = 1;
+        while (at < AppChoices.Count && StringComparer.OrdinalIgnoreCase.Compare(AppChoices[at].Name, app) <= 0)
+            at++;
+        AppChoices.Insert(at, choice);
+        return choice;
+    }
 
     private void Track(CategoryItem category)
     {

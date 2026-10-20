@@ -1,7 +1,9 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Worklapse.App.ViewModels;
 
 namespace Worklapse.App.Views;
@@ -68,6 +70,31 @@ public partial class SettingsWindow : Window
         if (projects.SelectedIsSaved && !await ConfirmWindow.Ask(this, question, detail!, "Delete"))
             return;
         projects.DeleteCommand.Execute(null);
+    }
+
+    /// <summary>Adds a window title rule to the selected project and puts the cursor in its text.</summary>
+    private void OnAddTitleRule(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel.Projects.AddTitleRule() is not { } rule)
+            return;
+        var list = this.GetVisualDescendants().OfType<ListBox>().FirstOrDefault(l => l.Classes.Contains("titleRules"));
+        if (list is null)
+            return;
+        list.ScrollIntoView(rule);
+        Dispatcher.UIThread.Post(() => list.ContainerFromItem(rule)?.GetVisualDescendants().OfType<TextBox>().FirstOrDefault()?.Focus(),
+            DispatcherPriority.Loaded);
+    }
+
+    private void OnRemoveTitleRule(object? sender, RoutedEventArgs e) => ViewModel.Projects.RemoveTitleRule();
+
+    /// <summary>
+    /// Typing in a rule's cell selects its row, so the titles under the grid are its: the cells take the click, the
+    /// list doesn't see it.
+    /// </summary>
+    private void OnTitleRuleGotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (e.Source is Control { DataContext: TitleRuleItem rule } && sender is ListBox { DataContext: ProjectItem project })
+            project.SelectedRule = rule;
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)

@@ -77,6 +77,22 @@
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="Padding" Value="8,4" />
     </Style>
+    <!-- A project's window title rules: a grid of cells to type in, a hairline between the rows. -->
+    <Style Selector="ListBox.titleRules ListBoxItem">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="ListBox.titleRules ComboBox.cell">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.titleMatches ListBoxItem">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="8,2" />
+    </Style>
   </Window.Styles>
 
   <DockPanel>
@@ -255,7 +271,7 @@
             <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
           </DockPanel>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
-                     Text="A website decides before its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus." />
+                     Text="A project's window titles decide first, then a website, then its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus." />
           <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
@@ -360,7 +376,7 @@
                 </DataTemplate>
 
                 <DataTemplate DataType="vm:ProjectItem">
-                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
                     <TextBlock Classes="label" Text="Name:" />
                     <TextBox Grid.Column="1" Text="{Binding Name}" AutomationProperties.Name="Project name" />
 
@@ -405,7 +421,75 @@
                       <TextBlock Classes="hint" Text="Link apps and sites on the Applications tab" />
                     </StackPanel>
 
-                    <StackPanel Grid.Row="4" Grid.Column="1" Spacing="2">
+                    <TextBlock Grid.Row="4" Classes="label" Text="Window titles:" VerticalAlignment="Top" Margin="0,4,10,0" />
+                    <DockPanel Grid.Row="4" Grid.Column="1">
+                      <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4"
+                              Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
+                        <DockPanel>
+                          <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,160,84">
+                            <TextBlock Text="Title contains" />
+                            <TextBlock Grid.Column="1" Text="Only in" />
+                            <TextBlock Grid.Column="2" Text="Matched" HorizontalAlignment="Right" />
+                          </Grid>
+                          <ListBox Classes="titleRules" ItemsSource="{Binding TitleRules}" SelectedItem="{Binding SelectedRule}"
+                                   Background="Transparent" BorderThickness="0" MinHeight="50" MaxHeight="128" GotFocus="OnTitleRuleGotFocus"
+                                   AutomationProperties.Name="Window title rules">
+                            <ListBox.ItemTemplate>
+                              <DataTemplate x:DataType="vm:TitleRuleItem">
+                                <Grid ColumnDefinitions="*,160,84">
+                                  <TextBox Classes="cell" Margin="1" Text="{Binding Text}" PlaceholderText="Text in the title"
+                                           AutomationProperties.Name="Title contains" />
+                                  <ComboBox Grid.Column="1" Classes="cell" Margin="1" ItemsSource="{Binding AppChoices}" SelectedItem="{Binding App}"
+                                            AutomationProperties.Name="Only in">
+                                    <ComboBox.ItemTemplate>
+                                      <DataTemplate x:DataType="vm:AppChoice">
+                                        <TextBlock Text="{Binding DisplayName}" Classes.secondary="{Binding IsAny}" TextTrimming="CharacterEllipsis" />
+                                      </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                  </ComboBox>
+                                  <TextBlock Grid.Column="2" Classes="time" Text="{Binding MatchedText}" />
+                                </Grid>
+                              </DataTemplate>
+                            </ListBox.ItemTemplate>
+                          </ListBox>
+                        </DockPanel>
+                      </Border>
+
+                      <DockPanel DockPanel.Dock="Top" Margin="0,6,0,0">
+                        <Button DockPanel.Dock="Left" Content="Add" Click="OnAddTitleRule" />
+                        <Button DockPanel.Dock="Left" Content="Remove" Click="OnRemoveTitleRule" IsEnabled="{Binding HasSelectedRule}" Margin="6,0,0,0" />
+                        <TextBlock Classes="hint" VerticalAlignment="Center" Margin="12,0,0,0"
+                                   Text="Ignores case · beats site and app links · applies to all history" />
+                      </DockPanel>
+
+                      <TextBlock DockPanel.Dock="Top" Classes="secondary" Text="{Binding MatchesHeading}" Margin="0,10,0,3" TextTrimming="CharacterEllipsis" />
+                      <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" MinHeight="72"
+                              Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
+                        <Panel>
+                          <ListBox Classes="titleMatches" ItemsSource="{Binding Matches}" Background="Transparent" BorderThickness="0"
+                                   AutomationProperties.Name="Titles matched">
+                            <ListBox.ItemTemplate>
+                              <DataTemplate x:DataType="vm:TitleMatchRow">
+                                <Grid ColumnDefinitions="120,*,Auto,64" ColumnSpacing="8">
+                                  <TextBlock Text="{Binding App}" Classes="secondary" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                  <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                             ToolTip.Tip="{Binding Title}" />
+                                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsTaken}" VerticalAlignment="Center"
+                                              ToolTip.Tip="{Binding TakenByName, StringFormat='A rule of {0} decides for this title'}">
+                                    <Rectangle Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{Binding TakenByBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding TakenByName}" Classes="secondary" VerticalAlignment="Center" />
+                                  </StackPanel>
+                                  <TextBlock Grid.Column="3" Classes="time" Margin="0" Text="{Binding TimeText}" />
+                                </Grid>
+                              </DataTemplate>
+                            </ListBox.ItemTemplate>
+                          </ListBox>
+                          <TextBlock Classes="secondary" Margin="8,6" Text="{Binding NoMatchesText}" IsVisible="{Binding HasNoMatches}" />
+                        </Panel>
+                      </Border>
+                    </DockPanel>
+
+                    <StackPanel Grid.Row="5" Grid.Column="1" Spacing="2">
                       <CheckBox Content="Archived" IsChecked="{Binding Archived}" />
                       <TextBlock Classes="hint" Text="Hidden from lists, history kept" />
                     </StackPanel>

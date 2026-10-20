@@ -284,7 +284,7 @@ Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse
 `worklapse.db`, `video/YYYY-MM-DD/HHmmss-m<monitor>.ivf` (plus `.ivf.staging` while a segment is open) and, when
 recording images, `images/YYYY-MM-DD/HHmmss-m<monitor>.jpg` or `.webp`.
 
-SQLite schema (version 8, migrations in `WorklapseDatabase`):
+SQLite schema (version 11, migrations in `WorklapseDatabase`; the project tables of 9–11 are described under 1a):
 
 - `apps` (exe name, path, `productive` and `excluded` flags; classified by exe name; deleted with their last capture unless
   productive or excluded)
@@ -718,6 +718,28 @@ Changed after the developer used it (2026-10-19):
   drops from one (`:is(Button).tool > StackPanel` now).
 - Day review's last capture lasts the maximum, as in Core's totals and project blocks (it lasted one interval, so a
   block ran 5 s past the end of the segments and the gap after it read "Mixed").
+
+#### Window title rules (designed on the canvas, page "Round 6", and built 2026-10-19)
+
+Asked for to mark IDE time by the open solution: VS ("Worklapse (Running) - File.cs - Microsoft Visual Studio") and
+JetBrains ("Worklapse – File.cs") put it in the title. The developer chose general rules they write over per-IDE parsing.
+- A project has a list of rules: *title contains* text, optionally *only in* one app (exe name). Case is ignored.
+- A matching rule decides before the site's link and the app's (`CaptureRecord.RuleProjectId`, then `SiteProjectId`,
+  then `AppProjectId`); time set by hand still decides over all of them; only active time, like links.
+- Several rules matching one title: a rule for one app beats one for any app, then the longer text, then the older rule
+  (`TitleRule.Precedence`). Per-project lists have no order across projects, hence this rather than "first listed".
+- Looked up when history is read (`HistoryStore.LoadDay`, `LoadSamples`), like links, so rules apply to all history and
+  nothing is stored per capture. Schema 11: `title_rules` (project, text, app or NULL, position), cascade-deleted with
+  the project. `ProjectStore.SetTitleRules` keeps ids (they break ties).
+- Settings ▸ Projects: a *Window titles* grid (Title contains, Only in, Matched = all-history time of the titles the rule
+  matches) with Add / Remove, and under it the titles the selected rule matches (`HistoryStore.GetTitles`), each marked
+  with the other project whose rule decides for it, if any. Works on the dialog's unsaved rules; saved on Apply.
+- Day review: an app's or site's link no longer reaches time a rule decides (`MarkReach.Link`).
+
+Choices made while building, to confirm:
+- *Only in* is one app; the list holds "Any app" and every app with a recorded title.
+- Text is trimmed; a rule left empty isn't saved.
+- Matched counts a rule's own matches, including titles another project's rule decides for (they're marked in the list).
 
 ### 1. Make it usable day to day
 

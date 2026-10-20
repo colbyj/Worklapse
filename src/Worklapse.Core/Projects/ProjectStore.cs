@@ -21,8 +21,8 @@ public sealed record ProjectNote(DateOnly Day, long ProjectId, string Text);
 public sealed record LoggedTime(DateOnly Day, long ProjectId, TimeSpan Logged);
 
 /// <summary>
-/// Projects and everything said about them: categories, the ranges set by hand, notes, day notes and the timesheet.
-/// Links from apps and sites to projects live with the apps and sites (<see cref="History.HistoryStore.SetProject"/>).
+/// Projects and everything said about them: categories, window title rules, the ranges set by hand, notes, day notes and
+/// the timesheet. Links from apps and sites to projects live with the apps and sites (<see cref="History.HistoryStore.SetProject"/>).
 /// Uses the connection it's given, from one thread at a time.
 /// </summary>
 public sealed class ProjectStore(WorklapseDatabase db)
@@ -132,6 +132,61 @@ public sealed class ProjectStore(WorklapseDatabase db)
     /// <summary>The colour a project is drawn in: its own, else its category's, else <see cref="DefaultColor"/>.</summary>
     public static int ColorOf(Project project, IReadOnlyDictionary<long, Category> categories) =>
         project.Color ?? (project.CategoryId is { } c && categories.TryGetValue(c, out var category) ? category.Color : DefaultColor);
+
+    // ---- Window title rules ----
+
+    /// <summary>Every project's window title rules, each project's in its list's order.</summary>
+    public List<TitleRule> GetTitleRules()
+    {
+        using var command = db.Command("SELECT id, project_id, text, app FROM title_rules ORDER BY project_id, position, id;");
+        using var reader = command.ExecuteReader();
+        var rules = new List<TitleRule>();
+        while (reader.Read())
+            rules.Add(new TitleRule(reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3)));
+        return rules;
+    }
+
+    /// <summary>
+    /// Makes <paramref name="rules"/> a project's window title rules, in that order: rules with an id are kept (so they
+    /// stay older than rules added since, see <see cref="TitleRule.Precedence"/>), the project's others are deleted.
+    /// </summary>
+    /// <returns>Each rule's id, new ones included, in the same order.</returns>
+    /// <remarks>Checks everything before changing anything, so it can run inside the caller's transaction or alone.</remarks>
+    public List<long> SetTitleRules(long projectId, IReadOnlyList<(long? Id, string Text, string? App)> rules)
+    {
+        if (rules.Any(r => string.IsNullOrWhiteSpace(r.Text)))
+            throw new ArgumentException("A window title rule needs text to look for.", nameof(rules));
+        var kept = rules.Where(r => r.Id is not null).Select(r => r.Id!.Value).Distinct().ToList();
+        using (var owned = db.Command($"SELECT count(*) FROM title_rules WHERE project_id = $project AND id IN ({string.Join(",", kept)});"))
+        {
+            owned.Parameters.AddWithValue("$project", projectId);
+            if ((long)owned.ExecuteScalar()! != kept.Count || kept.Count != rules.Count(r => r.Id is not null))
+                throw new InvalidOperationException($"Some of these window title rules aren't project {projectId}'s.");
+        }
+
+        using (var delete = db.Command($"DELETE FROM title_rules WHERE project_id = $project AND id NOT IN ({string.Join(",", kept)});"))
+        {
+            delete.Parameters.AddWithValue("$project", projectId);
+            delete.ExecuteNonQuery();
+        }
+
+        var ids = new List<long>();
+        for (var position = 0; position < rules.Count; position++)
+        {
+            var (id, text, app) = rules[position];
+            using var command = id is null
+                ? db.Command("INSERT INTO title_rules (project_id, text, app, position) VALUES ($project, $text, $app, $position) RETURNING id;")
+                : db.Command("UPDATE title_rules SET text = $text, app = $app, position = $position WHERE id = $id AND project_id = $project RETURNING id;");
+            command.Parameters.AddWithValue("$project", projectId);
+            command.Parameters.AddWithValue("$text", text.Trim());
+            command.Parameters.AddWithValue("$app", string.IsNullOrWhiteSpace(app) ? DBNull.Value : app.Trim());
+            command.Parameters.AddWithValue("$position", position);
+            if (id is { } existing)
+                command.Parameters.AddWithValue("$id", existing);
+            ids.Add((long)command.ExecuteScalar()!);
+        }
+        return ids;
+    }
 
     // ---- Ranges set by hand ----
 

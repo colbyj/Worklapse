@@ -19,16 +19,16 @@ public static class MarkReach
             : c.Site is null && Same(c.AppName, program.Name));
 
     /// <summary>
-    /// Where the app's or site's project link decides: its time outside the ranges set by hand; for an app, also its
-    /// pages whose site has no link of its own (they follow the browser's).
+    /// Where the app's or site's project link decides: its time outside the ranges set by hand and without a window
+    /// title rule matching; for an app, also its pages whose site has no link of its own (they follow the browser's).
     /// </summary>
     /// <param name="spans">The ranges set by hand, in time order.</param>
     public static List<(DateTimeOffset Start, DateTimeOffset End)> Link(IReadOnlyList<CaptureRecord> captures,
         IReadOnlyList<ProjectSpan> spans, ProgramKey program, TimeSpan maxCaptureLength)
     {
-        var linked = Ranges(captures, maxCaptureLength, c => program.Kind == ProgramKind.Site
+        var linked = Ranges(captures, maxCaptureLength, c => c.RuleProjectId is null && (program.Kind == ProgramKind.Site
             ? Same(c.Site, program.Name)
-            : c.SiteProjectId is null && Same(c.AppName, program.Name));
+            : c.SiteProjectId is null && Same(c.AppName, program.Name)));
         return Without(linked, spans);
     }
 

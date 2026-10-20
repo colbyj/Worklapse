@@ -1,4 +1,5 @@
 using Worklapse.Core.Platform;
+using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.History;
@@ -76,6 +77,7 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
             }
         }
 
+        var rules = new TitleRuleSet(new ProjectStore(db).GetTitleRules());
         var captures = new List<CaptureRecord>();
         var unrecorded = new List<int>(); // captures from before layouts were recorded
         using (var command = db.Command("""
@@ -99,13 +101,15 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                 IReadOnlyList<long>? layout = reader.IsDBNull(14) ? null : layouts[reader.GetInt64(14)];
                 if (layout is null)
                     unrecorded.Add(captures.Count);
+                var appName = reader.IsDBNull(4) ? null : reader.GetString(4);
+                var title = reader.IsDBNull(5) ? null : reader.GetString(5);
                 captures.Add(new CaptureRecord(
                     id,
                     time,
                     (CaptureKind)reader.GetInt32(3),
-                    AppName: reader.IsDBNull(4) ? null : reader.GetString(4),
+                    AppName: appName,
                     Site: reader.IsDBNull(12) ? null : reader.GetString(12),
-                    WindowTitle: reader.IsDBNull(5) ? null : reader.GetString(5),
+                    WindowTitle: title,
                     window,
                     AppProductive: reader.GetInt64(10) != 0,
                     SiteProductive: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
@@ -113,7 +117,8 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                     frames.TryGetValue(id, out var list) ? list : [],
                     MonitorIds: layout ?? [],
                     AppProjectId: reader.IsDBNull(15) ? null : reader.GetInt64(15),
-                    SiteProjectId: reader.IsDBNull(16) ? null : reader.GetInt64(16)));
+                    SiteProjectId: reader.IsDBNull(16) ? null : reader.GetInt64(16),
+                    RuleProjectId: rules.ProjectOf(appName, title)));
             }
         }
 
@@ -147,9 +152,12 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
     {
         var startMs = DayBounds(from).Start;
         var endMs = DayBounds(to).Start; // the end of the day before
-        using var command = db.Command("""
+        var rules = new TitleRuleSet(new ProjectStore(db).GetTitleRules());
+        // Names and titles only when there are rules to match them against.
+        using var command = db.Command($"""
             SELECT c.ts_ms, c.utc_offset_min, c.kind, c.pending_delete,
-                   coalesce(s.productive, a.productive, 0), coalesce(s.project_id, a.project_id)
+                   coalesce(s.productive, a.productive, 0), coalesce(s.project_id, a.project_id),
+                   {(rules.IsEmpty ? "NULL, NULL" : "a.exe_name, c.window_title")}
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
@@ -164,7 +172,8 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                 (CaptureKind)reader.GetInt32(2),
                 Productive: reader.GetInt64(4) != 0,
                 PendingDelete: reader.GetInt64(3) != 0,
-                LinkedProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+                LinkedProjectId: rules.ProjectOf(reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))
+                    ?? (reader.IsDBNull(5) ? null : reader.GetInt64(5))));
         return samples;
     }
 
@@ -303,6 +312,30 @@ public sealed class HistoryStore(WorklapseDatabase db) : IDisposable
                 TimeSpan.FromMilliseconds(reader.GetInt64(4)),
                 ProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5)));
         return programs;
+    }
+
+    /// <summary>
+    /// Every window title recorded with active time, per app (exe name), with that time (marked captures left out),
+    /// counted as in <see cref="GetPrograms"/>: what window title rules can match.
+    /// </summary>
+    public List<TitleUsage> GetTitles(TimeSpan maxCaptureLength)
+    {
+        using var command = db.Command("""
+            WITH spans AS (
+                SELECT app_id, window_title, kind, pending_delete,
+                       min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) AS ms
+                FROM captures)
+            SELECT a.exe_name, s.window_title, sum(s.ms)
+            FROM spans s JOIN apps a ON a.id = s.app_id
+            WHERE s.kind = 0 AND s.pending_delete = 0 AND s.window_title <> ''
+            GROUP BY a.exe_name, s.window_title;
+            """);
+        command.Parameters.AddWithValue("$max", (long)maxCaptureLength.TotalMilliseconds);
+        using var reader = command.ExecuteReader();
+        var titles = new List<TitleUsage>();
+        while (reader.Read())
+            titles.Add(new TitleUsage(reader.GetString(0), reader.GetString(1), TimeSpan.FromMilliseconds(reader.GetInt64(2))));
+        return titles;
     }
 
     public void Dispose() => db.Dispose();

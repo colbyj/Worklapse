@@ -16,6 +16,7 @@ public readonly record struct MonitorFrame(long MonitorId, FrameRef Frame);
 /// </param>
 /// <param name="AppProjectId">The project the app is linked to, if any.</param>
 /// <param name="SiteProjectId">The project the site is linked to, if any.</param>
+/// <param name="RuleProjectId">The project of the window title rule that decides for its title, if any (<see cref="Projects.TitleRuleSet"/>).</param>
 public sealed record CaptureRecord(
     long Id,
     DateTimeOffset Time,
@@ -30,7 +31,8 @@ public sealed record CaptureRecord(
     IReadOnlyList<MonitorFrame> Frames,
     IReadOnlyList<long> MonitorIds,
     long? AppProjectId = null,
-    long? SiteProjectId = null)
+    long? SiteProjectId = null,
+    long? RuleProjectId = null)
 {
     public bool IsActive => Kind == CaptureKind.Active;
 
@@ -41,11 +43,11 @@ public sealed record CaptureRecord(
     public bool Productive => SiteProductive ?? AppProductive;
 
     /// <summary>
-    /// The project this capture's links point to: the site's when it has one, otherwise the app's. Unlike
-    /// <see cref="Productive"/>, a site without a link leaves it to its browser, so a browser kept for one project
-    /// covers every page that isn't linked elsewhere.
+    /// The project this capture's rules and links point to: a window title rule's when one matches, otherwise the site's
+    /// link when it has one, otherwise the app's. Unlike <see cref="Productive"/>, a site without a link leaves it to its
+    /// browser, so a browser kept for one project covers every page that isn't linked elsewhere.
     /// </summary>
-    public long? LinkedProjectId => SiteProjectId ?? AppProjectId;
+    public long? LinkedProjectId => RuleProjectId ?? SiteProjectId ?? AppProjectId;
 }
 
 /// <summary>
@@ -74,6 +76,9 @@ public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 /// <param name="Excluded">Nothing is recorded while it has the focus.</param>
 /// <param name="ProjectId">The project its active time is marked with, if it's linked to one.</param>
 public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded, long? ProjectId = null);
+
+/// <summary>A window title as recorded in an app (by exe name), with its active time.</summary>
+public sealed record TitleUsage(string App, string Title, TimeSpan Recorded);
 
 /// <summary>Everything recorded on one local calendar day, in time order.</summary>
 /// <param name="Monitors">

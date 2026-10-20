@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 10;
+    private const int SchemaVersion = 11;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -330,6 +330,24 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 10;");
+            transaction.Commit();
+        }
+
+        if (version < 11)
+        {
+            // Window title rules: a capture whose window title contains a project's text (in one app, or any) is marked
+            // with the project, before its site's and app's links. Looked up when history is read, like the links.
+            using var transaction = BeginTransaction();
+            Execute("""
+                CREATE TABLE title_rules (
+                    id          INTEGER PRIMARY KEY,
+                    project_id  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                    text        TEXT NOT NULL,
+                    app         TEXT,                               -- exe name; NULL = any app
+                    position    INTEGER NOT NULL                    -- order in the project's list
+                );
+                """);
+            Execute("PRAGMA user_version = 11;");
             transaction.Commit();
         }
     }
