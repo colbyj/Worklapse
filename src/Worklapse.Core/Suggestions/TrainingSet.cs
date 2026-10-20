@@ -1,5 +1,6 @@
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
+using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.Suggestions;
 
@@ -11,6 +12,24 @@ public sealed record SuggestionOptOuts(IReadOnlySet<long> UnsuggestedProjects, I
 {
     public static SuggestionOptOuts None { get; } = new(new HashSet<long>(),
         new HashSet<string>(StringComparer.OrdinalIgnoreCase), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The opt-outs as set in the database; archived projects count as never suggested.</summary>
+    public static SuggestionOptOuts Load(WorklapseDatabase db)
+    {
+        var projects = new ProjectStore(db).GetProjects().Where(p => !p.Suggest || p.Archived).Select(p => p.Id).ToHashSet();
+        return new SuggestionOptOuts(projects, Names("SELECT DISTINCT exe_name FROM apps WHERE learn = 0;"),
+            Names("SELECT domain FROM sites WHERE learn = 0;"));
+
+        HashSet<string> Names(string sql)
+        {
+            using var command = db.Command(sql);
+            using var reader = command.ExecuteReader();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (reader.Read())
+                names.Add(reader.GetString(0));
+            return names;
+        }
+    }
 
     /// <summary>Whether a capture's window counts: its site decides when it has one, else its app (as for Productive).</summary>
     public bool Learns(CaptureRecord capture) =>

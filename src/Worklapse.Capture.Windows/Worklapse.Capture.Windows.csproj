@@ -1,5 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Built on Windows against the Windows SDK, for its OCR (WindowsScreenTextReader); elsewhere (the Linux build) as plain
+       net10.0 without it. The App follows, since it references this project. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <Compile Remove="WindowsScreenTextReader.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Win32.SystemEvents" />
     <PackageReference Include="System.IO.Hashing" />

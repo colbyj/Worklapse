@@ -114,6 +114,25 @@ public sealed record WorklapseSettings
 
     public ThemeMode ThemeMode { get; init; }
 
+    /// <summary>Suggest projects for time without one (docs/SUGGESTIONS.md).</summary>
+    public bool SuggestProjects { get; init; } = true;
+
+    /// <summary>
+    /// Read the text in the active window while recording, for suggestions (only the words are kept). Apps, sites and
+    /// projects can each opt out.
+    /// </summary>
+    public bool ReadScreenText { get; init; } = true;
+
+    /// <summary>Time away inside a suggested block shorter than this is part of it, no question asked.</summary>
+    public int GlanceMinutes { get; init; } = 2;
+
+    /// <summary>Time away longer than this ends a suggested block.</summary>
+    public int SplitMinutes { get; init; } = 30;
+
+    /// <summary>Whether the recorder reads the active window's text.</summary>
+    [JsonIgnore]
+    public bool ReadsScreen => SuggestProjects && ReadScreenText;
+
     /// <summary>How new frames are stored: the format, and that format's quality setting.</summary>
     public (FrameFormat Format, int Quality) FrameStorage() => Format switch
     {
@@ -133,6 +152,8 @@ public sealed record WorklapseSettings
         Quality = Math.Clamp(Quality, 0, 63),
         JpegQuality = Math.Clamp(JpegQuality, 1, 100),
         WebPQuality = Math.Clamp(WebPQuality, 0, 100),
+        GlanceMinutes = Math.Clamp(GlanceMinutes, 0, 30),
+        SplitMinutes = Math.Clamp(SplitMinutes, Math.Clamp(GlanceMinutes, 0, 30), 240),
         ReviewPanelWidth = double.IsFinite(ReviewPanelWidth)
             ? Math.Clamp(ReviewPanelWidth, MinReviewPanelWidth, MaxReviewPanelWidth) : DefaultReviewPanelWidth,
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,

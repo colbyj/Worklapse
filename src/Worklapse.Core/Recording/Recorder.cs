@@ -3,6 +3,7 @@ using Worklapse.Core.Imaging;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
 
 namespace Worklapse.Core.Recording;
 
@@ -38,11 +39,14 @@ public sealed class Recorder : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     // Per monitor, the frame an unchanged capture can reuse: always one in its open segment.
     private readonly Dictionary<long, (FrameRef Frame, PixelRect? Mask, ulong Hash)> _lastFrames = [];
+    // Per monitor, the last window read off it: a capture showing the same frame and window gets that capture's words.
+    private readonly Dictionary<long, (FrameRef Frame, PixelRect Window, long CaptureId)> _lastRead = [];
     private HashSet<long> _attached = [];
 
     private WorklapseDatabase? _db;
     private RecordingStore? _store;
     private IFrameSink? _sink;
+    private ScreenReadingQueue? _screenReading;
     private Task? _loop;
     private volatile bool _paused;
     private volatile bool _closeSegments;
@@ -199,6 +203,10 @@ public sealed class Recorder : IAsyncDisposable
         var monitors = _platform.Screen.GetMonitors();
         var targets = ChooseMonitors(settings, monitors, foreground);
         var captured = 0;
+        // The monitor the focused window is mostly on, whose picture of it is read for suggestions after the commit.
+        var readOn = settings.ReadsScreen && _screenReading is not null && foreground is not null
+            ? WindowMonitor(monitors, foreground) : null;
+        Action? read = null;
 
         using (var transaction = store.BeginTransaction())
         {
@@ -234,11 +242,15 @@ public sealed class Recorder : IAsyncDisposable
 
                 store.InsertFrame(captureId, monitorId, frame);
                 captured++;
+
+                if (monitor == readOn)
+                    read = QueueReading(monitorId, monitor, capture, frame, foreground!.Bounds, captureId);
             }
 
             transaction.Commit();
         }
         _sink!.Committed();
+        read?.Invoke();
 
         SetStatus(new RecorderStatus(RecorderState.Recording, now, captured, null));
     }
@@ -258,20 +270,38 @@ public sealed class Recorder : IAsyncDisposable
                 return monitors.Where(m => settings.SelectedMonitors.Contains(m.StableId, StringComparer.OrdinalIgnoreCase)).ToList();
 
             case CaptureMode.ActiveApplication:
-                if (foreground is null)
-                    return [];
-                // The monitor showing the largest part of the focused window.
-                var best = monitors
-                    .Select(m => (Monitor: m, Area: (long)m.Bounds.Intersect(foreground.Bounds).Width * m.Bounds.Intersect(foreground.Bounds).Height))
-                    .Where(x => x.Area > 0)
-                    .OrderByDescending(x => x.Area)
-                    .Select(x => x.Monitor)
-                    .FirstOrDefault();
-                return best is null ? [] : [best];
+                return foreground is not null && WindowMonitor(monitors, foreground) is { } best ? [best] : [];
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(settings), settings.CaptureMode, "Unknown capture mode.");
         }
+    }
+
+    /// <summary>The monitor showing the largest part of the focused window; null when none shows any.</summary>
+    private static MonitorInfo? WindowMonitor(IReadOnlyList<MonitorInfo> monitors, ForegroundWindow foreground) => monitors
+        .Select(m => (Monitor: m, Area: (long)m.Bounds.Intersect(foreground.Bounds).Width * m.Bounds.Intersect(foreground.Bounds).Height))
+        .Where(x => x.Area > 0)
+        .OrderByDescending(x => x.Area)
+        .Select(x => x.Monitor)
+        .FirstOrDefault();
+
+    /// <summary>
+    /// What reading this capture's window takes, to queue once the capture is committed (the reader looks it up): copying
+    /// the words of the last capture read off the same frame and window, or reading a copy of the window's pixels, taken now
+    /// because the capture's buffer is reused.
+    /// </summary>
+    private Action? QueueReading(long monitorId, MonitorInfo monitor, ScreenCapture capture, FrameRef frame, PixelRect window, long captureId)
+    {
+        var queue = _screenReading!;
+        var onMonitor = window.Intersect(monitor.Bounds).Offset(-monitor.Bounds.X, -monitor.Bounds.Y);
+        if (_lastRead.TryGetValue(monitorId, out var last) && last.Frame == frame && last.Window == onMonitor)
+            return () => queue.Copy(last.CaptureId, captureId);
+
+        if (ScreenReadingQueue.CropLuma(capture.Frame.Span, capture.Width, capture.Height, onMonitor) is not { } crop)
+            return null;
+        var (gray, width, height) = crop;
+        _lastRead[monitorId] = (frame, onMonitor, captureId);
+        return () => queue.Read(captureId, gray, width, height);
     }
 
     private static void MarkIdleSince(RecordingStore store, DateTimeOffset since)
@@ -310,6 +340,8 @@ public sealed class Recorder : IAsyncDisposable
             _db = WorklapseDatabase.Open(dataFolder);
             _store = new RecordingStore(_db);
             _sink = _createSink(_store);
+            if (_platform.TextReader is { } reader)
+                _screenReading = new ScreenReadingQueue(reader, dataFolder);
         }
         return _store;
     }
@@ -318,14 +350,18 @@ public sealed class Recorder : IAsyncDisposable
     {
         _sink?.CloseAll();
         _lastFrames.Clear();
+        _lastRead.Clear();
     }
 
     private void CloseStorage()
     {
         _lastFrames.Clear();
+        _lastRead.Clear();
         _attached = [];
+        _screenReading?.Dispose();
         _sink?.Dispose();
         _db?.Dispose();
+        _screenReading = null;
         _sink = null;
         _store = null;
         _db = null;

@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 12;
+    private const int SchemaVersion = 13;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -364,6 +364,54 @@ public sealed class WorklapseDatabase : IDisposable
                 );
                 """);
             Execute("PRAGMA user_version = 12;");
+            transaction.Commit();
+        }
+
+        if (version < 13)
+        {
+            // Suggested projects (docs/SUGGESTIONS.md): the words read off each capture's active window, what apps, sites
+            // and projects opt out of, and the suggested blocks with the developer's decisions on them.
+            using var transaction = BeginTransaction();
+            Execute("""
+                -- Words read off a capture's active window (lower case, each once, space-separated), for suggestions only.
+                -- Never the text as read. Goes with its capture, and when reading is turned off for its app, site or project.
+                CREATE TABLE screen_words (
+                    capture_id  INTEGER PRIMARY KEY REFERENCES captures (id) ON DELETE CASCADE,
+                    words       TEXT NOT NULL
+                );
+
+                ALTER TABLE apps     ADD COLUMN read_screen INTEGER NOT NULL DEFAULT 1;   -- read the text in its windows
+                ALTER TABLE apps     ADD COLUMN learn       INTEGER NOT NULL DEFAULT 1;   -- its windows teach and sway suggestions
+                ALTER TABLE sites    ADD COLUMN read_screen INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE sites    ADD COLUMN learn       INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE projects ADD COLUMN suggest     INTEGER NOT NULL DEFAULT 1;   -- suggested, and its time teaches
+                ALTER TABLE projects ADD COLUMN read_screen INTEGER NOT NULL DEFAULT 1;   -- the screen is read during its time
+
+                -- A suggested block and what became of it. Open ones are worked out again; decided ones are kept, so a
+                -- rejected block isn't suggested again and an accepted one isn't offered twice.
+                CREATE TABLE suggestions (
+                    id          INTEGER PRIMARY KEY,
+                    start_ms    INTEGER NOT NULL,                   -- UTC, like captures.ts_ms
+                    end_ms      INTEGER NOT NULL,
+                    project_id  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                    confidence  REAL NOT NULL,
+                    evidence    TEXT NOT NULL,                      -- the words that pointed to the project, space-separated
+                    state       INTEGER NOT NULL                    -- 0 = open, 1 = accepted, 2 = rejected
+                );
+                CREATE INDEX ix_suggestions_start ON suggestions (start_ms);
+
+                -- Breaks and switches inside a suggestion, and the developer's decision on each.
+                CREATE TABLE suggestion_parts (
+                    suggestion_id  INTEGER NOT NULL REFERENCES suggestions (id) ON DELETE CASCADE,
+                    start_ms       INTEGER NOT NULL,
+                    end_ms         INTEGER NOT NULL,
+                    kind           INTEGER NOT NULL,                -- 0 = break, 1 = switch
+                    project_id     INTEGER REFERENCES projects (id) ON DELETE SET NULL,   -- a switch's project
+                    decided        INTEGER NOT NULL DEFAULT 0,      -- break: counted toward the block; switch: kept in it
+                    PRIMARY KEY (suggestion_id, start_ms)
+                ) WITHOUT ROWID;
+                """);
+            Execute("PRAGMA user_version = 13;");
             transaction.Commit();
         }
     }

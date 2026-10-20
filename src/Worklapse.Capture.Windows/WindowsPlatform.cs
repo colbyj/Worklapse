@@ -13,5 +13,8 @@ public static class WindowsPlatform
         new Win32SessionStateMonitor())
     {
         CreateScreenSource = () => new GdiScreenSource(),
+#if WINDOWS
+        TextReader = WindowsScreenTextReader.Create(),
+#endif
     };
 }

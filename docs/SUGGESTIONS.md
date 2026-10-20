@@ -211,6 +211,31 @@ outside ranges teach too, and each project starts from its name, links and rules
 - Below 70% average certainty a suggestion is unsure.
 - Archived projects are to be treated like projects with Suggest off (the caller adds them to the opt-outs).
 
+**Phase 2 built 2026-10-20** (reading the screen; no UI yet):
+- Schema 13 as designed above (`suggestion_parts.counted` is named `decided`: a break counted, a switch kept).
+- `ScreenWordStore`: words per capture, refused where reading isn't allowed (`MayRead`), and `Prune`. The stores that
+  change what's allowed prune by themselves, so words never outlive their permission: `ProjectStore.SetSpan` (that
+  range), `SetTitleRules` and `SetSuggestionOptOuts` for a project with reading off, `HistoryStore.SetProject` (a link to
+  such a project) and `SetReadScreen`. Deleting captures deletes their words (cascade). An app or site with reading or
+  learning off keeps its row when its captures are deleted, and new copies of an app (another path) inherit both.
+- `IScreenTextReader` on `PlatformServices.TextReader`; on Windows `WindowsScreenTextReader` (`Windows.Media.Ocr`, in the
+  user's languages). Worklapse.Capture.Windows and Worklapse.App now target `net10.0-windows10.0.19041.0` when built on
+  Windows (plain `net10.0` on Linux, without the reader), so Windows builds land in `bin/<config>/net10.0-windows10.0.19041.0/`.
+- The recorder crops the focused window from the luma (Y) plane of the captured I420 frame, on the monitor showing most of
+  it, and queues it after the commit (`ScreenReadingQueue`: one lowest-priority thread, at most 4 pictures waiting,
+  dropping new work when full). A capture showing the same frame and window copies the words instead.
+- `PastScreenReading` (Worklapse.Video): reads the captures of a time range that have no words, newest first, from their
+  stored frames (AV1, images, imported TimeSnapper pictures), once per distinct frame and window.
+- Settings: `SuggestProjects`, `ReadScreenText` (both on), `GlanceMinutes` (2), `SplitMinutes` (30).
+- Measured while recording (Active application mode, 10 s interval, real screen, alternating runs of 3 minutes): CPU
+  25.8% / 27.3% of one core with reading against 27.1% / 29.5% without (within the noise; capture and AV1 encoding are
+  most of it), private memory about +15–30 MB (46–64 MB against 32–33 MB average). Every active capture got words.
+- Scores with every imported labelled day read (the scratch OCR, before the pipeline run): guess 87% and filled 84% over
+  all days (81% and 77% without words). Read again through the app's own pipeline (`PastScreenReading` with
+  `WindowsScreenTextReader`, grayscale crops of the window): June 17 94% guess / 93% filled, as with the scratch OCR, and
+  87% / 85% over all days. Reading the 34 labelled days took ~70 minutes of OCR (~23,000 captures).
+- Evaluation: `WORKLAPSE_EVAL_OCR=db` scores with the words stored in the database copy.
+
 ## Risks and unknowns
 
 - Hand labels are noisy (billing blocks, inconsistent short switches); scores are a guide, not a guarantee.

@@ -1,6 +1,7 @@
 using Worklapse.Core.Platform;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
 
 namespace Worklapse.Core.History;
 
@@ -194,9 +195,9 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     }
 
     /// <summary>
-    /// Deletes the captures marked on <paramref name="day"/> (their frame references go with them), and the
-    /// apps and sites left without captures unless marked productive or excluded or linked to a project, so their
-    /// names go too. Queues
+    /// Deletes the captures marked on <paramref name="day"/> (their frame references and screen words go with them), and the
+    /// apps and sites left without captures unless marked productive or excluded, linked to a project or opted out of
+    /// suggestions, so their names go too. Queues
     /// the segments the captures used, for the batch encoder to remove the frames nothing refers to any more from
     /// disk; the video stays there until it does.
     /// </summary>
@@ -236,8 +237,10 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         var deleted = command.ExecuteNonQuery();
 
         db.Execute("""
-            DELETE FROM apps WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
-            DELETE FROM sites WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
+            DELETE FROM apps WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND read_screen = 1 AND learn = 1
+                AND NOT EXISTS (SELECT 1 FROM captures WHERE app_id = apps.id);
+            DELETE FROM sites WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND read_screen = 1 AND learn = 1
+                AND NOT EXISTS (SELECT 1 FROM captures WHERE site_id = sites.id);
             """);
         transaction.Commit();
         return new DeleteResult(deleted, staged);
@@ -272,6 +275,30 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     }
 
     /// <summary>
+    /// Whether the text in an app's (every copy with that exe name) or a site's windows is read, for suggestions. Turning it
+    /// off deletes the words already read off them.
+    /// </summary>
+    public void SetReadScreen(ProgramKey program, bool read)
+    {
+        SetFlag(program, "read_screen", read);
+        if (!read)
+            new ScreenWordStore(db).Prune();
+    }
+
+    /// <summary>Whether an app's (every copy) or a site's windows teach and sway suggestions.</summary>
+    public void SetLearn(ProgramKey program, bool learn) => SetFlag(program, "learn", learn);
+
+    private void SetFlag(ProgramKey program, string column, bool on)
+    {
+        using var command = db.Command(program.Kind == ProgramKind.App
+            ? $"UPDATE apps SET {column} = $on WHERE exe_name = $name;"
+            : $"UPDATE sites SET {column} = $on WHERE domain = $name;");
+        command.Parameters.AddWithValue("$on", on ? 1 : 0);
+        command.Parameters.AddWithValue("$name", program.Name);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// Links an app (every copy with that exe name) or a site to a project, or unlinks it (null). Its active time is
     /// marked with the project wherever no range set by hand says otherwise; links are looked up when a day is read,
     /// so this applies to all history at once.
@@ -284,6 +311,11 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         command.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
         command.Parameters.AddWithValue("$name", program.Name);
         command.ExecuteNonQuery();
+
+        // Its time now belongs to the project: if the screen isn't read during that project's time, its words go.
+        var words = new ScreenWordStore(db);
+        if (projectId is { } project && !words.ReadsScreenFor(project))
+            words.Prune();
     }
 
     /// <summary>

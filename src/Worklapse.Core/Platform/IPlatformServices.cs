@@ -28,6 +28,16 @@ public interface ISessionStateMonitor : IDisposable
     bool IsLocked { get; }
 }
 
+/// <summary>Reads the text in a picture (OCR), for suggestions.</summary>
+public interface IScreenTextReader
+{
+    /// <summary>
+    /// The text in an 8-bit grayscale picture, rows packed (<paramref name="width"/> bytes each); empty when there's none.
+    /// Called on a background thread, one picture at a time.
+    /// </summary>
+    string Read(byte[] gray, int width, int height);
+}
+
 public sealed record PlatformServices(
     IScreenSource Screen,
     IForegroundWindowProbe Foreground,
@@ -46,6 +56,9 @@ public sealed record PlatformServices(
     /// </summary>
     public bool KnowsPrimaryMonitor { get; init; } = true;
 
+    /// <summary>Reads the text in the active window, for suggestions; null where the platform can't (yet).</summary>
+    public IScreenTextReader? TextReader { get; init; }
+
     /// <summary>Why nothing can be recorded here (a sentence for the user); null when recording works.</summary>
     public string? CannotRecord { get; init; }
 
@@ -62,6 +75,7 @@ public sealed record PlatformServices(
         Session.Dispose();
         (Idle as IDisposable)?.Dispose();
         (Foreground as IDisposable)?.Dispose();
+        (TextReader as IDisposable)?.Dispose();
     }
 
     private sealed class NoScreens : IScreenSource

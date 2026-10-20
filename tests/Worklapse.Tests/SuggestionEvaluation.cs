@@ -13,7 +13,8 @@ namespace Worklapse.Tests;
 /// <code>
 /// WORKLAPSE_EVAL_DATA=&lt;a folder holding a COPY of worklapse.db&gt; Worklapse.Tests.exe -method "*SuggestionEvaluation*" -explicit only -showliveoutput on
 /// </code>
-/// Optional: WORKLAPSE_EVAL_OCR, a .jsonl of {"id": capture id, "text": text read off its screen}; WORKLAPSE_EVAL_FULL_DAYS,
+/// Optional: WORKLAPSE_EVAL_OCR, the words read off screens: "db" for those in the database (screen_words), or a .jsonl of
+/// {"id": capture id, "text": text read off its screen}; unset for none. WORKLAPSE_EVAL_FULL_DAYS,
 /// comma-separated days labelled frame by frame (outside their ranges, links count and the rest is no project; on other
 /// days time outside ranges isn't scored). Never point it at the real data folder: opening it may migrate the database.
 /// </summary>
@@ -26,19 +27,25 @@ public class SuggestionEvaluation
         Assert.False(string.IsNullOrEmpty(folder), "Set WORKLAPSE_EVAL_DATA to a folder holding a copy of worklapse.db");
         var fullDays = (Environment.GetEnvironmentVariable("WORKLAPSE_EVAL_FULL_DAYS") ?? "2026-06-17")
             .Split(',', StringSplitOptions.RemoveEmptyEntries).Select(d => DateOnly.ParseExact(d.Trim(), "yyyy-MM-dd")).ToHashSet();
-        var screen = ReadScreenWords(Environment.GetEnvironmentVariable("WORKLAPSE_EVAL_OCR"));
+        var source = Environment.GetEnvironmentVariable("WORKLAPSE_EVAL_OCR");
+        var screen = source == "db" ? [] : ReadScreenWords(source);
         Func<long, IReadOnlyCollection<string>?>? screenWords = screen is null ? null : id => screen.GetValueOrDefault(id);
 
         var max = TimeSpan.FromSeconds(15);
         using var history = new HistoryStore(WorklapseDatabase.Open(folder!));
+        var stored = new ScreenWordStore(history.Database);
         var projects = new ProjectStore(history.Database);
         var days = new List<(DateOnly Day, DayHistory History, List<ProjectSpan> Spans)>();
         foreach (var day in history.GetDays())
         {
             var (start, end) = history.DayRange(day);
             var spans = projects.GetSpans(start, end);
-            if (spans.Count > 0)
-                days.Add((day, history.LoadDay(day), spans));
+            if (spans.Count == 0)
+                continue;
+            days.Add((day, history.LoadDay(day), spans));
+            if (source == "db")
+                foreach (var (id, words) in stored.Get(start, end))
+                    screen![id] = words;
         }
         var starters = TrainingSet.Starters(projects.GetProjects(), projects.GetTitleRules(), history.GetPrograms(max), SuggestionOptOuts.None).ToList();
         var examples = days.ToDictionary(d => d.Day, d => TrainingSet.FromDay(d.History.Captures, d.Spans, max, SuggestionOptOuts.None, screenWords).ToList());

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
 
 namespace Worklapse.Core.Projects;
 
@@ -9,7 +10,9 @@ public sealed record Category(long Id, string Name, int Color);
 /// <param name="CategoryId">Null when its category was deleted (or it never had one).</param>
 /// <param name="Color">0xRRGGBB, or null to use the category's.</param>
 /// <param name="Archived">Hidden from lists, kept in history.</param>
-public sealed record Project(long Id, string Name, long? CategoryId, int? Color, bool Archived);
+/// <param name="Suggest">Suggested for time without a project, and its time teaches suggestions (<see cref="ProjectStore.SetSuggestionOptOuts"/>).</param>
+/// <param name="ReadScreen">The screen is read during its time, for suggestions.</param>
+public sealed record Project(long Id, string Name, long? CategoryId, int? Color, bool Archived, bool Suggest = true, bool ReadScreen = true);
 
 /// <summary>A range set by hand. <paramref name="ProjectId"/> null means "no project", overriding any link.</summary>
 public sealed record ProjectSpan(DateTimeOffset Start, DateTimeOffset End, long? ProjectId);
@@ -72,7 +75,7 @@ public sealed class ProjectStore(WorklapseDatabase db)
     public List<Project> GetProjects(bool includeArchived = true)
     {
         using var command = db.Command($"""
-            SELECT id, name, category_id, color, archived FROM projects
+            SELECT id, name, category_id, color, archived, suggest, read_screen FROM projects
             {(includeArchived ? "" : "WHERE archived = 0")}
             ORDER BY name COLLATE NOCASE, id;
             """);
@@ -84,7 +87,9 @@ public sealed class ProjectStore(WorklapseDatabase db)
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetInt64(2),
                 reader.IsDBNull(3) ? null : reader.GetInt32(3),
-                reader.GetInt64(4) != 0));
+                reader.GetInt64(4) != 0,
+                Suggest: reader.GetInt64(5) != 0,
+                ReadScreen: reader.GetInt64(6) != 0));
         return projects;
     }
 
@@ -105,6 +110,7 @@ public sealed class ProjectStore(WorklapseDatabase db)
         return (long)command.ExecuteScalar()!;
     }
 
+    /// <summary>Saves a project's name, category, colour and archived state (not its opt-outs: <see cref="SetSuggestionOptOuts"/>).</summary>
     public void UpdateProject(Project project)
     {
         using var command = db.Command("""
@@ -116,6 +122,23 @@ public sealed class ProjectStore(WorklapseDatabase db)
         command.Parameters.AddWithValue("$color", (object?)project.Color ?? DBNull.Value);
         command.Parameters.AddWithValue("$archived", project.Archived ? 1 : 0);
         command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Whether a project is suggested (and its time teaches suggestions), and whether the screen is read during its time.
+    /// Turning reading off deletes the words already read during its time.
+    /// </summary>
+    public void SetSuggestionOptOuts(long projectId, bool suggest, bool readScreen)
+    {
+        using (var command = db.Command("UPDATE projects SET suggest = $suggest, read_screen = $read WHERE id = $id;"))
+        {
+            command.Parameters.AddWithValue("$id", projectId);
+            command.Parameters.AddWithValue("$suggest", suggest ? 1 : 0);
+            command.Parameters.AddWithValue("$read", readScreen ? 1 : 0);
+            command.ExecuteNonQuery();
+        }
+        if (!readScreen)
+            new ScreenWordStore(db).Prune();
     }
 
     /// <summary>
@@ -185,6 +208,11 @@ public sealed class ProjectStore(WorklapseDatabase db)
                 command.Parameters.AddWithValue("$id", existing);
             ids.Add((long)command.ExecuteScalar()!);
         }
+
+        // New rules of a project whose screen isn't read may take time whose words were read.
+        var words = new ScreenWordStore(db);
+        if (!words.ReadsScreenFor(projectId))
+            words.Prune();
         return ids;
     }
 
@@ -237,6 +265,10 @@ public sealed class ProjectStore(WorklapseDatabase db)
                 e = joined;
         }
         Insert(s, e, projectId);
+        // Time given to a project whose screen isn't read loses the words read during it.
+        var words = new ScreenWordStore(db);
+        if (projectId is { } project && !words.ReadsScreenFor(project))
+            words.Prune(start, end);
         transaction.Commit();
     }
 
