@@ -138,8 +138,8 @@ Settings (settings.json): `SuggestProjects`, `ReadScreenText`, `GlanceMinutes` (
 ### Reading the screen
 
 - `IScreenTextReader` in `Platform`: words from a picture of the active window.
-  - Windows: `Windows.Media.Ocr` (built in; the user's languages). `Worklapse.Capture.Windows` moves to
-    `net10.0-windows10.0.19041.0` to reach it.
+  - Windows: `Windows.Media.Ocr` (built in; the user's languages), reached without changing the project's target framework
+    (the build folder must stay `bin/<config>/net10.0/`).
   - Linux (KDE): Tesseract, later, with its own cost and quality test; until then suggestions run without screen words there.
 - What is read: the active window's rectangle (`captures.window_*`) of each capture whose picture changed, not whole
   monitors. Skipped when Read screen is off for its app, site or (when already known from a link or rule) project.
@@ -218,9 +218,10 @@ outside ranges teach too, and each project starts from its name, links and rules
   range), `SetTitleRules` and `SetSuggestionOptOuts` for a project with reading off, `HistoryStore.SetProject` (a link to
   such a project) and `SetReadScreen`. Deleting captures deletes their words (cascade). An app or site with reading or
   learning off keeps its row when its captures are deleted, and new copies of an app (another path) inherit both.
-- `IScreenTextReader` on `PlatformServices.TextReader`; on Windows `WindowsScreenTextReader` (`Windows.Media.Ocr`, in the
-  user's languages). Worklapse.Capture.Windows and Worklapse.App now target `net10.0-windows10.0.19041.0` when built on
-  Windows (plain `net10.0` on Linux, without the reader), so Windows builds land in `bin/<config>/net10.0-windows10.0.19041.0/`.
+- `IScreenTextReader` on `PlatformServices.TextReader`. **No reader is plugged in at the moment** (2026-10-20): the Windows one
+  used `Windows.Media.Ocr` through a Windows-only target framework (`net10.0-windows10.0.19041.0`), which moved the build to
+  another folder; the developer didn't want that, so it was taken out. To do: reach Windows OCR while staying on plain
+  `net10.0` (e.g. calling the WinRT API through COM interop, as the UI Automation code does).
 - The recorder crops the focused window from the luma (Y) plane of the captured I420 frame, on the monitor showing most of
   it, and queues it after the commit (`ScreenReadingQueue`: one lowest-priority thread, at most 4 pictures waiting,
   dropping new work when full). A capture showing the same frame and window copies the words instead.
