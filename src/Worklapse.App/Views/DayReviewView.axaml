@@ -191,11 +191,11 @@
 
     <views:RecordingMessages DockPanel.Dock="Top" x:Name="Messages" DataContext="{x:Null}" />
 
-    <!-- Timeline: projects above activity; the scroll bar under the lanes moves along the day while zoomed in. -->
+    <!-- Timeline: projects above activity; the scroll bar under the lanes, shown only while zoomed in, moves along the day. -->
     <Border DockPanel.Dock="Top" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1" Padding="8,6,8,0">
       <StackPanel>
         <controls:TimelineControl x:Name="Timeline" />
-        <ScrollBar x:Name="TimelineBar" Orientation="Horizontal" AllowAutoHide="False" Visibility="Visible" Margin="0,0,0,4"
+        <ScrollBar x:Name="TimelineBar" Orientation="Horizontal" AllowAutoHide="False" Visibility="Auto" Margin="0,0,0,4"
                    ToolTip.Tip="Scroll over the timeline to zoom in; Shift+scroll to move along" />
       </StackPanel>
     </Border>
