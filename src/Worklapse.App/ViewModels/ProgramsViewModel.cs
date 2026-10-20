@@ -19,6 +19,8 @@ public sealed partial class ProgramRow : ObservableObject
         _excluded = usage.Excluded;
         SavedProject = project;
         _project = project;
+        SavedReadScreen = _readScreen = usage.ReadScreen;
+        SavedLearn = _learn = usage.Learn;
     }
 
     public ProgramKey Program { get; }
@@ -36,12 +38,23 @@ public sealed partial class ProgramRow : ObservableObject
     /// <summary>The project link in the database; <see cref="Project"/> is what the dialog shows.</summary>
     public ProjectItem SavedProject { get; set; }
 
-    public bool IsDirty => Productive != Saved || Excluded != SavedExcluded || Project != SavedProject;
+    /// <summary>The suggestion opt-outs in the database; <see cref="ReadScreen"/> and <see cref="Learn"/> are what the dialog shows.</summary>
+    public bool SavedReadScreen { get; set; }
+    public bool SavedLearn { get; set; }
+
+    public bool IsDirty => Productive != Saved || Excluded != SavedExcluded || Project != SavedProject
+        || ReadScreen != SavedReadScreen || Learn != SavedLearn;
 
     [ObservableProperty] private bool _productive;
 
     /// <summary>Nothing is recorded while it has the focus.</summary>
     [ObservableProperty] private bool _excluded;
+
+    /// <summary>The text in its windows is read, for suggestions.</summary>
+    [ObservableProperty] private bool _readScreen;
+
+    /// <summary>Its windows teach and sway suggestions.</summary>
+    [ObservableProperty] private bool _learn;
 
     private ProjectItem _project;
 
@@ -60,6 +73,8 @@ public enum ProgramSort
 {
     Productive,
     Excluded,
+    ReadScreen,
+    Learn,
     Name,
     Kind,
     Project,
@@ -68,7 +83,7 @@ public enum ProgramSort
 
 /// <summary>
 /// The Applications page of the Settings dialog: every app and website recorded, to mark productive, exclude from
-/// recording, or link to a project. The marks live in the history database (they belong with the history), and like
+/// recording, link to a project, or opt out of suggestions (reading its screen, learning from it). The marks live in the history database (they belong with the history), and like
 /// the other settings take effect on Apply or OK.
 /// </summary>
 public sealed partial class ProgramsViewModel : ObservableObject
@@ -94,6 +109,8 @@ public sealed partial class ProgramsViewModel : ObservableObject
 
     public string ProductiveHeader => Header("Productive", ProgramSort.Productive);
     public string ExcludedHeader => Header("Excluded", ProgramSort.Excluded);
+    public string ReadScreenHeader => Header("Read screen", ProgramSort.ReadScreen);
+    public string LearnHeader => Header("Learn", ProgramSort.Learn);
     public string NameHeader => Header("Name", ProgramSort.Name);
     public string KindHeader => Header("Type", ProgramSort.Kind);
     public string ProjectHeader => Header("Project", ProgramSort.Project);
@@ -162,9 +179,15 @@ public sealed partial class ProgramsViewModel : ObservableObject
                 history.SetExcluded(row.Program, row.Excluded);
             if (row.Project != row.SavedProject)
                 history.SetProject(row.Program, row.Project.Id);
+            if (row.ReadScreen != row.SavedReadScreen)
+                history.SetReadScreen(row.Program, row.ReadScreen);
+            if (row.Learn != row.SavedLearn)
+                history.SetLearn(row.Program, row.Learn);
             row.Saved = row.Productive;
             row.SavedExcluded = row.Excluded;
             row.SavedProject = row.Project;
+            row.SavedReadScreen = row.ReadScreen;
+            row.SavedLearn = row.Learn;
         }
     }
 
@@ -174,7 +197,8 @@ public sealed partial class ProgramsViewModel : ObservableObject
         if (Sort == column)
             Descending = !Descending;
         else
-            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.Productive or ProgramSort.Excluded);
+            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.Productive or ProgramSort.Excluded
+                or ProgramSort.ReadScreen or ProgramSort.Learn);
         Refresh();
     }
 
@@ -188,6 +212,8 @@ public sealed partial class ProgramsViewModel : ObservableObject
         {
             ProgramSort.Productive => r => r.Productive,
             ProgramSort.Excluded => r => r.Excluded,
+            ProgramSort.ReadScreen => r => r.ReadScreen,
+            ProgramSort.Learn => r => r.Learn,
             ProgramSort.Name => r => r.Name,
             ProgramSort.Kind => r => r.KindText,
             ProgramSort.Project => r => r.Project.IsNone ? "" : r.Project.Name,
@@ -203,6 +229,8 @@ public sealed partial class ProgramsViewModel : ObservableObject
             : $"{apps} apps and {sites} websites";
         OnPropertyChanged(nameof(ProductiveHeader));
         OnPropertyChanged(nameof(ExcludedHeader));
+        OnPropertyChanged(nameof(ReadScreenHeader));
+        OnPropertyChanged(nameof(LearnHeader));
         OnPropertyChanged(nameof(NameHeader));
         OnPropertyChanged(nameof(KindHeader));
         OnPropertyChanged(nameof(ProjectHeader));

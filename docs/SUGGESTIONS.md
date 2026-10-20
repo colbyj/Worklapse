@@ -263,6 +263,17 @@ outside ranges teach too, and each project starts from its name, links and rules
   frame labels (12:01–12:17 Frankensystem with the DBeaver minutes as a switch to Presayo; 2:36–4:11 Presayo with the
   Facebook breaks); accepting the Presayo block added exactly the 0:47 it said, and its switch went to Frankensystem.
 
+**Phase 4 built 2026-10-20** (Settings):
+- A Suggestions tab: suggest projects on or off, what it learns from ("Time you set by hand: 164 blocks over 18 days"), text
+  on the screen on or off, Read Past Days (reads the screens of everything recorded before, newest first, in the
+  background, with progress and Stop; closing the dialog stops it, what was read stays; only where the platform has a
+  reader), and the glance and split limits. Turning reading off here stops it but keeps the words read so far; turning
+  it off for an app, site or project deletes them.
+- Applications: Read screen and Learn columns (sortable, greyed while the app is excluded), saved on Apply.
+- Projects: a Suggestions row in a project's details, Suggest it and Read the screen during its time, saved on Apply.
+
+Left for phase 5 (Linux): Tesseract behind `IScreenTextReader`, with its own cost and quality test on Kubuntu.
+
 ## Risks and unknowns
 
 - Hand labels are noisy (billing blocks, inconsistent short switches); scores are a guide, not a guarantee.

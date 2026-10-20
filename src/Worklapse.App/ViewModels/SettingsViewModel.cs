@@ -2,9 +2,12 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
+using Worklapse.Video;
 
 namespace Worklapse.App.ViewModels;
 
@@ -21,6 +24,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     public const int QualityWarningThreshold = 48;
 
     private readonly SettingsStore _store;
+    private readonly IScreenTextReader? _textReader;
+    private CancellationTokenSource? _reading;
     private bool _loading;
     private IReadOnlyList<string> _unpluggedSelected = []; // selected monitors not attached now: kept as they are
     private bool _startAtLoginApplied; // as the OS has it
@@ -30,10 +35,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// Whether the desktop says which monitor is primary (KDE Plasma doesn't tell Worklapse); without it there's no
     /// "Primary monitor" choice.
     /// </param>
+    /// <param name="textReader">Reads text off pictures, for reading past days' screens; null where the platform can't.</param>
     public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, PrimaryScreenSampler? sampler = null,
-        bool knowsPrimaryMonitor = true)
+        bool knowsPrimaryMonitor = true, IScreenTextReader? textReader = null)
     {
         _store = store;
+        _textReader = textReader;
         // Still shown if it's the setting (from another desktop's settings file), so the dialog shows what is set.
         ShowsPrimaryMonitor = knowsPrimaryMonitor || store.Current.CaptureMode == CaptureMode.PrimaryMonitor;
         // Captured before the dialog shows, so it isn't in the picture.
@@ -77,7 +84,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     // Tabs, in order.
-    public const int RecordingTab = 0, GeneralTab = 1, ApplicationsTab = 2, ProjectsTab = 3;
+    public const int RecordingTab = 0, GeneralTab = 1, ApplicationsTab = 2, ProjectsTab = 3, SuggestionsTab = 4;
 
     public ObservableCollection<MonitorOption> Monitors { get; } = [];
 
@@ -93,6 +100,46 @@ public sealed partial class SettingsViewModel : ObservableObject
     private int _selectedTab;
 
     public bool HasDefaults => SelectedTab is RecordingTab or GeneralTab;
+
+    /// <summary>
+    /// Reads the screens of every past capture without words yet (newest first), in the background: slow, so it says how
+    /// far it got and can be stopped (closing the dialog stops it); what it read stays.
+    /// </summary>
+    [RelayCommand]
+    private async Task ReadPastDaysAsync()
+    {
+        if (_textReader is not { } reader || IsReadingPastDays)
+            return;
+        var cancel = _reading = new CancellationTokenSource();
+        IsReadingPastDays = true;
+        PastDaysText = "Finding what to read…";
+        var folder = _store.Current.DataFolder;
+        var progress = new Progress<(int Done, int Total)>(p =>
+            PastDaysText = p.Total == 0 ? "Nothing left to read." : $"Read {p.Done:N0} of {p.Total:N0} captures…");
+        try
+        {
+            var kept = await Task.Run(() => PastScreenReading.Run(folder, reader, DateTimeOffset.MinValue.AddYears(1), DateTimeOffset.Now,
+                progress, cancel.Token));
+            PastDaysText = kept == 0 ? "Nothing left to read." : $"Done: {kept:N0} captures got words.";
+        }
+        catch (OperationCanceledException)
+        {
+            PastDaysText = "Stopped; what was read is kept.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            PastDaysText = "Couldn't read the history: " + ex.Message;
+        }
+        finally
+        {
+            IsReadingPastDays = false;
+            _reading = null;
+            cancel.Dispose();
+        }
+    }
+
+    [RelayCommand]
+    public void StopReadingPastDays() => _reading?.Cancel();
 
     /// <summary>The chosen format and quality applied to the screen; null when the screen couldn't be captured.</summary>
     public RecordingPreviewViewModel? Preview { get; }
@@ -125,6 +172,32 @@ public sealed partial class SettingsViewModel : ObservableObject
     public string StartAtLoginText { get; } = OperatingSystem.IsWindows() ? "Start with Windows" : "Start when I log in";
     [ObservableProperty] private bool _notifyWhenRecordingStarts;
     [ObservableProperty] private bool _notifyWhenInTray;
+
+    // The Suggestions page.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReadPastDays))]
+    private bool _suggestProjects;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReadPastDays))]
+    private bool _readScreenText;
+
+    [ObservableProperty] private decimal? _glanceMinutes;
+    [ObservableProperty] private decimal? _splitMinutes;
+
+    /// <summary>What suggestions learn from: the time set by hand in the history.</summary>
+    [ObservableProperty] private string _learnsFromText = "";
+
+    /// <summary>The screens of past days can be read here (Windows' OCR; none on Linux yet).</summary>
+    public bool CanReadScreens => _textReader is not null;
+
+    public bool CanReadPastDays => CanReadScreens && SuggestProjects && ReadScreenText && !IsReadingPastDays;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReadPastDays))]
+    private bool _isReadingPastDays;
+
+    [ObservableProperty] private string _pastDaysText = "";
 
     // The General page's day start, typed as a 24-hour time.
     [ObservableProperty]
@@ -261,6 +334,28 @@ public sealed partial class SettingsViewModel : ObservableObject
         await Projects.LoadAsync(dataFolder);
         await Programs.LoadAsync(dataFolder, Projects.Resolve);
         Projects.RefreshLinked();
+        try
+        {
+            LearnsFromText = await Task.Run(() => LearnsFrom(dataFolder));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            LearnsFromText = "";
+        }
+    }
+
+    /// <summary>"Time you set by hand: 164 blocks over 18 days".</summary>
+    private static string LearnsFrom(string dataFolder)
+    {
+        using var db = WorklapseDatabase.Open(dataFolder);
+        using var command = db.Command("""
+            SELECT count(*), count(DISTINCT date(start_ms / 1000, 'unixepoch', 'localtime')) FROM project_spans WHERE project_id IS NOT NULL;
+            """);
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        var (blocks, days) = (reader.GetInt64(0), reader.GetInt64(1));
+        return blocks == 0 ? "Nothing yet: it learns from time you set to a project by hand"
+            : $"Time you set by hand: {blocks:N0} {(blocks == 1 ? "block" : "blocks")} over {days:N0} {(days == 1 ? "day" : "days")}";
     }
 
     private WorklapseSettings ToSettings() => _store.Current with
@@ -284,6 +379,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         DayStart = ChosenDayStart ?? _store.Current.DayStart,
         ThemeStyle = (ThemeStyle)ThemeStyleIndex,
         ThemeMode = (ThemeMode)ThemeModeIndex,
+        SuggestProjects = SuggestProjects,
+        ReadScreenText = ReadScreenText,
+        GlanceMinutes = (int)(GlanceMinutes ?? 2),
+        SplitMinutes = (int)(SplitMinutes ?? 30),
     };
 
     private void Load(WorklapseSettings settings)
@@ -314,6 +413,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         DayStartText = ClockText(settings.DayStart);
         ThemeStyleIndex = (int)settings.ThemeStyle;
         ThemeModeIndex = (int)settings.ThemeMode;
+        SuggestProjects = settings.SuggestProjects;
+        ReadScreenText = settings.ReadScreenText;
+        GlanceMinutes = settings.GlanceMinutes;
+        SplitMinutes = settings.SplitMinutes;
         _loading = false;
         // Defaults don't touch the Applications and Projects pages (they're history, not settings); their changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)
@@ -323,7 +426,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void OnAnyPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         // CanApply follows IsDirty: counting it as a change kept the dialog dirty right after Apply.
-        if (e.PropertyName is not (nameof(IsDirty) or nameof(CanApply) or nameof(CanConfirm) or nameof(SelectedTab) or nameof(HasDefaults)))
+        if (e.PropertyName is not (nameof(IsDirty) or nameof(CanApply) or nameof(CanConfirm) or nameof(SelectedTab) or nameof(HasDefaults)
+            or nameof(LearnsFromText) or nameof(IsReadingPastDays) or nameof(PastDaysText) or nameof(CanReadPastDays)))
             MarkDirty();
         if (e.PropertyName is nameof(IsVideo) or nameof(IsJpeg) or nameof(IsWebP) or nameof(Quality) or nameof(JpegQuality) or nameof(WebPQuality)
             or nameof(IntervalSeconds))

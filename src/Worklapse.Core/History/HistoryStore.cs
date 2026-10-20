@@ -319,7 +319,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     }
 
     /// <summary>
-    /// Every app and site recorded, with its classification, whether it's excluded, and its active time (marked
+    /// Every app and site recorded, with its classification, whether it's excluded, its suggestion opt-outs, and its active time (marked
     /// captures left out), counted as in <see cref="SpanSummary"/>: each capture until the next, at most
     /// <paramref name="maxCaptureLength"/>.
     /// </summary>
@@ -331,11 +331,11 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
                        CASE WHEN kind = 0 AND pending_delete = 0
                             THEN min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) ELSE 0 END AS ms
                 FROM captures)
-            SELECT 0, a.exe_name, max(a.productive), max(a.excluded), coalesce(sum(s.ms), 0), max(a.project_id)
+            SELECT 0, a.exe_name, max(a.productive), max(a.excluded), coalesce(sum(s.ms), 0), max(a.project_id), min(a.read_screen), min(a.learn)
             FROM apps a LEFT JOIN spans s ON s.app_id = a.id
             GROUP BY a.exe_name
             UNION ALL
-            SELECT 1, t.domain, t.productive, t.excluded, coalesce(sum(s.ms), 0), t.project_id
+            SELECT 1, t.domain, t.productive, t.excluded, coalesce(sum(s.ms), 0), t.project_id, t.read_screen, t.learn
             FROM sites t LEFT JOIN spans s ON s.site_id = t.id
             GROUP BY t.id;
             """);
@@ -348,7 +348,9 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
                 Productive: reader.GetInt64(2) != 0,
                 Excluded: reader.GetInt64(3) != 0,
                 TimeSpan.FromMilliseconds(reader.GetInt64(4)),
-                ProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+                ProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5),
+                ReadScreen: reader.GetInt64(6) != 0,
+                Learn: reader.GetInt64(7) != 0));
         return programs;
     }
 

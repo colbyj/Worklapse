@@ -15,7 +15,12 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         // The preview fills its box at 1:1, so it starts once the box has its size.
         Opened += (_, _) => Dispatcher.UIThread.Post(StartPreview, DispatcherPriority.Loaded);
-        Closed += (_, _) => (DataContext as SettingsViewModel)?.Preview?.Dispose();
+        Closed += (_, _) =>
+        {
+            (DataContext as SettingsViewModel)?.Preview?.Dispose();
+            // Reading past days' screens works for the dialog; closing it stops (what was read is kept).
+            (DataContext as SettingsViewModel)?.StopReadingPastDays();
+        };
     }
 
     private void StartPreview()

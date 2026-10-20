@@ -334,30 +334,40 @@
             <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
           </DockPanel>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
-                     Text="A project's window titles decide first, then a website, then its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus." />
+                     Text="A project's window titles decide first, then a website, then its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus. Read screen and Learn only affect suggestions; turning Read screen off deletes the text already read." />
           <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="88,76,*,64,156,84" Margin="0,0,14,0">
+                <Grid ColumnDefinitions="88,76,92,62,*,64,140,84" Margin="0,0,14,0">
                   <Button Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
                   <Button Grid.Column="1" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ExcludedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Excluded}" />
-                  <Button Grid.Column="2" Classes="columnHeader" Content="{Binding NameHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Name}" />
-                  <Button Grid.Column="3" Classes="columnHeader" Content="{Binding KindHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Kind}" />
-                  <Button Grid.Column="4" Classes="columnHeader" Content="{Binding ProjectHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Project}" />
-                  <Button Grid.Column="5" Classes="columnHeader" Content="{Binding RecordedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Recorded}" HorizontalContentAlignment="Right" />
+                  <Button Grid.Column="2" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ReadScreenHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.ReadScreen}"
+                          ToolTip.Tip="Read the text in its windows, for suggestions" />
+                  <Button Grid.Column="3" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding LearnHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Learn}"
+                          ToolTip.Tip="Its windows teach and sway suggestions" />
+                  <Button Grid.Column="4" Classes="columnHeader" Content="{Binding NameHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Name}" />
+                  <Button Grid.Column="5" Classes="columnHeader" Content="{Binding KindHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Kind}" />
+                  <Button Grid.Column="6" Classes="columnHeader" Content="{Binding ProjectHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Project}" />
+                  <Button Grid.Column="7" Classes="columnHeader" Content="{Binding RecordedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Recorded}" HorizontalContentAlignment="Right" />
                 </Grid>
               </Border>
               <ListBox Classes="programs" ItemsSource="{Binding Rows}" Background="Transparent" BorderThickness="0">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:ProgramRow">
-                    <Grid ColumnDefinitions="82,76,*,64,156,78">
+                    <Grid ColumnDefinitions="82,76,92,62,*,64,140,78">
                       <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}"
                                 HorizontalAlignment="Center" Margin="-6,-3,0,-3" Padding="0" />
                       <CheckBox Grid.Column="1" IsChecked="{Binding Excluded}" AutomationProperties.Name="{Binding Name, StringFormat='Excluded: {0}'}"
                                 HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />
-                      <TextBlock Grid.Column="2" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Grid.Column="3" Text="{Binding KindText}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
-                      <ComboBox Grid.Column="4" HorizontalAlignment="Stretch" Margin="2,-3,8,-3"
+                      <CheckBox Grid.Column="2" IsChecked="{Binding ReadScreen}" IsEnabled="{Binding !Excluded}"
+                                AutomationProperties.Name="{Binding Name, StringFormat='Read screen: {0}'}"
+                                HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />
+                      <CheckBox Grid.Column="3" IsChecked="{Binding Learn}" IsEnabled="{Binding !Excluded}"
+                                AutomationProperties.Name="{Binding Name, StringFormat='Learn from: {0}'}"
+                                HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />
+                      <TextBlock Grid.Column="4" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="5" Text="{Binding KindText}" Classes="secondary" VerticalAlignment="Center" Margin="8,0,0,0" />
+                      <ComboBox Grid.Column="6" HorizontalAlignment="Stretch" Margin="2,-3,8,-3"
                                 ItemsSource="{Binding $parent[ListBox].((vm:ProgramsViewModel)DataContext).ProjectChoices}"
                                 SelectedItem="{Binding Project}" AutomationProperties.Name="{Binding Name, StringFormat='Project: {0}'}">
                         <ComboBox.ItemTemplate>
@@ -369,7 +379,7 @@
                           </DataTemplate>
                         </ComboBox.ItemTemplate>
                       </ComboBox>
-                      <TextBlock Grid.Column="5" Text="{Binding RecordedText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                      <TextBlock Grid.Column="7" Text="{Binding RecordedText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
                     </Grid>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -439,7 +449,7 @@
                 </DataTemplate>
 
                 <DataTemplate DataType="vm:ProjectItem">
-                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
+                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="10">
                     <TextBlock Classes="label" Text="Name:" />
                     <TextBox Grid.Column="1" Text="{Binding Name}" AutomationProperties.Name="Project name" />
 
@@ -552,7 +562,15 @@
                       </Border>
                     </DockPanel>
 
+                    <TextBlock Grid.Row="5" Classes="label" Text="Suggestions:" VerticalAlignment="Top" Margin="0,6,10,0" />
                     <StackPanel Grid.Row="5" Grid.Column="1" Spacing="2">
+                      <CheckBox Content="Suggest it" IsChecked="{Binding Suggest}" />
+                      <TextBlock Classes="hint" Text="Off: never suggested, and its time teaches nothing" Margin="26,0,0,4" />
+                      <CheckBox Content="Read the screen during its time" IsChecked="{Binding ReadScreen}" />
+                      <TextBlock Classes="hint" Text="Off: its time is never read; text already read is deleted" Margin="26,0,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="6" Grid.Column="1" Spacing="2">
                       <CheckBox Content="Archived" IsChecked="{Binding Archived}" />
                       <TextBlock Classes="hint" Text="Hidden from lists, history kept" />
                     </StackPanel>
@@ -566,6 +584,61 @@
             </ContentControl>
           </Grid>
         </DockPanel>
+      </TabItem>
+
+      <TabItem Header="Suggestions">
+        <StackPanel Margin="10" Spacing="8">
+          <Border Classes="group">
+            <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Suggestions" />
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                <CheckBox Grid.Column="1" Content="Suggest projects for time without one" IsChecked="{Binding SuggestProjects}" />
+                <TextBlock Grid.Row="1" Classes="label" Text="Learns from:" VerticalAlignment="Top" />
+                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                  <TextBlock Text="{Binding LearnsFromText}" TextWrapping="Wrap" />
+                  <TextBlock Classes="hint" Text="Accepting or changing a suggestion teaches it too" />
+                </StackPanel>
+                <TextBlock Grid.Row="2" Classes="label" Text="Reads:" VerticalAlignment="Top" Margin="0,6,10,0" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2" IsEnabled="{Binding SuggestProjects}">
+                  <CheckBox Content="Applications, sites and window titles" IsChecked="True" IsEnabled="False" />
+                  <CheckBox Content="Text on the screen" IsChecked="{Binding ReadScreenText}" />
+                  <TextBlock Classes="hint" Margin="26,0,0,0" Text="Better guesses for terminals and plain titles · uses CPU after recording" />
+                  <TextBlock Classes="hint" Margin="26,0,0,0" Text="Apps, sites and projects can opt out on their own tabs" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,6,0,0" IsVisible="{Binding CanReadScreens}">
+                    <Button Content="Read Past Days" Command="{Binding ReadPastDaysCommand}" IsEnabled="{Binding CanReadPastDays}"
+                            ToolTip.Tip="Read the screens of everything recorded before, newest first" />
+                    <Button Content="Stop" Command="{Binding StopReadingPastDaysCommand}" IsVisible="{Binding IsReadingPastDays}" />
+                    <TextBlock Text="{Binding PastDaysText}" Classes="secondary" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Classes="hint" Margin="26,0,0,0" IsVisible="{Binding CanReadScreens}"
+                             Text="Slow for months of history; stop any time, what's read is kept" />
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="group" IsEnabled="{Binding SuggestProjects}">
+            <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Breaks inside a block" />
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                <TextBlock Classes="label" Text="Part of the block under:" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                  <NumericUpDown Value="{Binding GlanceMinutes}" Minimum="0" Maximum="30" Increment="1" FormatString="0" Width="72"
+                                 AutomationProperties.Name="Part of the block under, minutes" />
+                  <TextBlock Text="minutes" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Grid.Row="1" Classes="label" Text="Ends the block over:" />
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                  <NumericUpDown Value="{Binding SplitMinutes}" Minimum="1" Maximum="240" Increment="5" FormatString="0" Width="72"
+                                 AutomationProperties.Name="Ends the block over, minutes" />
+                  <TextBlock Text="minutes" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" TextWrapping="Wrap"
+                           Text="Breaks in between wait for you on the Suggestions tab · idle counts as a break" />
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
       </TabItem>
 
     </TabControl>

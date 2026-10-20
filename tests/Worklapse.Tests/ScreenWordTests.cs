@@ -129,6 +129,8 @@ public class ScreenWordTests
 
         Assert.Null(new ScreenWordStore(history.Database).Get(capture));
         Assert.Contains("keepass.exe", SuggestionOptOuts.Load(history.Database).UnlearnedApps);
+        var listed = Assert.Single(history.GetPrograms(TimeSpan.FromSeconds(15)));
+        Assert.Equal((true, false), (listed.ReadScreen, listed.Learn)); // as the Applications page shows it
         // A new copy of it (another path) is opted out alike.
         var copy = new RecordingStore(history.Database).GetOrAddApp("keepass.exe", @"C:\Tools\keepass.exe");
         using var learn = history.Database.Command($"SELECT learn FROM apps WHERE id = {copy};");

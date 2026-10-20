@@ -79,7 +79,10 @@ public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 /// <summary>An app or site with its classification and how long it was recorded.</summary>
 /// <param name="Excluded">Nothing is recorded while it has the focus.</param>
 /// <param name="ProjectId">The project its active time is marked with, if it's linked to one.</param>
-public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded, long? ProjectId = null);
+/// <param name="ReadScreen">The text in its windows is read, for suggestions.</param>
+/// <param name="Learn">Its windows teach and sway suggestions.</param>
+public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded, long? ProjectId = null,
+    bool ReadScreen = true, bool Learn = true);
 
 /// <summary>A window title as recorded in an app (by exe name), with its active time.</summary>
 public sealed record TitleUsage(string App, string Title, TimeSpan Recorded);
