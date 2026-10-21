@@ -277,6 +277,18 @@ public sealed partial class DayReviewViewModel
 
     public bool HasUnassigned(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges) => UnassignedIn(ranges).Count > 0;
 
+    /// <summary>The projects with time in stretches of time (by hand, a link or a title rule), in the order they first show.</summary>
+    public List<ProjectOption> ProjectsIn(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges) =>
+        _projectTime.Blocks.Where(b => ranges.Any(r => b.Start < r.End && r.Start < b.End))
+            .Select(b => b.ProjectId).Distinct().Select(id => OptionOf(id)).Where(o => o.Id is not null).ToList();
+
+    /// <summary>
+    /// Gives the time one project has in stretches of time to another, by hand, however it got the first (by hand, a link
+    /// or a title rule); the rest of that time, other projects' or none, stays as it is.
+    /// </summary>
+    public void ReplaceProject(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges, long from, long to) =>
+        SetProject(ranges.SelectMany(r => Clip(_projectTime.Blocks.Where(b => b.ProjectId == from).Select(b => (b.Start, b.End)), r)).ToList(), to);
+
     /// <summary>The parts of stretches of time with no project block over them.</summary>
     private List<(DateTimeOffset Start, DateTimeOffset End)> UnassignedIn(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges)
     {

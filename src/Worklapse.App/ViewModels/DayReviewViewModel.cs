@@ -410,7 +410,9 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             if (!HasCaptureSelection)
                 return new ClassificationMenu([], 0);
             var (start, end) = SelectionTimes();
-            var inSelection = Captures.Skip(SelectionStart!.Value).Take(SelectionEnd!.Value - SelectionStart.Value + 1).ToList();
+            // The captures the times count: each lasts until the next (at most the maximum), so one that began before the
+            // selection and runs into it is in it too. By index from the first capture inside, its app was missing.
+            var inSelection = Captures.Where((c, i) => c.Time < end && c.Time + CaptureLength(i) > start).ToList();
             var times = SpanSummary.ByProgram(Captures, start, end, _maxCaptureLength);
             var choices = times.Take(MaxClassificationChoices)
                 .Select(t => Choice(t.Program, inSelection, t.Time))

@@ -182,15 +182,16 @@ public partial class DayReviewView : UserControl
     /// The projects to set some time to, each in its colour; for the Set Project button and the timeline's and the
     /// rows' right-click menus.
     /// </summary>
-    private List<Control> ProjectMenuItems(Action<long> choose)
+    /// <param name="except">A project left out (the one being replaced).</param>
+    private List<Control> ProjectMenuItems(Action<long> choose, long? except = null)
     {
         var items = new List<Control>();
-        foreach (var project in _viewModel.AssignableProjects)
+        foreach (var project in _viewModel.AssignableProjects.Where(p => p.Id != except))
         {
             var item = new MenuItem
             {
                 Header = project.Category.Length > 0 ? $"{project.Name}  ({project.Category})" : project.Name,
-                Icon = new Avalonia.Controls.Shapes.Rectangle { Width = 10, Height = 10, RadiusX = 2, RadiusY = 2, Fill = project.Brush },
+                Icon = ProjectSwatch(project.Brush),
             };
             var id = project.Id!.Value;
             item.Click += (_, _) => choose(id);
@@ -200,6 +201,10 @@ public partial class DayReviewView : UserControl
             items.Add(new MenuItem { Header = "No projects yet: add them in Settings → Projects", IsEnabled = false });
         return items;
     }
+
+    /// <summary>A project's colour, as a menu entry's icon.</summary>
+    private static Avalonia.Controls.Shapes.Rectangle ProjectSwatch(Avalonia.Media.IBrush brush) =>
+        new() { Width = 10, Height = 10, RadiusX = 2, RadiusY = 2, Fill = brush };
 
     /// <summary>A menu filled when it opens, from the capture or selection at that moment; empty means none.</summary>
     private ContextMenu ClassificationMenu(bool forSelection)
@@ -220,6 +225,7 @@ public partial class DayReviewView : UserControl
             {
                 items.Add(new MenuItem { Header = "Set Project", ItemsSource = ProjectMenuItems(_viewModel.SetSelectionProjectCommand.Execute) });
                 items.Add(SetUnassignedItem(SelectionRanges()));
+                items.Add(ReplaceProjectItem(SelectionRanges()));
                 items.Add(new MenuItem { Header = "Clear Project", Command = _viewModel.ClearSelectionProjectCommand });
                 items.Add(new MenuItem { Header = "Mark for Deletion", Command = _viewModel.MarkSelectionCommand });
                 if (choices.Count > 0)
@@ -450,6 +456,30 @@ public partial class DayReviewView : UserControl
         ItemsSource = ProjectMenuItems(id => _viewModel.SetUnassigned(ranges, id)),
         IsEnabled = _viewModel.HasUnassigned(ranges),
     };
+
+    /// <summary>
+    /// "Replace Project ▸ (a project with time there) ▸ (the one to give it)": only that project's time changes. With one
+    /// project there, "Replace Worklapse with ▸" straight away; off when there's none.
+    /// </summary>
+    private MenuItem ReplaceProjectItem(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges)
+    {
+        var present = _viewModel.ProjectsIn(ranges);
+        List<Control> Targets(ProjectOption from) =>
+            ProjectMenuItems(to => _viewModel.ReplaceProject(ranges, from.Id!.Value, to), except: from.Id);
+        if (present.Count == 1)
+            return new MenuItem { Header = $"Replace {present[0].Name} with", ItemsSource = Targets(present[0]) };
+        return new MenuItem
+        {
+            Header = "Replace Project",
+            IsEnabled = present.Count > 0,
+            ItemsSource = present.Select(from => new MenuItem
+            {
+                Header = from.Name,
+                Icon = ProjectSwatch(from.Brush),
+                ItemsSource = Targets(from),
+            }).ToList(),
+        };
+    }
 
     /// <summary>Opens a row's menu, showing on the timeline what it acts on until it closes.</summary>
     private void OpenRowMenu(Control row, List<Control> items, IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> actsOn)
