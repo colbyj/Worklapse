@@ -15,7 +15,9 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <WorklapseNativeTriplet>x64-windows-static-md</WorklapseNativeTriplet>
+    <!-- Static libraries with the C runtime linked in as well (CMakeLists.txt does the same for worklapse_native):
+         the DLL then doesn't need the Visual C++ Redistributable on the machine it runs on. -->
+    <WorklapseNativeTriplet>x64-windows-static</WorklapseNativeTriplet>
     <WorklapseNativeFileName>worklapse_native.dll</WorklapseNativeFileName>
     <WorklapseNativeLibrary>$(WorklapseNativeDir)win-x64\worklapse_native.dll</WorklapseNativeLibrary>
     <WorklapseNativeBuildDir>$(WorklapseNativeDir)src\build</WorklapseNativeBuildDir>
@@ -74,11 +76,12 @@
     <!-- The libraries, versions pinned by vcpkg-configuration.json, into native/vcpkg_installed. -->
     <Exec Command="&quot;$(_Vcpkg)&quot; install --triplet $(WorklapseNativeTriplet)" WorkingDirectory="$(WorklapseNativeDir)" />
 
-    <!-- %25 is a literal % in MSBuild. -->
+    <!-- %25 is a literal % in MSBuild. fresh: a CMake cache from an earlier build may still point at another
+         triplet's libraries. -->
     <Exec WorkingDirectory="$(WorklapseNativeDir)" Command="
 call &quot;$(_VcVars)&quot; &gt;nul || exit /b 1
 set &quot;PATH=$(_CMakeBin);$(_NinjaDir);%25PATH%25&quot;
-cmake -S src -B &quot;$(WorklapseNativeBuildDir)&quot; -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=&quot;$(WorklapseNativeInstallDir)\$(WorklapseNativeTriplet)&quot; || exit /b 1
+cmake --fresh -S src -B &quot;$(WorklapseNativeBuildDir)&quot; -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=&quot;$(WorklapseNativeInstallDir)\$(WorklapseNativeTriplet)&quot; || exit /b 1
 cmake --build &quot;$(WorklapseNativeBuildDir)&quot; || exit /b 1
 " />
 

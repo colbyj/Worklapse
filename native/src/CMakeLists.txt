@@ -19,6 +19,8 @@ set_target_properties(worklapse_native PROPERTIES
 
 if(MSVC)
     target_compile_options(worklapse_native PRIVATE /W4 /O2)
+    # The C runtime linked in (/MT), matching vcpkg's x64-windows-static libraries: no VCRUNTIME140.dll needed.
+    set_target_properties(worklapse_native PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded")
 else()
     target_compile_options(worklapse_native PRIVATE -Wall -Wextra -O2)
 endif()

@@ -928,7 +928,13 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
 5. **Everyday app behaviour (confirm each with the developer before building):** a second launch bringing up the
    main window (see 1a). Done 2026-10-20: the log file, crash reports, *Start with Windows* (in the tray when started
    that way), *Record when Worklapse starts*, the tray badge and notifications.
-6. **Packaging:** a self-contained publish with the native DLL, and an installer or zip. The developer plans
+6. **Packaging:** a self-contained publish with the native DLL, and an installer or zip. Done 2026-10-21: the
+   developer's FolderProfile (win-x64, self-contained, single file) works from Visual Studio and `dotnet publish`
+   (`RuntimeIdentifiers` in the App project; without it VS failed with NETSDK1047), keeps
+   Worklapse.TimeSnapperReader.exe outside the bundle (and the helper ignores the win-x64 runtime VS passes to every
+   project: `TreatAsLocalProperty`), leaves out the packages' native .pdb files, and
+   worklapse_native.dll links the C runtime statically (`x64-windows-static`), so no Visual C++ Redistributable is
+   needed. The developer plans
    Velopack, code signing (already set up for another project) and a GitHub page/website later. PRIVACY.md is written.
    **License: GPLv3** (developer's choice 2026-10-20, `LICENSE`): it can still be relicensed more permissively later
    while the developer holds all the copyright (outside contributions would need a CLA). Still to do when packaging: a

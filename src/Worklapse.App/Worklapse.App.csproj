@@ -7,6 +7,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/worklapse.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Every restore includes the publish profile's runtime: Visual Studio publishes without restoring for it, and
+         fails (NETSDK1047) after an ordinary build's restore. Unlike RuntimeIdentifier, doesn't change the build. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,9 +35,29 @@
     <ProjectReference Include="../Worklapse.Video/Worklapse.Video.csproj" />
     <ProjectReference Include="../Worklapse.Capture.Linux/Worklapse.Capture.Linux.csproj" />
     <ProjectReference Include="../Worklapse.Capture.Windows/Worklapse.Capture.Windows.csproj" />
-    <!-- The 32-bit helper that reads TimeSnapper's database for the import, copied next to Worklapse.exe. -->
+    <!-- The 32-bit helper that reads TimeSnapper's database for the import, copied next to Worklapse.exe (and kept
+         out of a single-file publish's bundle, since Worklapse starts it as a separate process). -->
     <ProjectReference Include="../Worklapse.TimeSnapperReader/Worklapse.TimeSnapperReader.csproj" ReferenceOutputAssembly="false"
-                      SetTargetFramework="TargetFramework=net48" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+                      SetTargetFramework="TargetFramework=net48" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest"
+                      ExcludeFromSingleFile="true" />
   </ItemGroup>
+
+  <!-- A publish leaves out the debug symbols NuGet packages ship for their native libraries (libSkiaSharp.pdb and
+       libHarfBuzzSharp.pdb: ~105 MB). Worklapse's own .pdb files stay, for line numbers in crash reports. -->
+  <Target Name="RemoveNativePackageSymbolsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.AssetType)' == 'native' and '%(ResolvedFileToPublish.Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+
+  <!-- A publish also zips the publish folder, to a .zip of the same name beside it (bin\publish\worklapse-win-x64 ->
+       bin\publish\worklapse-win-x64.zip), ready to hand to a tester. -->
+  <Target Name="ZipPublishFolder" AfterTargets="Publish">
+    <PropertyGroup>
+      <_PublishFolder>$([System.IO.Path]::GetDirectoryName($([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))))</_PublishFolder>
+    </PropertyGroup>
+    <ZipDirectory SourceDirectory="$(_PublishFolder)" DestinationFile="$(_PublishFolder).zip" Overwrite="true" />
+  </Target>
 
 </Project>

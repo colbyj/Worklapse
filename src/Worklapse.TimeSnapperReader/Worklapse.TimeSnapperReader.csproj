@@ -1,4 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!-- TreatAsLocalProperty: a publish of Worklapse for win-x64 (Visual Studio passes the profile's runtime to every
+     project) mustn't reach this 32-bit helper; it would fail (NETSDK1032) or build where Worklapse doesn't look. -->
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="RuntimeIdentifier;SelfContained">
 
   <!-- Reads TimeSnapper's database for the import. TimeSnapper's Firebird 1.5 database opens only with its own
        32-bit embedded engine and the .NET 2.0 Firebird client it ships, so this is a separate 32-bit .NET Framework
@@ -9,6 +11,8 @@
     <PlatformTarget>x86</PlatformTarget>
     <ImplicitUsings>disable</ImplicitUsings>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <RuntimeIdentifier />
+    <SelfContained />
   </PropertyGroup>
 
   <ItemGroup>
