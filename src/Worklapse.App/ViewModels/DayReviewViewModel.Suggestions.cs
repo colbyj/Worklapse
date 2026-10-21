@@ -111,6 +111,16 @@ public sealed class SuggestionPartRow : ObservableObject
     }
 }
 
+/// <summary>
+/// A piece of an open suggestion on the projects lane, in the project it would go to: a stretch between its breaks and
+/// switches, or one of those. Drawn around the time inside it that has a project already.
+/// </summary>
+public sealed record SuggestionPiece(StoredSuggestion Suggestion, DateTimeOffset Start, DateTimeOffset End, long ProjectId, LaneStyle Style)
+{
+    /// <summary>An undecided break goes to no project, so it can't be accepted on its own.</summary>
+    public bool CanAccept => Style != LaneStyle.Break;
+}
+
 public sealed partial class DayReviewViewModel
 {
     // Words a suggestion shows as its evidence, at most, of each kind.
@@ -120,6 +130,7 @@ public sealed partial class DayReviewViewModel
     private readonly SemaphoreSlim _engineGate = new(1, 1);
     private int _suggestionVersion;
     private List<StoredSuggestion> _suggestions = [];
+    private List<SuggestionPiece> _suggestionPieces = [];
 
     /// <summary>The Suggestions tab: each open suggestion, then its breaks and switches.</summary>
     public ObservableCollection<object> SuggestionRows { get; } = [];
@@ -131,6 +142,11 @@ public sealed partial class DayReviewViewModel
     public bool HasOpenSuggestions => OpenSuggestionCount > 0;
     public bool HasNoOpenSuggestions => OpenSuggestionCount == 0;
     public bool SuggestionsOff => !_settings.Current.SuggestProjects;
+
+    /// <summary>"No suggestions for this day": not while they're being worked out, nor when they're off.</summary>
+    public bool ShowsNoSuggestions => !IsWorkingOutSuggestions && !SuggestionsOff;
+
+    partial void OnIsWorkingOutSuggestionsChanged(bool value) => OnPropertyChanged(nameof(ShowsNoSuggestions));
 
     partial void OnOpenSuggestionCountChanged(int value)
     {
@@ -148,8 +164,11 @@ public sealed partial class DayReviewViewModel
         var version = Interlocked.Increment(ref _suggestionVersion);
         var settings = _settings.Current;
         OnPropertyChanged(nameof(SuggestionsOff));
+        OnPropertyChanged(nameof(ShowsNoSuggestions));
         if (!settings.SuggestProjects)
         {
+            // A run still under way when they were turned off ends unseen (its version is old).
+            IsWorkingOutSuggestions = false;
             ShowSuggestions([]);
             return;
         }
@@ -277,47 +296,86 @@ public sealed partial class DayReviewViewModel
         var lane = _projectTime.Blocks
             .Select(b => new ProjectLaneBlock(SecondsOf(b.Start), SecondsOf(b.End), BrushOf(b.ProjectId), NameOf(b.ProjectId)))
             .ToList();
+        var pieces = new List<SuggestionPiece>();
         var taken = _projectTime.Blocks.Select(b => (b.Start, b.End)).ToList();
         foreach (var suggestion in _suggestions.Where(s => s.IsOpen))
         {
-            var free = SuggestionStore.Subtract([(suggestion.Start, suggestion.End)], taken);
-            foreach (var (start, end) in SuggestionStore.Subtract(free, suggestion.Parts.Select(p => (p.Start, p.End))))
-                lane.Add(new ProjectLaneBlock(SecondsOf(start), SecondsOf(end), BrushOf(suggestion.ProjectId), NameOf(suggestion.ProjectId), LaneStyle.Suggested));
+            // Under its pieces, so they read as one block across its breaks and the time between that has a project.
+            lane.Add(new ProjectLaneBlock(SecondsOf(suggestion.Start), SecondsOf(suggestion.End), BrushOf(suggestion.ProjectId), "", LaneStyle.Extent));
+            // Its pieces: the stretches between its breaks and switches, and those; each drawn around the time that
+            // has a project already.
+            foreach (var (start, end) in SuggestionStore.Subtract([(suggestion.Start, suggestion.End)], suggestion.Parts.Select(p => (p.Start, p.End))))
+                pieces.Add(new SuggestionPiece(suggestion, start, end, suggestion.ProjectId, LaneStyle.Suggested));
             foreach (var part in suggestion.Parts)
-                foreach (var (start, end) in SuggestionStore.Subtract([(part.Start, part.End)], taken))
+            {
+                var (project, style) = part switch
                 {
-                    var (project, style) = part switch
-                    {
-                        { Kind: SuggestionPartKind.Switch, Decided: false, ProjectId: { } other } => (other, LaneStyle.Suggested),
-                        { Kind: SuggestionPartKind.Break, Decided: false } => (suggestion.ProjectId, LaneStyle.Break),
-                        _ => (suggestion.ProjectId, LaneStyle.Suggested),
-                    };
-                    lane.Add(new ProjectLaneBlock(SecondsOf(start), SecondsOf(end), BrushOf(project), NameOf(project), style));
-                }
+                    { Kind: SuggestionPartKind.Switch, Decided: false, ProjectId: { } other } => (other, LaneStyle.Suggested),
+                    // A break, or a switch whose project was deleted since: left out on Accept unless counted.
+                    { Decided: false } => (suggestion.ProjectId, LaneStyle.Break),
+                    _ => (suggestion.ProjectId, LaneStyle.Suggested),
+                };
+                pieces.Add(new SuggestionPiece(suggestion, part.Start, part.End, project, style));
+            }
         }
+        // A piece whose time all has a project already shows nothing, so it isn't one.
+        pieces.RemoveAll(piece => SuggestionStore.Subtract([(piece.Start, piece.End)], taken) is { Count: 0 });
+        foreach (var piece in pieces)
+            foreach (var (start, end) in SuggestionStore.Subtract([(piece.Start, piece.End)], taken))
+                lane.Add(new ProjectLaneBlock(SecondsOf(start), SecondsOf(end), BrushOf(piece.ProjectId), NameOf(piece.ProjectId), piece.Style));
+        _suggestionPieces = pieces;
         ProjectLane = lane;
     }
 
     /// <summary>A project's name, for menus.</summary>
     public string ProjectName(long projectId) => NameOf(projectId);
 
-    /// <summary>The open suggestion (and its part, if any) at a moment, for the timeline's right-click menu.</summary>
-    public (StoredSuggestion Suggestion, StoredPart? Part)? SuggestionAt(double seconds)
+    /// <summary>
+    /// The open suggestion at a moment, its part there (if any), and the piece drawn there (none between pieces), for the
+    /// timeline's right-click menu.
+    /// </summary>
+    public (StoredSuggestion Suggestion, StoredPart? Part, SuggestionPiece? Piece)? SuggestionAt(double seconds)
     {
         var at = TimeAt(seconds);
         foreach (var suggestion in _suggestions.Where(s => s.IsOpen && s.Start <= at && at < s.End))
-            return (suggestion, suggestion.Parts.FirstOrDefault(p => p.Start <= at && at < p.End));
+            return (suggestion, suggestion.Parts.FirstOrDefault(p => p.Start <= at && at < p.End),
+                _suggestionPieces.FirstOrDefault(p => p.Suggestion == suggestion && p.Start <= at && at < p.End));
         return null;
     }
+
+    /// <summary>How many pieces a suggestion is drawn as, breaks included.</summary>
+    public int PieceCount(StoredSuggestion suggestion) => _suggestionPieces.Count(p => p.Suggestion == suggestion);
 
     public void AcceptSuggestion(StoredSuggestion suggestion)
     {
         var store = new SuggestionStore(_history.Database);
-        // As decided now: the panel's rows and the stored ones may differ by a click made since they were read.
+        // As decided now: the panel's rows and the stored ones may differ by a click made since they were read. When it
+        // was worked out again meanwhile into something else, that's shown instead, to be decided afresh.
         if (store.Get(suggestion.Start, suggestion.End).FirstOrDefault(s => s.Id == suggestion.Id && s.IsOpen) is not { } current)
+        {
+            ShowStoredSuggestions();
             return;
-        store.Accept(current, Captures, _handSpans, _maxCaptureLength);
+        }
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
+        // The day as stored now, as the suggestion was worked out from: on today, newer than the captures shown.
+        store.Accept(current, _history.LoadDay(Day.Day).Captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
         RebuildProjects();
+    }
+
+    /// <summary>Accepts one piece of a suggestion as the project it's drawn in, leaving the rest of the suggestion open.</summary>
+    public void AcceptPiece(SuggestionPiece piece)
+    {
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
+        new SuggestionStore(_history.Database).AcceptPiece(piece.Start, piece.End, piece.ProjectId,
+            _history.LoadDay(Day.Day).Captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
+        RebuildProjects();
+    }
+
+    /// <summary>Gives an open suggestion another project, as the Suggestions tab's project list does.</summary>
+    public void ChangeSuggestionProject(StoredSuggestion suggestion, long projectId)
+    {
+        new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
+        ShowStoredSuggestions();
     }
 
     public void RejectSuggestion(StoredSuggestion suggestion)
@@ -338,10 +396,11 @@ public sealed partial class DayReviewViewModel
     {
         var store = new SuggestionStore(_history.Database);
         var (dayStart, dayEnd) = _history.DayRange(Day.Day);
+        var captures = _history.LoadDay(Day.Day).Captures;
         foreach (var suggestion in store.Get(dayStart, dayEnd).Where(s => s.IsOpen))
         {
             // Each accepted block changes what the next one leaves alone.
-            store.Accept(suggestion, Captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
+            store.Accept(suggestion, captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
         }
         RebuildProjects();
     }

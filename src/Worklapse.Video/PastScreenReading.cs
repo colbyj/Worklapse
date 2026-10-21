@@ -24,7 +24,7 @@ public static class PastScreenReading
         var store = new ScreenWordStore(db);
         var captures = FindUnread(db, from, to);
         var kept = 0;
-        var reportedUnreadable = false;
+        var (reportedUnreadable, reportedFailure) = (false, false);
         (FrameRef Frame, PixelRect Window, string[] Words)? last = null;
         for (var i = 0; i < captures.Count; i++)
         {
@@ -39,7 +39,7 @@ public static class PastScreenReading
                 words = previous.Words;
             else
             {
-                words = Read(frames, reader, capture, ref reportedUnreadable);
+                words = Read(frames, reader, capture, ref reportedUnreadable, ref reportedFailure);
                 last = (capture.Frame, capture.Window, words);
             }
             if (store.Set(capture.Id, words))
@@ -50,7 +50,9 @@ public static class PastScreenReading
     }
 
     /// <param name="reportedUnreadable">Whether an undecodable frame was logged already (once per run).</param>
-    private static string[] Read(FrameProvider frames, IScreenTextReader reader, Unread capture, ref bool reportedUnreadable)
+    /// <param name="reportedFailure">Whether the reader failing was logged already (once per run).</param>
+    private static string[] Read(FrameProvider frames, IScreenTextReader reader, Unread capture, ref bool reportedUnreadable,
+        ref bool reportedFailure)
     {
         DecodedFrame frame;
         try
@@ -70,6 +72,14 @@ public static class PastScreenReading
             if (ScreenReadingQueue.CropLuma(frame.I420, frame.Width, frame.Height, capture.Window) is not { } crop)
                 return [];
             return ScreenWords.Of(reader.Read(crop.Gray, crop.Width, crop.Height));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // As on the recorder's queue: that capture goes without words, the rest are still tried.
+            if (!reportedFailure)
+                Log.Error("Reading past screens: reading the screen failed; captures where it fails go without screen words.", ex);
+            reportedFailure = true;
+            return [];
         }
         finally
         {

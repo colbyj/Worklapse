@@ -29,6 +29,12 @@ public enum LaneStyle
 
     /// <summary>A break inside a suggestion, not decided yet: a dashed outline with a question mark.</summary>
     Break,
+
+    /// <summary>
+    /// A suggestion's whole time, drawn before its pieces: a thin bar along the bottom joining them, so they read as one
+    /// block that Accept takes whole.
+    /// </summary>
+    Extent,
 }
 
 /// <summary>A block of time marked with a project, in its colour. Times as in <see cref="TimelineSpan"/>.</summary>
@@ -82,6 +88,7 @@ public sealed class TimelineControl : ThemedControl
     private static readonly IBrush OnProjectBrush = Brushes.White;
     private const double SuggestedTint = 0.14;      // how strongly a suggestion's colour fills it
     private const double SuggestedOutline = 1.5;
+    private const double ExtentHeight = 2;         // the bar joining a suggestion's pieces
     private static readonly Typeface LabelFace = new(FontFamily.Default);
 
     private Point? _pressAt;
@@ -226,6 +233,11 @@ public sealed class TimelineControl : ThemedControl
             var rect = new Rect(x0, lane.Top + 2, x1 - x0, ProjectHeight - 3);
             string label;
             IBrush labelBrush;
+            if (block.Style == LaneStyle.Extent)
+            {
+                context.FillRectangle(block.Brush, new Rect(rect.Left, rect.Bottom - ExtentHeight, rect.Width, ExtentHeight));
+                continue;
+            }
             switch (block.Style)
             {
                 case LaneStyle.Suggested:

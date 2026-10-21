@@ -470,7 +470,7 @@
               </Border>
               <StackPanel DockPanel.Dock="Top" Margin="8,8" Spacing="4" IsVisible="{Binding HasNoOpenSuggestions}">
                 <TextBlock Classes="hint" Text="Working out suggestions…" IsVisible="{Binding IsWorkingOutSuggestions}" />
-                <TextBlock Classes="hint" Text="No suggestions for this day." IsVisible="{Binding !IsWorkingOutSuggestions}" />
+                <TextBlock Classes="hint" Text="No suggestions for this day." IsVisible="{Binding ShowsNoSuggestions}" />
                 <TextBlock Classes="hint" Text="Suggestions are off in Settings." IsVisible="{Binding SuggestionsOff}" />
               </StackPanel>
               <ScrollViewer>

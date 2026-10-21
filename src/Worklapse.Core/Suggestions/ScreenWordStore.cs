@@ -22,7 +22,12 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
     /// <returns>Whether they were kept.</returns>
     public bool Set(long captureId, IReadOnlyCollection<string> words)
     {
-        if (words.Count == 0 || Forbidden($"c.id = {captureId}").Count > 0)
+        if (words.Count == 0)
+            return false;
+        // Checked and written in one (immediate) transaction: reading turned off in between would prune before the
+        // words arrived, and they'd stay.
+        using var transaction = db.BeginTransaction();
+        if (Forbidden($"c.id = {captureId}").Count > 0)
             return false;
         using var command = db.Command("""
             INSERT OR REPLACE INTO screen_words (capture_id, words)
@@ -30,7 +35,9 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
             """);
         command.Parameters.AddWithValue("$id", captureId);
         command.Parameters.AddWithValue("$words", string.Join(' ', words));
-        return command.ExecuteNonQuery() > 0;
+        var kept = command.ExecuteNonQuery() > 0;
+        transaction.Commit();
+        return kept;
     }
 
     /// <summary>Gives a capture the words of another, for a capture whose screen didn't change; the same rules apply.</summary>

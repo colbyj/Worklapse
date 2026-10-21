@@ -218,10 +218,14 @@ outside ranges teach too, and each project starts from its name, links and rules
   range), `SetTitleRules` and `SetSuggestionOptOuts` for a project with reading off, `HistoryStore.SetProject` (a link to
   such a project) and `SetReadScreen`. Deleting captures deletes their words (cascade). An app or site with reading or
   learning off keeps its row when its captures are deleted, and new copies of an app (another path) inherit both.
-- `IScreenTextReader` on `PlatformServices.TextReader`. **No reader is plugged in at the moment** (2026-10-20): the Windows one
-  used `Windows.Media.Ocr` through a Windows-only target framework (`net10.0-windows10.0.19041.0`), which moved the build to
-  another folder; the developer didn't want that, so it was taken out. To do: reach Windows OCR while staying on plain
-  `net10.0` (e.g. calling the WinRT API through COM interop, as the UI Automation code does).
+- `IScreenTextReader` on `PlatformServices.TextReader`. The first Windows reader used `Windows.Media.Ocr` through a
+  Windows-only target framework (`net10.0-windows10.0.19041.0`), which moved the build to another folder; the developer
+  didn't want that, so it was taken out (bf10122). Now `WindowsScreenTextReader` calls the same WinRT API through COM
+  (`WindowsOcrInterop.cs`, as `UiAutomationInterop.cs` does for UI Automation) on plain `net10.0`: activation factories
+  from `combase.dll`, a Gray8 `SoftwareBitmap` from a `CryptographicBuffer`, and its own completion handler for
+  `RecognizeAsync`. Each reading thread gets its own engine (the recorder's queue and Read Past Days can run at once).
+  Checked on a copy of the evaluation data: June 17 read again gave the same words as the earlier reader for all 543
+  captures, in 45 s; scores unchanged (June 17 95% guess / 95% filled, all days 86.4% / 83.6%).
 - The recorder crops the focused window from the luma (Y) plane of the captured I420 frame, on the monitor showing most of
   it, and queues it after the commit (`ScreenReadingQueue`: one lowest-priority thread, at most 4 pictures waiting,
   dropping new work when full). A capture showing the same frame and window copies the words instead.
@@ -272,6 +276,26 @@ outside ranges teach too, and each project starts from its name, links and rules
   it off for an app, site or project deletes them.
 - Applications: Read screen and Learn columns (sortable, greyed while the app is excluded), saved on Apply.
 - Projects: a Suggestions row in a project's details, Suggest it and Read the screen during its time, saved on Apply.
+
+**Review and fixes 2026-10-20** (after the developer's first use on real data):
+- A suggestion is drawn in pieces (the stretches between its breaks and switches, and those), so accepting it from one
+  piece looked like accepting every Presayo bar around it (June 18). Now a thin bar along the lane's bottom joins a
+  suggestion's pieces, and the right-click names what it takes: *Accept Whole Suggestion: Presayo, 11:31 AM – 1:02 PM*
+  and *Accept This Piece Only* (the piece clicked, as the project it's drawn in; the rest stays open). Also *Change
+  Suggestion to* (its project, as on the Suggestions tab).
+- Working a day out again kept no ids (every open suggestion was deleted and inserted), so a click made just after a
+  window activation could find nothing and do nothing. An unchanged suggestion now keeps its id; a click on one that
+  changed meanwhile shows the new one.
+- Decisions on breaks and switches are matched by overlap, not exact ends (a capture arriving moved them).
+- A decided block hides a new one when they overlap by half of the *new* block (was: of the shorter, so a small rejected
+  block hid a large one around it); a chosen block still by the shorter.
+- A day's suggestions are those starting in it (neighbouring days' showed and were accepted after a day-start change).
+- Accept and Accept All read the day's captures as stored now (on today, the ones shown can be older than the suggestion).
+- A switch whose project was deleted is drawn as a break, as Accept treats it.
+- Screen words: the permission check and the write are one transaction (reading turned off in between left words);
+  Read Past Days logs a reader failure once and goes on instead of failing.
+- "No suggestions for this day" no longer shows beside "Suggestions are off"; "Working out suggestions…" no longer sticks
+  when they're turned off mid-run.
 
 Left for phase 5 (Linux): Tesseract behind `IScreenTextReader`, with its own cost and quality test on Kubuntu.
 

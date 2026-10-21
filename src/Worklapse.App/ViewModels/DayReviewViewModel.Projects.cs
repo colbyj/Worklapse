@@ -645,7 +645,7 @@ public sealed partial class DayReviewViewModel
         : AppBrushes.NotRecorded;
 
     /// <summary>"9:08 – 9:10 AM": with a 12-hour clock, AM or PM once when both ends share it.</summary>
-    private static string RangeText(DateTimeOffset from, DateTimeOffset to)
+    internal static string RangeText(DateTimeOffset from, DateTimeOffset to)
     {
         var culture = CultureInfo.CurrentCulture;
         var pattern = culture.DateTimeFormat.ShortTimePattern;

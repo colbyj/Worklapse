@@ -39,18 +39,22 @@ public sealed class SuggestionStore(WorklapseDatabase db)
 {
     /// <summary>
     /// A new suggestion counts as one already decided when it has the same project and they overlap by at least this much
-    /// of the shorter one.
+    /// of the new one (of the shorter, a small rejected block would hide a much larger one around it); a chosen block, of
+    /// the shorter.
     /// </summary>
     public const double SameBlockOverlap = 0.5;
 
-    /// <summary>The suggestions overlapping start..end, in time order: open ones and those decided.</summary>
+    /// <summary>
+    /// The suggestions starting from start up to (not including) end, in time order: open ones and those decided. A day's
+    /// are those starting in it, as <see cref="Replace"/> keeps them.
+    /// </summary>
     public List<StoredSuggestion> Get(DateTimeOffset start, DateTimeOffset end)
     {
         var parts = new Dictionary<long, List<StoredPart>>();
         using (var command = db.Command("""
             SELECT p.suggestion_id, p.start_ms, p.end_ms, p.kind, p.project_id, p.decided
             FROM suggestion_parts p JOIN suggestions s ON s.id = p.suggestion_id
-            WHERE s.start_ms < $end AND s.end_ms > $start
+            WHERE s.start_ms >= $start AND s.start_ms < $end
             ORDER BY p.suggestion_id, p.start_ms;
             """))
         {
@@ -67,7 +71,7 @@ public sealed class SuggestionStore(WorklapseDatabase db)
 
         using var suggestions = db.Command("""
             SELECT id, start_ms, end_ms, project_id, confidence, evidence, state FROM suggestions
-            WHERE start_ms < $end AND end_ms > $start ORDER BY start_ms, id;
+            WHERE start_ms >= $start AND start_ms < $end ORDER BY start_ms, id;
             """);
         Bind(suggestions, start, end);
         using var rows = suggestions.ExecuteReader();
@@ -99,35 +103,46 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     }
 
     /// <summary>
-    /// Makes <paramref name="computed"/> the open suggestions of start..end: the open ones there before go (not those whose
-    /// project was chosen), except that a break or switch kept in the same place keeps its decision; a computed block matching
-    /// one decided or chosen already (the same project, overlapping by <see cref="SameBlockOverlap"/>) is left out.
+    /// Makes <paramref name="computed"/> the open suggestions starting from start up to end: the open ones there before go
+    /// (not those whose project was chosen), except that one computed again unchanged (the same time and project) keeps its
+    /// id, so a click on it made meanwhile still finds it, and a break or switch overlapping one decided before keeps that
+    /// decision; a computed block matching one decided or chosen already (the same project, overlapping by
+    /// <see cref="SameBlockOverlap"/>) is left out.
     /// </summary>
     public void Replace(DateTimeOffset start, DateTimeOffset end, IReadOnlyList<Suggestion> computed)
     {
         using var transaction = db.BeginTransaction();
-        var before = Get(start, end).Where(s => s.Start >= start && s.Start < end).ToList();
+        var before = Get(start, end);
         var decided = before.Where(s => s.State != SuggestionState.Open).ToList(); // accepted, rejected or chosen
-        var decisions = before.Where(s => s.State == SuggestionState.Open)
-            .SelectMany(s => s.Parts).Where(p => p.Decided)
-            .Select(p => (p.Start, p.End, p.Kind)).ToHashSet();
-
-        using (var delete = db.Command("DELETE FROM suggestions WHERE state = 0 AND start_ms >= $start AND start_ms < $end;"))
-        {
-            Bind(delete, start, end);
-            delete.ExecuteNonQuery();
-        }
+        var open = before.Where(s => s.State == SuggestionState.Open).ToList();
+        var decisions = open.SelectMany(s => s.Parts).Where(p => p.Decided).ToList();
+        var kept = new HashSet<long>();
 
         foreach (var suggestion in computed)
         {
             if (decided.Any(d => SameBlock(d, suggestion)))
                 continue;
             long id;
-            using (var insert = db.Command("""
-                INSERT INTO suggestions (start_ms, end_ms, project_id, confidence, evidence, state)
-                VALUES ($start, $end, $project, $confidence, $evidence, 0) RETURNING id;
-                """))
+            if (open.FirstOrDefault(o => !kept.Contains(o.Id) && o.Start == suggestion.Start && o.End == suggestion.End
+                    && o.ProjectId == suggestion.ProjectId) is { } same)
             {
+                id = same.Id;
+                kept.Add(id);
+                using var update = db.Command("UPDATE suggestions SET confidence = $confidence, evidence = $evidence WHERE id = $id;");
+                update.Parameters.AddWithValue("$id", id);
+                update.Parameters.AddWithValue("$confidence", suggestion.Confidence);
+                update.Parameters.AddWithValue("$evidence", string.Join(' ', suggestion.Evidence));
+                update.ExecuteNonQuery();
+                using var deleteParts = db.Command("DELETE FROM suggestion_parts WHERE suggestion_id = $id;");
+                deleteParts.Parameters.AddWithValue("$id", id);
+                deleteParts.ExecuteNonQuery();
+            }
+            else
+            {
+                using var insert = db.Command("""
+                    INSERT INTO suggestions (start_ms, end_ms, project_id, confidence, evidence, state)
+                    VALUES ($start, $end, $project, $confidence, $evidence, 0) RETURNING id;
+                    """);
                 Bind(insert, suggestion.Start, suggestion.End);
                 insert.Parameters.AddWithValue("$project", suggestion.ProjectId);
                 insert.Parameters.AddWithValue("$confidence", suggestion.Confidence);
@@ -144,9 +159,18 @@ public sealed class SuggestionStore(WorklapseDatabase db)
                 Bind(insert, part.Start, part.End);
                 insert.Parameters.AddWithValue("$kind", (int)part.Kind);
                 insert.Parameters.AddWithValue("$project", (object?)part.ProjectId ?? DBNull.Value);
-                insert.Parameters.AddWithValue("$decided", decisions.Contains((part.Start, part.End, part.Kind)) ? 1 : 0);
+                // Matched by overlap, not exact ends: a capture arriving, or an edge moving a few seconds, keeps the decision.
+                var wasDecided = decisions.Any(d => d.Kind == part.Kind && d.ProjectId == part.ProjectId && d.Start < part.End && part.Start < d.End);
+                insert.Parameters.AddWithValue("$decided", wasDecided ? 1 : 0);
                 insert.ExecuteNonQuery();
             }
+        }
+
+        foreach (var gone in open.Where(o => !kept.Contains(o.Id)))
+        {
+            using var delete = db.Command("DELETE FROM suggestions WHERE id = $id;");
+            delete.Parameters.AddWithValue("$id", gone.Id);
+            delete.ExecuteNonQuery();
         }
         transaction.Commit();
     }
@@ -190,9 +214,7 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         using var transaction = db.BeginTransaction();
 
         // Where the block's time already belongs elsewhere (another project, or none by hand): kept out of every range written.
-        var keep = Assigned(captures, spans, maxCaptureLength)
-            .Where(a => a.ProjectId != suggestion.ProjectId)
-            .Select(a => (a.Start, a.End)).ToList();
+        var keep = Elsewhere(captures, spans, maxCaptureLength, suggestion.ProjectId);
         // A break not counted stays out of the block; so does a switch not kept in it, which goes to its own project.
         var left = Subtract(Subtract([(suggestion.Start, suggestion.End)], keep),
             suggestion.Parts.Where(p => !p.Decided).Select(p => (p.Start, p.End)));
@@ -206,6 +228,28 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         SetState(suggestion.Id, SuggestionState.Accepted);
         transaction.Commit();
     }
+
+    /// <summary>
+    /// Accepts one piece of a suggestion (a stretch drawn on its own) as <paramref name="projectId"/>, leaving the rest of it
+    /// open: start..end becomes ranges set by hand, without the time that already has a project of its own or was set to
+    /// none by hand.
+    /// </summary>
+    /// <param name="captures">The captures of the piece's day, as <see cref="HistoryStore.LoadDay"/> reads them.</param>
+    /// <param name="spans">The ranges set by hand over that day, in time order.</param>
+    public void AcceptPiece(DateTimeOffset start, DateTimeOffset end, long projectId, IReadOnlyList<CaptureRecord> captures,
+        IReadOnlyList<ProjectSpan> spans, TimeSpan maxCaptureLength)
+    {
+        var projects = new ProjectStore(db);
+        using var transaction = db.BeginTransaction();
+        foreach (var (from, to) in Subtract([(start, end)], Elsewhere(captures, spans, maxCaptureLength, projectId)))
+            projects.SetSpanInTransaction(from, to, projectId);
+        transaction.Commit();
+    }
+
+    /// <summary>The day's time that belongs to another project than <paramref name="projectId"/>, or to none by hand.</summary>
+    private static List<(DateTimeOffset Start, DateTimeOffset End)> Elsewhere(IReadOnlyList<CaptureRecord> captures,
+        IReadOnlyList<ProjectSpan> spans, TimeSpan maxCaptureLength, long projectId) =>
+        Assigned(captures, spans, maxCaptureLength).Where(a => a.ProjectId != projectId).Select(a => (a.Start, a.End)).ToList();
 
     /// <summary>
     /// The stretches of the day's time a range by hand, a link or a title rule decides, with the project (null: none, by
@@ -262,7 +306,10 @@ public sealed class SuggestionStore(WorklapseDatabase db)
             return false;
         var overlap = (decided.End < computed.End ? decided.End : computed.End) - (decided.Start > computed.Start ? decided.Start : computed.Start);
         var (a, b) = (decided.End - decided.Start, computed.End - computed.Start);
-        return overlap > TimeSpan.Zero && overlap >= (a < b ? a : b) * SameBlockOverlap;
+        // Of the new block: one mostly inside a decided block is that block again, but one reaching well past a small
+        // decided block is new time. A chosen block is still open, so nothing may be offered over it.
+        var basis = decided.State == SuggestionState.Chosen && a < b ? a : b;
+        return overlap > TimeSpan.Zero && overlap >= basis * SameBlockOverlap;
     }
 
     private void SetState(long suggestionId, SuggestionState state)

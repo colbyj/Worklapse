@@ -213,7 +213,7 @@ public partial class DayReviewView : UserControl
             // A suggestion right-clicked on the projects lane: decide it there, as on the Suggestions tab.
             if (forSelection && Timeline.ContextPoint is { ProjectLane: true } point && _viewModel.SuggestionAt(point.Seconds) is { } found)
             {
-                items.AddRange(SuggestionMenuItems(found.Suggestion, found.Part));
+                items.AddRange(SuggestionMenuItems(found.Suggestion, found.Part, found.Piece));
                 _viewModel.ShowReach(ReachSource.Menu, (found.Suggestion.Start, found.Suggestion.End));
             }
             if (forSelection && _viewModel.HasSelection)
@@ -247,15 +247,30 @@ public partial class DayReviewView : UserControl
         return menu;
     }
 
-    /// <summary>A suggestion's entries on the timeline's menu: accept or reject it, and decide the break or switch clicked on.</summary>
-    private List<Control> SuggestionMenuItems(StoredSuggestion suggestion, StoredPart? part)
+    /// <summary>
+    /// A suggestion's entries on the timeline's menu: accept it (whole, or just the piece clicked on when it's drawn in
+    /// several), give it another project, reject it, and decide the break or switch clicked on.
+    /// </summary>
+    private List<Control> SuggestionMenuItems(StoredSuggestion suggestion, StoredPart? part, SuggestionPiece? piece)
     {
         var project = _viewModel.ProjectName(suggestion.ProjectId);
-        var items = new List<Control>
+        var items = new List<Control>();
+        if (_viewModel.PieceCount(suggestion) > 1)
         {
-            MenuEntry($"Accept Suggestion: {project}", () => _viewModel.AcceptSuggestion(suggestion)),
-            MenuEntry("Reject Suggestion", () => _viewModel.RejectSuggestion(suggestion)),
-        };
+            items.Add(MenuEntry($"Accept Whole Suggestion: {project}, {DayReviewViewModel.RangeText(suggestion.Start, suggestion.End)}",
+                () => _viewModel.AcceptSuggestion(suggestion)));
+            if (piece is { CanAccept: true } one)
+                items.Add(MenuEntry($"Accept This Piece Only: {_viewModel.ProjectName(one.ProjectId)}, {DayReviewViewModel.RangeText(one.Start, one.End)}",
+                    () => _viewModel.AcceptPiece(one)));
+        }
+        else
+            items.Add(MenuEntry($"Accept Suggestion: {project}", () => _viewModel.AcceptSuggestion(suggestion)));
+        items.Add(new MenuItem
+        {
+            Header = "Change Suggestion to",
+            ItemsSource = ProjectMenuItems(id => _viewModel.ChangeSuggestionProject(suggestion, id)),
+        });
+        items.Add(MenuEntry("Reject Suggestion", () => _viewModel.RejectSuggestion(suggestion)));
         if (part is { } p)
         {
             var header = p.Kind == SuggestionPartKind.Switch && p.ProjectId is { } other

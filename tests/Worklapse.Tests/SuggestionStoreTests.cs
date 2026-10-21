@@ -48,6 +48,70 @@ public class SuggestionStoreTests
     }
 
     [Fact]
+    public void AnUnchangedSuggestionKeepsItsIdAndAPartWhoseEdgesMovedKeepsItsDecision()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var presayo = new ProjectStore(db).AddProject("Presayo", null);
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300))]);
+        var first = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
+        store.SetPart(first.Id, At(200), decided: true);
+
+        // Worked out again with nothing changed (as when the window is activated): a click on the one shown still finds it.
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300))]);
+        var same = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
+        Assert.Equal((first.Id, true), (same.Id, Assert.Single(same.Parts).Decided));
+
+        // A capture later the break starts 10 s sooner: still the break counted.
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 610, presayo, Break(190, 300))]);
+        Assert.True(Assert.Single(Assert.Single(store.Get(Nine, Nine.AddDays(1))).Parts).Decided);
+    }
+
+    [Fact]
+    public void ASmallRejectedBlockHidesItselfButNotALargerOneAroundIt()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var presayo = new ProjectStore(db).AddProject("Presayo", null);
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), [Block(1000, 1600, presayo)]);
+        store.Reject(Assert.Single(store.Get(Nine, Nine.AddDays(1))).Id);
+
+        store.Replace(Nine, Nine.AddDays(1), [Block(1050, 1550, presayo)]);
+        Assert.Equal(0, store.CountOpen([(Day, Nine.AddHours(-9), Nine.AddHours(15))])[Day]);
+
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 7200, presayo)]);
+        var open = Assert.Single(store.Get(Nine, Nine.AddDays(1)), s => s.IsOpen);
+        Assert.Equal((At(0), At(7200)), (open.Start, open.End));
+    }
+
+    [Fact]
+    public void AcceptingAPieceWritesOnlyThatPieceAndLeavesTheSuggestionOpen()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var projects = new ProjectStore(db);
+        var (presayo, admin) = (projects.AddProject("Presayo", null), projects.AddProject("Admin", null));
+        var recording = new RecordingStore(db);
+        var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
+        var outlook = recording.GetOrAddApp("olk.exe", null);
+        new HistoryStore(db).SetProject(new ProgramKey(ProgramKind.App, "olk.exe"), admin);
+        for (var s = 0; s < 1200; s += 10)
+            recording.InsertCapture(At(s), CaptureKind.Active, s is >= 650 and < 700 ? outlook : terminal, "t", null);
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 1200, presayo, Break(300, 500))]);
+
+        var history = new HistoryStore(db);
+        var (dayStart, dayEnd) = history.DayRange(Day);
+        store.AcceptPiece(At(500), At(1200), presayo, history.LoadDay(Day).Captures, projects.GetSpans(dayStart, dayEnd), Max);
+
+        Assert.Equal([(500, 650), (700, 1200)], // around Outlook, which keeps its link
+            projects.GetSpans(dayStart, dayEnd).Select(s => ((int)(s.Start - Nine).TotalSeconds, (int)(s.End - Nine).TotalSeconds)));
+        Assert.True(Assert.Single(store.Get(Nine, Nine.AddDays(1))).IsOpen);
+    }
+
+    [Fact]
     public void AProjectChosenForASuggestionSurvivesWorkingTheDayOutAgain()
     {
         using var folder = new TempFolder();
