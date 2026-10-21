@@ -126,6 +126,10 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
 
     [ObservableProperty] private bool _hasNoTotals = true;
 
+    /// <summary>The sum of <see cref="Totals"/>; logged reads 0:00 rather than nothing, like the rows above it.</summary>
+    [ObservableProperty] private string _grandAssignedText = "";
+    [ObservableProperty] private string _grandLoggedText = "";
+
     /// <summary>Why the last export failed; empty when it didn't.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasExportError))]
@@ -168,6 +172,7 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
         Totals.Clear();
         HasNoTotals = true;
         TotalActiveText = TotalProductiveText = TotalAssignedText = TotalLoggedText = "";
+        GrandAssignedText = GrandLoggedText = "";
         EmptyText = message;
         IsEmpty = true;
     }
@@ -266,6 +271,8 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
                     Hm(byProject[project].Assigned), Hm(byProject[project].Logged)));
         }
         HasNoTotals = Totals.Count == 0;
+        GrandAssignedText = Hm(byProject.Values.SumTime(p => p.Assigned));
+        GrandLoggedText = Hm(byProject.Values.SumTime(p => p.Logged));
     }
 
     /// <summary>Saves a line's note as typed (empty clears it); returns the text to show.</summary>

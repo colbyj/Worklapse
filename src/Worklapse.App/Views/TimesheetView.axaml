@@ -162,6 +162,14 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+            <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0" Padding="0,4,0,0"
+                    IsVisible="{Binding !HasNoTotals}">
+              <Grid ColumnDefinitions="*,58,58">
+                <TextBlock Text="Total" Classes="strong" />
+                <TextBlock Grid.Column="1" Text="{Binding GrandAssignedText}" Classes="secondary" HorizontalAlignment="Right" FontFeatures="+tnum" />
+                <TextBlock Grid.Column="2" Text="{Binding GrandLoggedText}" Classes="strong" HorizontalAlignment="Right" FontFeatures="+tnum" />
+              </Grid>
+            </Border>
             <TextBlock Text="No projects" Classes="secondary" IsVisible="{Binding HasNoTotals}" />
           </StackPanel>
         </Border>
