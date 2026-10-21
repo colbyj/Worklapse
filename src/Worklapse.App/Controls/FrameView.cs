@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Worklapse.Core.History;
 using PixelRect = Worklapse.Core.Platform.PixelRect;
 
 namespace Worklapse.App.Controls;
@@ -84,7 +85,7 @@ public sealed class FrameView : Control
     /// </param>
     public void SetContent(IReadOnlyList<FrameTile> tiles, string? overlay, PixelRect? focus = null)
     {
-        var content = ContentOf(tiles, focus);
+        var content = CapturePictures.Content(tiles.Select(t => t.Bounds), focus);
         if (content != _content)
         {
             // Zoomed in: keep the same part of the picture (proportionally) in the middle of the view.
@@ -298,14 +299,4 @@ public sealed class FrameView : Control
         return Math.Max(scale, 0.001);
     }
 
-    /// <summary>The area the tiles cover, cut to <paramref name="focus"/> unless that misses them all.</summary>
-    private static PixelRect ContentOf(IReadOnlyList<FrameTile> tiles, PixelRect? focus)
-    {
-        if (tiles.Count == 0)
-            return default;
-        var left = tiles.Min(t => t.Bounds.X);
-        var top = tiles.Min(t => t.Bounds.Y);
-        var all = new PixelRect(left, top, tiles.Max(t => t.Bounds.Right) - left, tiles.Max(t => t.Bounds.Bottom) - top);
-        return focus is { } area && !all.Intersect(area).IsEmpty ? all.Intersect(area) : all;
-    }
 }

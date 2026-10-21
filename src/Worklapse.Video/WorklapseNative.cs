@@ -8,7 +8,7 @@ internal static unsafe partial class WorklapseNative
     private const string Library = "worklapse_native";
 
     /// <summary>The wrapper ABI these bindings were written for; checked once on first use.</summary>
-    public const int ExpectedAbiVersion = 4;
+    public const int ExpectedAbiVersion = 5;
 
     public const int ErrorBufferLength = 512;
 
@@ -19,7 +19,8 @@ internal static unsafe partial class WorklapseNative
     public static partial nint AomVersion();
 
     [LibraryImport(Library, EntryPoint = "wl_enc_create")]
-    public static partial nint EncoderCreate(int width, int height, int quality, int cpuUsed, int threads, byte* error);
+    public static partial nint EncoderCreate(int width, int height, int quality, int cpuUsed, int threads, int keyFrameInterval,
+        int limitedRange, byte* error);
 
     [LibraryImport(Library, EntryPoint = "wl_enc_encode_i420")]
     public static partial int EncoderEncodeI420(nint encoder, byte* i420, long ptsMs, int quality, out byte* data, out int isKey);

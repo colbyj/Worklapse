@@ -130,8 +130,8 @@
   <DockPanel>
     <!-- Tool bar: moving through the day on the left, how it's shown on the right. -->
     <Border DockPanel.Dock="Top" Classes="toolBar">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
+      <DockPanel x:Name="ToolBarPanel">
+        <StackPanel x:Name="ViewTools" DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
           <Button x:Name="MonitorButton" Classes="tool" ToolTip.Tip="Which monitors to show" AutomationProperties.Name="Monitors">
             <StackPanel>
               <ic:SymbolIcon Symbol="Desktop" />
@@ -162,7 +162,7 @@
           </ToggleButton>
         </StackPanel>
 
-        <StackPanel Orientation="Horizontal" Spacing="2">
+        <StackPanel x:Name="NavigationTools" Orientation="Horizontal" Spacing="2">
           <Button Classes="tool" Command="{Binding PreviousDayCommand}" ToolTip.Tip="Previous day" AutomationProperties.Name="Previous day">
             <ic:SymbolIcon Symbol="ChevronLeft" />
           </Button>
@@ -199,6 +199,16 @@
           </Button>
           <TextBlock Text="Speed:" Classes="toolLabel" />
           <ComboBox ItemsSource="{Binding Speeds}" SelectedItem="{Binding Speed}" MinWidth="104" VerticalAlignment="Center" />
+
+          <Border Classes="separator" />
+
+          <Button Classes="tool" Click="OnExportTimelapse" IsEnabled="{Binding CanExportTimelapse}"
+                  ToolTip.Tip="Export Timelapse: the day, a project's time or the selection as a video" AutomationProperties.Name="Export Timelapse">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Video" />
+              <TextBlock x:Name="ExportLabel" Text="Export Timelapse…" />
+            </StackPanel>
+          </Button>
         </StackPanel>
       </DockPanel>
     </Border>

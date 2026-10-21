@@ -106,6 +106,20 @@ public sealed record WorklapseSettings
 
     public const double DefaultReviewPanelWidth = 440, MinReviewPanelWidth = 400, MaxReviewPanelWidth = 720;
 
+    // Export Timelapse's choices, as last used.
+
+    /// <summary>Captures shown per second of an exported timelapse.</summary>
+    public int TimelapseFramesPerSecond { get; init; } = 30;
+
+    /// <summary>The height of the largest video an exported timelapse fits in (16:9).</summary>
+    public int TimelapseHeight { get; init; } = 1080;
+
+    /// <summary>An exported timelapse shows the time of day.</summary>
+    public bool TimelapseClock { get; init; } = true;
+
+    /// <summary>An exported timelapse keeps idle time.</summary>
+    public bool TimelapseIncludeIdle { get; init; }
+
     /// <summary>
     /// The look of the windows: the desktop's own by default, or another desktop's (which also lets each be tried on
     /// one machine).
@@ -175,6 +189,8 @@ public sealed record WorklapseSettings
         PastReadingThreads = Math.Clamp(PastReadingThreads, 1, Environment.ProcessorCount),
         ReviewPanelWidth = double.IsFinite(ReviewPanelWidth)
             ? Math.Clamp(ReviewPanelWidth, MinReviewPanelWidth, MaxReviewPanelWidth) : DefaultReviewPanelWidth,
+        TimelapseFramesPerSecond = Math.Clamp(TimelapseFramesPerSecond, 1, 120),
+        TimelapseHeight = Math.Clamp(TimelapseHeight, 240, 4320),
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,
         DayStart = new TimeOnly(DayStart.Hour, DayStart.Minute), // seconds in a hand-edited file
     };

@@ -577,6 +577,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         _monitorsById = day.Monitors.ToDictionary(m => m.Id);
         // The records are new even when the same monitors are attached.
         _choicesFor = null;
+        OnPropertyChanged(nameof(CanExportTimelapse));
     }
 
     private void RebuildDerived()

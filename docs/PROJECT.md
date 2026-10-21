@@ -107,11 +107,11 @@ native/
                               native/win-x64/worklapse_native.dll (Windows), native/linux-x64/worklapse_native.so (Linux)
 src/
   Worklapse.Core/             settings, SQLite storage, recorder loop, platform interfaces, history reading,
-                              TimeSnapper import (Import/)
+                              TimeSnapper import (Import/), what a timelapse holds (Export/)
   Worklapse.TimeSnapperReader/ 32-bit .NET Framework 4.8 helper: reads TimeSnapper's Firebird database with TimeSnapper's
                               own engine and streams it to the import; copied next to Worklapse.exe
   Worklapse.Video/            native interop, IVF files, staging files, frame sink (video or images), batch encoder,
-                              frame provider for playback
+                              frame provider for playback, MP4 writer
   Worklapse.Capture.Windows/  GDI screen capture, foreground window, browser site (UI Automation), idle time, lock detection
   Worklapse.Capture.Linux/    KDE Plasma (Wayland): KWin screenshots over D-Bus, a KWin script for the screens and the
                               active window, idle from the Wayland compositor, lock from the screen saver service
@@ -281,6 +281,38 @@ thread, newest request wins, and closes decoders unused for 15 s. `DayReviewWind
 straight into its `WriteableBitmap`, and closing the window runs an aggressive GC so the memory goes back to
 the OS. `TimelineControl` and `FrameView` are custom-drawn controls; `DayReviewViewModel` holds the playhead,
 selection, summaries and the mark/restore/confirm deletion logic.
+
+### How timelapse export works (built 2026-10-21)
+
+Day review's tool bar has **Export Timelapse…** (icon only when the window is too narrow for its label). The dialog
+(`TimelapseExportWindow`) picks the time (whole day, one project's blocks that day, or the selection, which is the
+default when there is one), speed (10/15/30/60 frames per second, one capture per frame), video size (720p to 4K: the
+largest size, the picture keeps its shape), the time of day in the bottom right corner, and whether idle time is kept;
+the choices are remembered in settings.json (`Timelapse*`). The picture is Day review's: its monitor choice (found
+again by place after replugging; captures where it wasn't attached are left out) and Focus on Active App. Captures
+marked for deletion are never exported. The developer chose all of this, and AV1 in MP4, on 2026-10-21.
+
+- `CapturePictures` (Core/History) decides what a capture shows, for Day review and the export alike; `TimelapsePlan`
+  (Core/Export) lists the frames and the video size (the largest picture of the export fitted in the chosen size, even
+  sides; frames of other shapes get black bars).
+- `TimelapseExporter` (App/Export) decodes and draws on one thread and encodes on another (two frames ahead). Drawing
+  is SkiaSharp: each picture is first shrunk with `I420.Reduce` (box average) to at most twice its drawn size, then
+  bilinear; Skia's mipmaps cost ~45 ms a frame at 3440×1440, rebuilt every frame. The frame then goes to limited
+  range (`I420.ToLimitedRange`), what players assume.
+- Encoder: libaom good quality, speed 6, quantizer 32, low delay, a key frame every 2 s for seeking, 4×2 tiles, up to
+  12 threads; tagged BT.709 limited range (`wl_enc_create`'s `limited_range`, ABI 5). Realtime mode was 3× faster
+  but blurred light grey text at the same quantizer and made ~1.6× larger frames.
+- `Mp4Writer` (Video) writes the MP4 itself: ftyp, the frames in one mdat as they come (temporal delimiters left out),
+  then moov with the index (co64, stss for key frames) and av1C/colr from the first sequence header (`Av1SequenceInfo`).
+  The file is written as `<name>.tmp` and moved over the target at the end, so cancelling or failing leaves an
+  earlier file as it was. Frames that moved meanwhile (space reclaimed, today's segment encoded) make it plan again
+  from the reloaded day, once per missing frame.
+- Measured 2026-10-21 on the developer's real 2026-10-20 (i7-14700HX): Focus on Active App, 3,829 frames at 1920×860:
+  5 min (12.7 frames/s), 88 MB; encoding is the limit (~60 ms a frame), drawing ~28 ms. Checked: plays and seeks in
+  Chromium; Windows reads its properties and Media Foundation decodes a frame with the right colours. Not tried: VLC,
+  macOS/iOS (older Apple devices can't play AV1).
+- Possible speed-up, not built: encode alternate 2-second chunks with two or three encoders at once (each chunk starts
+  with a key frame anyway); needs its own decoders per encoder, or a chunk of frames held in memory.
 
 ### Storage
 

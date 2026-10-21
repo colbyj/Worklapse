@@ -131,5 +131,90 @@ public static class I420
         return crop;
     }
 
+    /// <summary>The size of a frame shrunk by <paramref name="factor"/> (<see cref="Reduce"/>).</summary>
+    public static (int Width, int Height) ReducedSize(int width, int height, int factor) =>
+        ((width + factor - 1) / factor, (height + factor - 1) / factor);
+
+    /// <summary>
+    /// Shrinks a frame by a whole factor into <paramref name="reduced"/> (<see cref="ReducedSize"/>): each pixel is the
+    /// average of the block it covers, smaller at the right and bottom edges. Scaling a frame far down in one step
+    /// skips pixels; this keeps thin text and lines in the picture.
+    /// </summary>
+    public static void Reduce(ReadOnlySpan<byte> i420, int width, int height, int factor, Span<byte> reduced)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(factor);
+        var (reducedWidth, reducedHeight) = ReducedSize(width, height, factor);
+        if (i420.Length < Size(width, height) || reduced.Length < Size(reducedWidth, reducedHeight))
+            throw new ArgumentException("Buffer too small.");
+
+        // The chroma planes shrink by the same factor: ceil(ceil(w / 2) / f) = ceil(ceil(w / f) / 2).
+        int chromaWidth = ChromaWidth(width), chromaHeight = ChromaHeight(height);
+        int reducedChromaWidth = ChromaWidth(reducedWidth), reducedChromaHeight = ChromaHeight(reducedHeight);
+        var luma = width * height;
+        var chroma = chromaWidth * chromaHeight;
+        var reducedLuma = reducedWidth * reducedHeight;
+        var reducedChroma = reducedChromaWidth * reducedChromaHeight;
+        ReducePlane(i420[..luma], width, height, factor, reduced[..reducedLuma]);
+        ReducePlane(i420.Slice(luma, chroma), chromaWidth, chromaHeight, factor, reduced.Slice(reducedLuma, reducedChroma));
+        ReducePlane(i420.Slice(luma + chroma, chroma), chromaWidth, chromaHeight, factor,
+            reduced.Slice(reducedLuma + reducedChroma, reducedChroma));
+    }
+
+    private static void ReducePlane(ReadOnlySpan<byte> plane, int width, int height, int factor, Span<byte> target)
+    {
+        var (targetWidth, targetHeight) = ReducedSize(width, height, factor);
+        var sums = new int[targetWidth];
+        for (var ty = 0; ty < targetHeight; ty++)
+        {
+            Array.Clear(sums);
+            var rows = Math.Min(factor, height - ty * factor);
+            for (var r = 0; r < rows; r++)
+            {
+                var row = plane.Slice((ty * factor + r) * width, width);
+                for (var tx = 0; tx < targetWidth; tx++)
+                {
+                    var block = row.Slice(tx * factor, Math.Min(factor, width - tx * factor));
+                    var sum = 0;
+                    foreach (var value in block)
+                        sum += value;
+                    sums[tx] += sum;
+                }
+            }
+            var targetRow = target.Slice(ty * targetWidth, targetWidth);
+            for (var tx = 0; tx < targetWidth; tx++)
+            {
+                var count = rows * Math.Min(factor, width - tx * factor);
+                targetRow[tx] = (byte)((sums[tx] + count / 2) / count);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Converts a frame from full range to limited ("studio") range in place: luma 0–255 to 16–235, chroma 0–255 to
+    /// 16–240 around 128. Video players assume limited range, so exported videos use it.
+    /// </summary>
+    public static void ToLimitedRange(Span<byte> i420, int width, int height)
+    {
+        var lumaSize = width * height;
+        var luma = LimitedLuma.Value;
+        foreach (ref var y in i420[..lumaSize])
+            y = luma[y];
+        var chroma = LimitedChroma.Value;
+        foreach (ref var c in i420.Slice(lumaSize, 2 * ChromaWidth(width) * ChromaHeight(height)))
+            c = chroma[c];
+    }
+
+    private static readonly Lazy<byte[]> LimitedLuma = new(() => RangeTable(16, 219));
+    private static readonly Lazy<byte[]> LimitedChroma = new(() => RangeTable(16, 224));
+
+    // value → low + value × span / 255, rounded. Chroma's 128 stays 128 (16 + 128 × 224 / 255 = 128.4).
+    private static byte[] RangeTable(int low, int span)
+    {
+        var table = new byte[256];
+        for (var value = 0; value < 256; value++)
+            table[value] = (byte)(low + (value * span + 127) / 255);
+        return table;
+    }
+
     private static byte Clamp(int value) => (byte)(value < 0 ? 0 : value > 255 ? 255 : value);
 }

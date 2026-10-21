@@ -25,7 +25,7 @@
 #define WL_ERROR_LEN 512
 
 // Bump when an exported function's signature or behaviour changes; Worklapse.Video checks it on first use.
-#define WL_ABI_VERSION 4
+#define WL_ABI_VERSION 5
 
 // --- packed I420 frames ---------------------------------------------------------------------------
 

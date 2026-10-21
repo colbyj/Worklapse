@@ -94,12 +94,17 @@ static wl_encoder *control_failed(wl_encoder *encoder, const char *control, char
     return NULL;
 }
 
-// Creates a low-delay encoder: every frame is returned by the call that submitted it. The first frame is a key
-// frame and no others are inserted; a segment is one encoder's output.
-//   quality  the constant quantizer, 0 (best) to 63
-//   cpu_used libaom's speed setting; higher is faster and a little larger
+// Creates a low-delay encoder: every frame is returned by the call that submitted it.
+//   quality             the constant quantizer, 0 (best) to 63
+//   cpu_used            libaom's speed setting; higher is faster and a little larger
+//   key_frame_interval  0: only the first frame is a key frame (a recorded segment is one encoder's output);
+//                       otherwise a key frame every this many frames, so players can seek (an exported video)
+//   limited_range       0: frames are BT.709 full range and the stream is tagged so, with the sRGB transfer (exactly
+//                       as captured); 1: frames are BT.709 limited range, tagged as plain BT.709 (what video players
+//                       expect)
 // Returns NULL on failure, with a message in `error`.
-WL_API wl_encoder *wl_enc_create(int width, int height, int quality, int cpu_used, int threads, char *error)
+WL_API wl_encoder *wl_enc_create(int width, int height, int quality, int cpu_used, int threads, int key_frame_interval,
+                                 int limited_range, char *error)
 {
     aom_codec_iface_t *av1 = aom_codec_av1_cx();
     aom_codec_enc_cfg_t config;
@@ -115,7 +120,13 @@ WL_API wl_encoder *wl_enc_create(int width, int height, int quality, int cpu_use
     config.g_lag_in_frames = 0;              // no look-ahead: each frame comes out straight away
     config.g_pass = AOM_RC_ONE_PASS;
     config.rc_end_usage = AOM_Q;             // constant quantizer
-    config.kf_mode = AOM_KF_DISABLED;        // only the first frame is a key frame
+    if (key_frame_interval > 0) {
+        config.kf_mode = AOM_KF_AUTO;
+        config.kf_min_dist = (unsigned)key_frame_interval;
+        config.kf_max_dist = (unsigned)key_frame_interval;
+    } else {
+        config.kf_mode = AOM_KF_DISABLED;    // only the first frame is a key frame
+    }
 
     wl_encoder *encoder = (wl_encoder *)calloc(1, sizeof(wl_encoder));
     if (!encoder) {
@@ -143,17 +154,19 @@ WL_API wl_encoder *wl_enc_create(int width, int height, int quality, int cpu_use
         return control_failed(encoder, "AV1E_SET_ROW_MT", error);
     }
 
-    // Tag the stream as BT.709 full range, so decoders (other programs too) show the right colours.
+    // Tag the stream with its colours, so decoders (other programs too) show them right.
+    const aom_transfer_characteristics_t transfer = limited_range ? AOM_CICP_TC_BT_709 : AOM_CICP_TC_SRGB;
+    const aom_color_range_t range = limited_range ? AOM_CR_STUDIO_RANGE : AOM_CR_FULL_RANGE;
     if (aom_codec_control(codec, AV1E_SET_COLOR_PRIMARIES, AOM_CICP_CP_BT_709) != AOM_CODEC_OK) {
         return control_failed(encoder, "AV1E_SET_COLOR_PRIMARIES", error);
     }
-    if (aom_codec_control(codec, AV1E_SET_TRANSFER_CHARACTERISTICS, AOM_CICP_TC_SRGB) != AOM_CODEC_OK) {
+    if (aom_codec_control(codec, AV1E_SET_TRANSFER_CHARACTERISTICS, transfer) != AOM_CODEC_OK) {
         return control_failed(encoder, "AV1E_SET_TRANSFER_CHARACTERISTICS", error);
     }
     if (aom_codec_control(codec, AV1E_SET_MATRIX_COEFFICIENTS, AOM_CICP_MC_BT_709) != AOM_CODEC_OK) {
         return control_failed(encoder, "AV1E_SET_MATRIX_COEFFICIENTS", error);
     }
-    if (aom_codec_control(codec, AV1E_SET_COLOR_RANGE, AOM_CR_FULL_RANGE) != AOM_CODEC_OK) {
+    if (aom_codec_control(codec, AV1E_SET_COLOR_RANGE, range) != AOM_CODEC_OK) {
         return control_failed(encoder, "AV1E_SET_COLOR_RANGE", error);
     }
 
@@ -162,9 +175,9 @@ WL_API wl_encoder *wl_enc_create(int width, int height, int quality, int cpu_use
         wl_enc_destroy(encoder);
         return NULL;
     }
-    encoder->image.range = AOM_CR_FULL_RANGE;
+    encoder->image.range = range;
     encoder->image.cp = AOM_CICP_CP_BT_709;
-    encoder->image.tc = AOM_CICP_TC_SRGB;
+    encoder->image.tc = transfer;
     encoder->image.mc = AOM_CICP_MC_BT_709;
     return encoder;
 }

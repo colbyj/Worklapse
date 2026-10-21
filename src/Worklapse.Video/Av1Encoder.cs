@@ -5,7 +5,7 @@ namespace Worklapse.Video;
 public readonly record struct EncodedFrame(ReadOnlyMemory<byte> Data, bool IsKey);
 
 /// <summary>
-/// A low-delay AV1 encoder: each call returns the frame it was given. The first frame is a key frame and
+/// A low-delay AV1 encoder: each call returns the frame it was given. By default the first frame is a key frame and
 /// no others are inserted, so one encoder produces one segment.
 /// </summary>
 public sealed unsafe class Av1Encoder : IDisposable
@@ -15,15 +15,21 @@ public sealed unsafe class Av1Encoder : IDisposable
 
     private nint _handle;
 
+    /// <param name="keyFrameInterval">0: only the first frame is a key frame; otherwise one every this many frames.</param>
+    /// <param name="limitedRange">
+    /// Frames are BT.709 limited range (<see cref="I420.ToLimitedRange"/>) and the stream is tagged as plain BT.709, what
+    /// video players expect; otherwise BT.709 full range, as captured.
+    /// </param>
     public Av1Encoder(int width, int height, int quality, int cpuUsed = DefaultCpuUsed, int? threads = null,
-        IReadOnlyDictionary<string, string>? options = null)
+        IReadOnlyDictionary<string, string>? options = null, int keyFrameInterval = 0, bool limitedRange = false)
     {
         WorklapseNative.EnsureCompatible();
         Width = width;
         Height = height;
         var error = stackalloc byte[WorklapseNative.ErrorBufferLength];
         error[0] = 0;
-        _handle = WorklapseNative.EncoderCreate(width, height, quality, cpuUsed, threads ?? DefaultThreads, error);
+        _handle = WorklapseNative.EncoderCreate(width, height, quality, cpuUsed, threads ?? DefaultThreads, keyFrameInterval,
+            limitedRange ? 1 : 0, error);
         if (_handle == 0)
             throw new InvalidOperationException($"Could not create the AV1 encoder ({width}×{height}): {WorklapseNative.Utf8(error)}");
 

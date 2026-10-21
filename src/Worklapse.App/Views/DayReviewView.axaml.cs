@@ -37,6 +37,10 @@ public partial class DayReviewView : UserControl
     private FrameRef? _reloadedFor;
     private bool _closed;
     private (double X, double Width)? _resizingFrom;   // where a drag of the panel's edge started
+    private double _exportLabelWidth;                  // what showing Export Timelapse's label adds to the tool bar
+
+    /// <summary>The gap between a tool button's icon and label (Breeze.axaml).</summary>
+    private const double ToolButtonSpacing = 5;
 
     // Needed by the XAML loader; the app always uses the other constructor.
     public DayReviewView() : this(null!, null!, null!) { }
@@ -63,6 +67,8 @@ public partial class DayReviewView : UserControl
                 Timeline.ScrollTo(Timeline.ViewStart + TimelineBar.Value);
         };
         Frames.ViewChanged += UpdateView;
+        ToolBarPanel.SizeChanged += (_, _) => FitToolBar();
+        ViewTools.SizeChanged += (_, _) => FitToolBar();
         HorizontalBar.ValueChanged += (_, _) => OnBarScrolled();
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
         FillWhenOpening((MenuFlyout)MonitorButton.Flyout!, MonitorMenuItems);
@@ -625,23 +631,11 @@ public partial class DayReviewView : UserControl
         var capture = captures[index];
         string? overlay = capture.PendingDelete ? "Marked for deletion" : !capture.IsActive ? "Idle — no keyboard or mouse input" : null;
 
-        var tiles = new List<(MonitorRecord, FrameRef?, string?)>();
-        foreach (var monitor in monitors)
-        {
-            var frame = FrameOf(capture, monitor.Id);
-            // Idle captures have no frames; show the screen as it was last captured, under the idle overlay.
-            if (frame is null && !capture.IsActive)
-                frame = LastFrameBefore(index, monitor.Id);
-            // TimeSnapper kept no picture for windows it couldn't name; the time was recorded all the same.
-            tiles.Add((monitor, frame, frame is null ? monitor.IsTimeSnapper ? "No picture" : "Not recorded" : null));
-        }
-
-        // The focused window, where it was recorded. Recording only the active application blacks out the rest of
-        // its monitor and leaves the others out, so this shows just what was recorded.
-        PixelRect? focus = null;
-        if (_viewModel.FocusOnApplication && WindowAt(index) is { } window
-            && tiles.Any(t => t.Item2 is not null && !t.Item1.Bounds.Intersect(window).IsEmpty))
-            focus = window;
+        // Idle captures show the screen as it was last captured, under the idle overlay.
+        var pictures = CapturePictures.Tiles(captures, index, monitors);
+        // TimeSnapper kept no picture for windows it couldn't name; the time was recorded all the same.
+        var tiles = pictures.Select(t => (t.Monitor, t.Frame, t.Frame is null ? t.Monitor.IsTimeSnapper ? "No picture" : "Not recorded" : null)).ToList();
+        var focus = _viewModel.FocusOnApplication ? CapturePictures.Focus(captures, index, pictures) : null;
 
         var version = ++_requestVersion;
         _plan = new PlannedFrame(version, tiles, overlay, focus);
@@ -650,36 +644,6 @@ public partial class DayReviewView : UserControl
         // overlay. The new placement applied to the old pictures would show the wrong part of them.
         Frames.SetContent(_shown.Tiles, overlay, _shown.Focus);
         UpdateView();
-    }
-
-    /// <summary>
-    /// The window that had focus at a capture. Idle captures show the screen as last captured, so for them, the
-    /// window of the last active capture before.
-    /// </summary>
-    private PixelRect? WindowAt(int index)
-    {
-        var captures = _viewModel.Captures;
-        for (var i = index; i >= 0; i--)
-            if (captures[i].IsActive)
-                return captures[i].Window;
-        return null;
-    }
-
-    private static FrameRef? FrameOf(CaptureRecord capture, long monitorId)
-    {
-        foreach (var f in capture.Frames)
-            if (f.MonitorId == monitorId)
-                return f.Frame;
-        return null;
-    }
-
-    private FrameRef? LastFrameBefore(int index, long monitorId)
-    {
-        var captures = _viewModel.Captures;
-        for (var i = index - 1; i >= 0; i--)
-            if (FrameOf(captures[i], monitorId) is { } frame)
-                return frame;
-        return null;
     }
 
     private void ShowFrames(FrameResult result)
@@ -792,6 +756,25 @@ public partial class DayReviewView : UserControl
     {
         if (!_updatingBars)
             Frames.ScrollTo(new Vector(HorizontalBar.Value, VerticalBar.Value));
+    }
+
+    /// <summary>
+    /// In a narrow window the tool bar's two halves would meet; Export Timelapse then shows only its icon (its tool tip
+    /// names it).
+    /// </summary>
+    private void FitToolBar()
+    {
+        if (ExportLabel.IsVisible)
+            _exportLabelWidth = ExportLabel.Bounds.Width + ToolButtonSpacing;
+        var needed = NavigationTools.DesiredSize.Width + ViewTools.DesiredSize.Width + (ExportLabel.IsVisible ? 0 : _exportLabelWidth);
+        ExportLabel.IsVisible = ToolBarPanel.Bounds.Width >= needed;
+    }
+
+    private void OnExportTimelapse(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner || !_viewModel.CanExportTimelapse)
+            return;
+        new TimelapseExportWindow(_viewModel.TimelapseExport()).Show(owner);
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => Frames.ZoomBy(1.5);

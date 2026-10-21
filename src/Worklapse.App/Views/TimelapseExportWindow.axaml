@@ -1,0 +1,91 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Worklapse.App.ViewModels"
+        x:Class="Worklapse.App.Views.TimelapseExportWindow"
+        x:DataType="vm:TimelapseExportViewModel"
+        Title="{Binding Title}"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="500" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBlock.label">
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsDone}">
+          <Button Content="Play" Click="OnPlay" />
+          <Button Content="Open Folder" Click="OnOpenFolder" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button Content="Export…" Classes="accent" IsDefault="True" Command="{Binding ExportCommand}" IsVisible="{Binding IsChoosing}" />
+          <Button Content="{Binding CloseText}" IsCancel="True" Click="OnClose" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <StackPanel Margin="16,14" Spacing="10">
+      <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" IsEnabled="{Binding IsChoosing}">
+        <TextBlock Classes="label" Text="Time:" VerticalAlignment="Top" Margin="0,6,10,0" />
+        <StackPanel Grid.Column="1">
+          <RadioButton GroupName="range" Content="Whole day" IsChecked="{Binding IsWholeDay}" />
+          <DockPanel>
+            <RadioButton GroupName="range" Content="Project:" IsChecked="{Binding IsProject}" IsEnabled="{Binding HasProjects}" />
+            <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" IsEnabled="{Binding IsProject}"
+                      IsVisible="{Binding HasProjects}" Margin="8,0,0,0" MinWidth="180" VerticalAlignment="Center"
+                      AutomationProperties.Name="Project">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:TimelapseProject">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding Project.Brush}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Project.Name}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Classes="secondary" Text="No project time this day" IsVisible="{Binding !HasProjects}"
+                       Margin="8,0,0,0" VerticalAlignment="Center" />
+          </DockPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <RadioButton GroupName="range" Content="Selection" IsChecked="{Binding IsSelection}" IsEnabled="{Binding HasSelection}" />
+            <TextBlock Classes="secondary" Text="{Binding SelectionText}" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" Classes="label" Text="Picture:" />
+        <TextBlock Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
+                   Text="{Binding ViewText, StringFormat='{}{0}, as in Day review'}" />
+
+        <TextBlock Grid.Row="2" Classes="label" Text="Speed:" />
+        <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding Speeds}" SelectedItem="{Binding Speed}" MinWidth="200"
+                  AutomationProperties.Name="Speed" />
+
+        <TextBlock Grid.Row="3" Classes="label" Text="Video size:" />
+        <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding Sizes}" SelectedItem="{Binding Size}" MinWidth="200"
+                  ToolTip.Tip="The largest size; the picture keeps its shape" AutomationProperties.Name="Video size" />
+
+        <StackPanel Grid.Row="4" Grid.Column="1" Spacing="2">
+          <CheckBox Content="Show the time of day" IsChecked="{Binding Clock}" />
+          <CheckBox Content="Include idle time" IsChecked="{Binding IncludeIdle}" />
+        </StackPanel>
+      </Grid>
+
+      <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+        <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding SummaryText}" />
+        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4" IsVisible="{Binding !IsChoosing}">
+          <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" />
+          <TextBlock Text="{Binding ProgressText}" />
+        </StackPanel>
+        <TextBlock Grid.Row="2" Grid.Column="1" Classes="warning" Text="{Binding ErrorText}"
+                   IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </Grid>
+    </StackPanel>
+  </DockPanel>
+</Window>
