@@ -148,7 +148,7 @@ public sealed class SuggestionEngine
     }
 
     /// <summary>The local days with at least one range set by hand.</summary>
-    private static List<DateOnly> LabelledDays(HistoryStore history)
+    public static List<DateOnly> LabelledDays(HistoryStore history)
     {
         var projects = new ProjectStore(history.Database);
         var days = new SortedSet<DateOnly>();

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Worklapse.Core.History;
 using Worklapse.Core.Imaging;
 using Worklapse.Core.Platform;
@@ -167,7 +168,7 @@ public class ScreenWordTests
         }
 
         var reader = new FakeReader();
-        Assert.Equal(3, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), null, TestContext.Current.CancellationToken));
+        Assert.Equal(3, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), default, 1, null, TestContext.Current.CancellationToken));
 
         using var check = WorklapseDatabase.Open(folder.Path);
         var words = new ScreenWordStore(check);
@@ -175,7 +176,7 @@ public class ScreenWordTests
         Assert.Equal(["shade101", "docket"], Present(words.Get(ids[1])));
         Assert.Equal(["shade101", "docket"], Present(words.Get(ids[2])));
         Assert.Equal(2, reader.Reads);
-        Assert.Equal(0, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), null, TestContext.Current.CancellationToken)); // nothing left
+        Assert.Equal(0, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), default, 1, null, TestContext.Current.CancellationToken)); // nothing left
     }
 
     [Fact]
@@ -208,10 +209,92 @@ public class ScreenWordTests
             File.Delete(Path.Combine(folder.Path, (string)path.ExecuteScalar()!));
         }
 
-        Assert.Equal(1, PastScreenReading.Run(folder.Path, new FakeReader(), Nine, Nine.AddHours(1), null, TestContext.Current.CancellationToken));
+        Assert.Equal(1, PastScreenReading.Run(folder.Path, new FakeReader(), Nine, Nine.AddHours(1), default, 1, null, TestContext.Current.CancellationToken));
         using var check = WorklapseDatabase.Open(folder.Path);
         Assert.Null(new ScreenWordStore(check).Get(ids[0]));
         Assert.NotNull(new ScreenWordStore(check).Get(ids[1]));
+    }
+
+    [Fact]
+    public void PastCapturesAreReadOnSeveralThreads()
+    {
+        using var folder = new TempFolder();
+        var ids = new List<long>();
+        using (var db = WorklapseDatabase.Open(folder.Path))
+        {
+            var store = new RecordingStore(db);
+            using var sink = new FrameSink(store, () => (FrameFormat.Jpeg, 90));
+            var monitorId = store.GetOrAddMonitor(Main);
+            var app = store.GetOrAddApp("rider64.exe", null);
+            for (var i = 0; i < 20; i++)
+            {
+                using var transaction = store.BeginTransaction();
+                var id = store.InsertCapture(Nine.AddSeconds(i * 10), CaptureKind.Active, app, "Code", new PixelRect(10, 10, 50, 30));
+                var pixels = new byte[I420.Size(Main.Bounds.Width, Main.Bounds.Height)];
+                Array.Fill(pixels, (byte)(50 + i * 8));
+                var frame = sink.Append(monitorId, new ScreenCapture { Monitor = Main, Width = 128, Height = 64, Frame = pixels, Hash = (ulong)i + 1 },
+                    Nine.AddSeconds(i * 10));
+                store.InsertFrame(id, monitorId, frame);
+                transaction.Commit();
+                sink.Committed();
+                ids.Add(id);
+            }
+            sink.CloseAll();
+            sink.Committed();
+        }
+
+        var reader = new FakeReader();
+        var reports = new List<(int Done, int Total)>();
+        var progress = new SynchronousProgress(reports);
+        Assert.Equal(20, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), default, 4, progress, TestContext.Current.CancellationToken));
+
+        Assert.Equal(20, reader.Reads);
+        Assert.Equal((20, 20), reports[^1]);
+        Assert.True(reports.Zip(reports.Skip(1)).All(p => p.First.Done <= p.Second.Done)); // never goes back
+        using var check = WorklapseDatabase.Open(folder.Path);
+        var words = new ScreenWordStore(check);
+        Assert.All(ids, id => Assert.Contains("docket", Present(words.Get(id))));
+    }
+
+    [Fact]
+    public void WhatTrainingLearnsFromIsReadFirstThenTheRestOldestFirst()
+    {
+        using var folder = new TempFolder();
+        using (var db = WorklapseDatabase.Open(folder.Path))
+        {
+            var store = new RecordingStore(db);
+            using var sink = new FrameSink(store, () => (FrameFormat.Jpeg, 90));
+            var monitorId = store.GetOrAddMonitor(Main);
+            var app = store.GetOrAddApp("rider64.exe", null);
+            foreach (var (seconds, shade) in new (int, byte)[] { (0, 60), (10, 120), (20, 180) })
+            {
+                using var transaction = store.BeginTransaction();
+                var id = store.InsertCapture(Nine.AddSeconds(seconds), CaptureKind.Active, app, "Code", new PixelRect(10, 10, 50, 30));
+                var pixels = new byte[I420.Size(Main.Bounds.Width, Main.Bounds.Height)];
+                Array.Fill(pixels, shade);
+                var frame = sink.Append(monitorId, new ScreenCapture { Monitor = Main, Width = 128, Height = 64, Frame = pixels, Hash = shade },
+                    Nine.AddSeconds(seconds));
+                store.InsertFrame(id, monitorId, frame);
+                transaction.Commit();
+                sink.Committed();
+            }
+            sink.CloseAll();
+            sink.Committed();
+            var projects = new ProjectStore(db);
+            projects.SetSpan(Nine.AddSeconds(20), Nine.AddSeconds(30), projects.AddProject("Client", null)); // the newest, set by hand
+        }
+
+        var reader = new FakeReader();
+        Assert.Equal(3, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), default, 1, null, TestContext.Current.CancellationToken));
+
+        // JPEG moves a flat shade a little: compare to the nearest one written.
+        Assert.Equal([180, 60, 120], reader.Shades.Select(s => new[] { 60, 120, 180 }.MinBy(w => Math.Abs(w - s))));
+    }
+
+    /// <summary>Progress kept as it's reported, on the reporting thread (<see cref="Progress{T}"/> posts it elsewhere).</summary>
+    private sealed class SynchronousProgress(List<(int Done, int Total)> reports) : IProgress<(int Done, int Total)>
+    {
+        public void Report((int Done, int Total) value) => reports.Add(value); // PastScreenReading reports under a lock
     }
 
     /// <summary>A capture's words, failing the test when it has none.</summary>
@@ -236,9 +319,13 @@ public class ScreenWordTests
     {
         public int Reads;
 
+        /// <summary>The first pixel of each picture, in the order read.</summary>
+        public readonly ConcurrentQueue<byte> Shades = new();
+
         public string Read(byte[] gray, int width, int height)
         {
             Interlocked.Increment(ref Reads);
+            Shades.Enqueue(gray[0]);
             return $"shade{gray[0]} docket 42 a";
         }
     }

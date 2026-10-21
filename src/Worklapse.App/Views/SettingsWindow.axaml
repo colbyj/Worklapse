@@ -638,12 +638,16 @@
                   <TextBlock Classes="hint" Margin="26,0,0,0" Text="Apps, sites and projects opt out on their own tabs" />
                   <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,6,0,0" IsVisible="{Binding CanReadScreens}">
                     <Button Content="Read Past Days" Command="{Binding ReadPastDaysCommand}" IsEnabled="{Binding CanReadPastDays}"
-                            ToolTip.Tip="Read the screens of everything recorded before, newest first" />
+                            ToolTip.Tip="Read the screens of everything recorded before, time with a project first" />
+                    <NumericUpDown Value="{Binding PastReadingThreads}" Minimum="1" Maximum="{Binding MaxPastReadingThreads}" Increment="1"
+                                   FormatString="0" Width="72" IsEnabled="{Binding !IsReadingPastDays}"
+                                   AutomationProperties.Name="Threads reading past days" />
+                    <TextBlock Text="threads" VerticalAlignment="Center" />
                     <Button Content="Stop" Command="{Binding StopReadingPastDaysCommand}" IsVisible="{Binding IsReadingPastDays}" />
                     <TextBlock Text="{Binding PastDaysText}" Classes="secondary" VerticalAlignment="Center" />
                   </StackPanel>
                   <TextBlock Classes="hint" Margin="26,0,0,0" IsVisible="{Binding CanReadScreens}"
-                             Text="Slow for months of history · stopping keeps what's read" />
+                             Text="More threads: faster, busier computer · stopping keeps what's read" />
                 </StackPanel>
               </Grid>
             </StackPanel>

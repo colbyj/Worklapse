@@ -1,6 +1,9 @@
+using System.Runtime.ExceptionServices;
 using Worklapse.Core.Diagnostics;
+using Worklapse.Core.History;
 using Worklapse.Core.Import;
 using Worklapse.Core.Platform;
+using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
 using Worklapse.Core.Suggestions;
 
@@ -8,29 +11,77 @@ namespace Worklapse.Video;
 
 /// <summary>
 /// Reads the screens of captures recorded before reading was on, or imported, for suggestions: the active window of each
-/// capture without words, newest first, from its stored frame (decoded as Day review decodes it). Captures showing the same
-/// frame and window are read once. Slow (a picture takes ~80 ms), so it reports progress and can be cancelled; what it has
-/// read stays.
+/// capture without words, from its stored frame (decoded as Day review decodes it), on as many low-priority threads as asked.
+/// First the segments holding anything training learns from (a video whole, since its frames decode in order anyway; a
+/// picture is its own segment), then the rest; oldest first, each segment's frames in order. Captures showing the same
+/// frame and window are read once. Slow (a picture takes ~100 ms on one thread), so it reports progress and can be cancelled; what it
+/// has read stays.
 /// </summary>
 public static class PastScreenReading
 {
-    /// <summary>Reads every active capture from <paramref name="from"/> up to <paramref name="to"/> that has a frame and no words yet, where allowed.</summary>
+    /// <summary>
+    /// Reads every active capture from <paramref name="from"/> up to <paramref name="to"/> that has a frame and no words yet,
+    /// where allowed, on <paramref name="threads"/> threads (each with its own decoder and OCR engine).
+    /// </summary>
+    /// <param name="dayStart">When a day starts (settings), for finding the days training learns from.</param>
     /// <returns>How many captures got words.</returns>
-    public static int Run(string dataFolder, IScreenTextReader reader, DateTimeOffset from, DateTimeOffset to,
-        IProgress<(int Done, int Total)>? progress, CancellationToken cancel)
+    public static int Run(string dataFolder, IScreenTextReader reader, DateTimeOffset from, DateTimeOffset to, TimeOnly dayStart,
+        int threads, IProgress<(int Done, int Total)>? progress, CancellationToken cancel)
     {
-        using var db = WorklapseDatabase.Open(dataFolder);
-        using var frames = new FrameProvider(dataFolder);
-        var store = new ScreenWordStore(db);
-        var captures = FindUnread(db, from, to);
+        List<Unread[]> segments;
+        using (var history = new HistoryStore(WorklapseDatabase.Open(dataFolder), dayStart))
+            segments = InReadingOrder(FindUnread(history.Database, from, to), Training(history));
+        var total = segments.Sum(s => s.Length);
+        progress?.Report((0, total));
+
+        // A thread failing stops the others, and its exception is the run's.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        var run = new RunState();
+        var next = -1;
+        Exception? failure = null;
+        var workers = Enumerable.Range(0, Math.Max(1, threads)).Select(n => new Thread(() =>
+        {
+            try
+            {
+                using var db = WorklapseDatabase.Open(dataFolder);
+                using var frames = new FrameProvider(dataFolder, cacheBudgetBytes: 0); // read once, in order: nothing to cache
+                var store = new ScreenWordStore(db);
+                int i;
+                while ((i = Interlocked.Increment(ref next)) < segments.Count)
+                {
+                    var kept = ReadSegment(segments[i], frames, store, reader, run, stop.Token);
+                    run.Finished(segments[i].Length, kept, total, progress);
+                }
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                Interlocked.CompareExchange(ref failure, ex, null);
+                stop.Cancel();
+            }
+        })
+        { Name = $"Worklapse past screen reading {n + 1}", IsBackground = true, Priority = ThreadPriority.Lowest }).ToList();
+        workers.ForEach(w => w.Start());
+        workers.ForEach(w => w.Join());
+
+        if (failure is not null)
+            ExceptionDispatchInfo.Throw(failure);
+        cancel.ThrowIfCancellationRequested();
+        return run.Kept;
+    }
+
+    /// <summary>Reads one segment's captures, in frame order.</summary>
+    /// <returns>How many got words.</returns>
+    private static int ReadSegment(Unread[] captures, FrameProvider frames, ScreenWordStore store, IScreenTextReader reader,
+        RunState run, CancellationToken cancel)
+    {
         var kept = 0;
-        var (reportedUnreadable, reportedFailure) = (false, false);
         (FrameRef Frame, PixelRect Window, string[] Words)? last = null;
-        for (var i = 0; i < captures.Count; i++)
+        foreach (var capture in captures)
         {
             cancel.ThrowIfCancellationRequested();
-            progress?.Report((i, captures.Count));
-            var capture = captures[i];
             if (!store.MayRead(capture.Id))
                 continue;
 
@@ -39,20 +90,16 @@ public static class PastScreenReading
                 words = previous.Words;
             else
             {
-                words = Read(frames, reader, capture, ref reportedUnreadable, ref reportedFailure);
+                words = Read(frames, reader, capture, run);
                 last = (capture.Frame, capture.Window, words);
             }
             if (store.Set(capture.Id, words))
                 kept++;
         }
-        progress?.Report((captures.Count, captures.Count));
         return kept;
     }
 
-    /// <param name="reportedUnreadable">Whether an undecodable frame was logged already (once per run).</param>
-    /// <param name="reportedFailure">Whether the reader failing was logged already (once per run).</param>
-    private static string[] Read(FrameProvider frames, IScreenTextReader reader, Unread capture, ref bool reportedUnreadable,
-        ref bool reportedFailure)
+    private static string[] Read(FrameProvider frames, IScreenTextReader reader, Unread capture, RunState run)
     {
         DecodedFrame frame;
         try
@@ -62,9 +109,8 @@ public static class PastScreenReading
         catch (Exception ex) when (ex is FrameUnavailableException or IOException or InvalidDataException or InvalidOperationException)
         {
             // Its file is gone, moved (an imported picture) or damaged: that capture goes without words, the rest are read.
-            if (!reportedUnreadable)
+            if (run.FirstUnreadable())
                 Log.Error($"Reading past screens: frame {capture.Frame.FrameIndex} of segment {capture.Frame.SegmentId} can't be decoded; such captures are skipped.", ex);
-            reportedUnreadable = true;
             return [];
         }
         try
@@ -76,9 +122,8 @@ public static class PastScreenReading
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // As on the recorder's queue: that capture goes without words, the rest are still tried.
-            if (!reportedFailure)
+            if (run.FirstFailure())
                 Log.Error("Reading past screens: reading the screen failed; captures where it fails go without screen words.", ex);
-            reportedFailure = true;
             return [];
         }
         finally
@@ -87,11 +132,71 @@ public static class PastScreenReading
         }
     }
 
+    /// <summary>
+    /// The captures in the order they're read: grouped by segment, those with a <paramref name="training"/> capture first,
+    /// then oldest segment first (as <paramref name="oldestFirst"/> has them), each segment's in frame order.
+    /// </summary>
+    private static List<Unread[]> InReadingOrder(List<Unread> oldestFirst, HashSet<long> training) =>
+        oldestFirst.GroupBy(c => c.Frame.SegmentId)
+            .Select(s => s.OrderBy(c => c.Frame.FrameIndex).ToArray())
+            .OrderBy(s => s.Any(c => training.Contains(c.Id)) ? 0 : 1) // stable: oldest first within each
+            .ToList();
+
+    /// <summary>
+    /// The captures training learns from: those of the labelled days with a project set by hand (or none), a link or a
+    /// title rule (<see cref="TrainingSet.Assignments"/>).
+    /// </summary>
+    private static HashSet<long> Training(HistoryStore history)
+    {
+        var projects = new ProjectStore(history.Database);
+        var training = new HashSet<long>();
+        foreach (var day in SuggestionEngine.LabelledDays(history))
+        {
+            var (start, end) = history.DayRange(day);
+            var captures = history.LoadDay(day).Captures;
+            var assignments = TrainingSet.Assignments(captures, projects.GetSpans(start, end));
+            for (var i = 0; i < captures.Count; i++)
+            {
+                if (assignments[i].IsAssigned)
+                    training.Add(captures[i].Id);
+            }
+        }
+        return training;
+    }
+
+    /// <summary>What the reading threads share: the counts, and what was logged already (each kind once per run).</summary>
+    private sealed class RunState
+    {
+        private readonly Lock _gate = new();
+        private int _done;
+        private int _reportedUnreadable;
+        private int _reportedFailure;
+
+        public int Kept { get; private set; }
+
+        /// <summary>Counts a segment read. Reported under the lock, so progress never goes back.</summary>
+        public void Finished(int captures, int kept, int total, IProgress<(int Done, int Total)>? progress)
+        {
+            lock (_gate)
+            {
+                _done += captures;
+                Kept += kept;
+                progress?.Report((_done, total));
+            }
+        }
+
+        /// <summary>True the first time a frame can't be decoded.</summary>
+        public bool FirstUnreadable() => Interlocked.Exchange(ref _reportedUnreadable, 1) == 0;
+
+        /// <summary>True the first time the reader fails.</summary>
+        public bool FirstFailure() => Interlocked.Exchange(ref _reportedFailure, 1) == 0;
+    }
+
     /// <param name="Window">The active window on the frame, in its pixels.</param>
     private readonly record struct Unread(long Id, FrameRef Frame, PixelRect Window);
 
     /// <summary>
-    /// The active captures from <paramref name="from"/> up to <paramref name="to"/> without words, newest first, each with the frame of the monitor
+    /// The active captures from <paramref name="from"/> up to <paramref name="to"/> without words, oldest first, each with the frame of the monitor
     /// showing most of its window and the window on that frame. An imported TimeSnapper picture is the window itself.
     /// </summary>
     private static List<Unread> FindUnread(WorklapseDatabase db, DateTimeOffset from, DateTimeOffset to)
@@ -105,7 +210,7 @@ public static class PastScreenReading
             JOIN monitors m ON m.id = f.monitor_id
             WHERE c.kind = $active AND c.pending_delete = 0 AND c.ts_ms >= $from AND c.ts_ms < $to
               AND NOT EXISTS (SELECT 1 FROM screen_words w WHERE w.capture_id = c.id)
-            ORDER BY c.ts_ms DESC, c.id;
+            ORDER BY c.ts_ms, c.id;
             """);
         command.Parameters.AddWithValue("$active", (int)CaptureKind.Active);
         command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());

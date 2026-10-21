@@ -132,6 +132,11 @@ public sealed record WorklapseSettings
     /// <summary>How sure the classifier must be of a block, in percent, for it to be offered.</summary>
     public int MinimumCertainty { get; init; } = 51;
 
+    /// <summary>Threads reading the screens of past days (Settings, Read Past Days), each a core's worth of CPU.</summary>
+    public int PastReadingThreads { get; init; } = DefaultPastReadingThreads;
+
+    public const int DefaultPastReadingThreads = 4;
+
     /// <summary>Whether the recorder reads the active window's text.</summary>
     [JsonIgnore]
     public bool ReadsScreen => SuggestProjects && ReadScreenText;
@@ -158,6 +163,7 @@ public sealed record WorklapseSettings
         GlanceMinutes = Math.Clamp(GlanceMinutes, 0, 30),
         SplitMinutes = Math.Clamp(SplitMinutes, Math.Clamp(GlanceMinutes, 0, 30), 240),
         MinimumCertainty = Math.Clamp(MinimumCertainty, 0, 99),
+        PastReadingThreads = Math.Clamp(PastReadingThreads, 1, Environment.ProcessorCount),
         ReviewPanelWidth = double.IsFinite(ReviewPanelWidth)
             ? Math.Clamp(ReviewPanelWidth, MinReviewPanelWidth, MaxReviewPanelWidth) : DefaultReviewPanelWidth,
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,

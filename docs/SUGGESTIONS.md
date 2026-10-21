@@ -229,8 +229,14 @@ outside ranges teach too, and each project starts from its name, links and rules
 - The recorder crops the focused window from the luma (Y) plane of the captured I420 frame, on the monitor showing most of
   it, and queues it after the commit (`ScreenReadingQueue`: one lowest-priority thread, at most 4 pictures waiting,
   dropping new work when full). A capture showing the same frame and window copies the words instead.
-- `PastScreenReading` (Worklapse.Video): reads the captures of a time range that have no words, newest first, from their
-  stored frames (AV1, images, imported TimeSnapper pictures), once per distinct frame and window.
+- `PastScreenReading` (Worklapse.Video): reads the captures of a time range that have no words from their stored frames
+  (AV1, images, imported TimeSnapper pictures), once per distinct frame and window, on `PastReadingThreads` lowest-priority
+  threads (Settings, default 4; each its own decoder and OCR engine). First the segments holding a capture training learns
+  from (`TrainingSet.Assignments` on the labelled days; a video segment whole, a picture is its own segment), then the
+  rest; oldest first, each segment's frames in order. Reading a video's frames backward (the first version went newest
+  first) restarted the decoder at the key frame every few frames: 412 ms a capture on Oct 19 against 128 ms in order on
+  one thread, 19 ms on 8. Imported TimeSnapper pictures: ~110 ms on one thread, ~21 ms on 8 (OCR is ~90% of it). On the
+  developer's history (2026-10-20): 404k captures unread, 32k of them training data.
 - Settings: `SuggestProjects`, `ReadScreenText` (both on), `GlanceMinutes` (2), `SplitMinutes` (30).
 - Measured while recording (Active application mode, 10 s interval, real screen, alternating runs of 3 minutes): CPU
   25.8% / 27.3% of one core with reading against 27.1% / 29.5% without (within the noise; capture and AV1 encoding are
@@ -270,8 +276,8 @@ outside ranges teach too, and each project starts from its name, links and rules
 
 **Phase 4 built 2026-10-20** (Settings):
 - A Suggestions tab: suggest projects on or off, what it learns from ("Time you set by hand: 164 blocks over 18 days"), text
-  on the screen on or off, Read Past Days (reads the screens of everything recorded before, newest first, in the
-  background, with progress and Stop; closing the dialog stops it, what was read stays; only where the platform has a
+  on the screen on or off, Read Past Days (reads the screens of everything recorded before, what training learns from first,
+  in the background on the number of threads chosen beside it, with progress and Stop; closing the dialog stops it, what was read stays; only where the platform has a
   reader), and the glance and split limits. Turning reading off here stops it but keeps the words read so far; turning
   it off for an app, site or project deletes them.
 - Applications: Read screen and Learn columns (sortable, greyed while the app is excluded), saved on Apply.

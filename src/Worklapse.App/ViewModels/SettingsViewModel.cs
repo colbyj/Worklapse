@@ -102,7 +102,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool HasDefaults => SelectedTab is RecordingTab or GeneralTab;
 
     /// <summary>
-    /// Reads the screens of every past capture without words yet (newest first), in the background: slow, so it says how
+    /// Reads the screens of every past capture without words yet (what training learns from first), in the background: slow, so it says how
     /// far it got and can be stopped (closing the dialog stops it); what it read stays.
     /// </summary>
     [RelayCommand]
@@ -113,13 +113,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         var cancel = _reading = new CancellationTokenSource();
         IsReadingPastDays = true;
         PastDaysText = "Finding what to read…";
-        var folder = _store.Current.DataFolder;
+        var (folder, dayStart) = (_store.Current.DataFolder, _store.Current.DayStart);
         var progress = new Progress<(int Done, int Total)>(p =>
             PastDaysText = p.Total == 0 ? "Nothing left to read." : $"Read {p.Done:N0} of {p.Total:N0} captures…");
         try
         {
+            var threads = ChosenPastReadingThreads;
             var kept = await Task.Run(() => PastScreenReading.Run(folder, reader, DateTimeOffset.MinValue.AddYears(1), DateTimeOffset.Now,
-                progress, cancel.Token));
+                dayStart, threads, progress, cancel.Token));
             PastDaysText = kept == 0 ? "Nothing left to read." : $"Done: {kept:N0} captures got words.";
         }
         catch (OperationCanceledException)
@@ -185,6 +186,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private decimal? _glanceMinutes;
     [ObservableProperty] private decimal? _splitMinutes;
     [ObservableProperty] private decimal? _minimumCertainty;
+    [ObservableProperty] private decimal? _pastReadingThreads;
+
+    /// <summary>The most threads Read Past Days can use: one per logical core.</summary>
+    public int MaxPastReadingThreads { get; } = Environment.ProcessorCount;
 
     /// <summary>What suggestions learn from: the time set by hand in the history.</summary>
     [ObservableProperty] private string _learnsFromText = "";
@@ -293,7 +298,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         // Projects and marks go to the history they were read from, before a change of folder takes effect. Projects
         // first, so links to projects made in the dialog have ids to point at.
-        var folder = _store.Current.DataFolder;
+        var (folder, dayStart) = (_store.Current.DataFolder, _store.Current.DayStart);
         Projects.Apply(folder);
         Programs.Apply(folder);
         if (StartAtLogin != _startAtLoginApplied)
@@ -385,7 +390,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         GlanceMinutes = (int)(GlanceMinutes ?? 2),
         SplitMinutes = (int)(SplitMinutes ?? 30),
         MinimumCertainty = (int)(MinimumCertainty ?? 51),
+        PastReadingThreads = ChosenPastReadingThreads,
     };
+
+    /// <summary>The thread count in the dialog, applied or not.</summary>
+    private int ChosenPastReadingThreads =>
+        Math.Clamp((int)(PastReadingThreads ?? WorklapseSettings.DefaultPastReadingThreads), 1, MaxPastReadingThreads);
 
     private void Load(WorklapseSettings settings)
     {
@@ -420,6 +430,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         GlanceMinutes = settings.GlanceMinutes;
         SplitMinutes = settings.SplitMinutes;
         MinimumCertainty = settings.MinimumCertainty;
+        PastReadingThreads = settings.PastReadingThreads;
         _loading = false;
         // Defaults don't touch the Applications and Projects pages (they're history, not settings); their changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)
