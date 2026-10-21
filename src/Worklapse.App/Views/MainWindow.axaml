@@ -7,7 +7,9 @@
         Title="{Binding Title}"
         Icon="avares://Worklapse/Assets/worklapse.ico"
         Width="1400" Height="900" MinWidth="900" MinHeight="560"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource UiChromeBrush}"
+        TransparencyBackgroundFallback="{DynamicResource UiWindowBrush}">
   <Window.Styles>
     <!-- The rail: icon buttons that switch views (top) and reach recording and Settings (bottom). The shown view's
          button has the selection fill and an accent mark on its left, like Windows' navigation panes. -->
@@ -65,7 +67,7 @@
 
   <DockPanel>
     <!-- The rail. -->
-    <Border DockPanel.Dock="Left" Width="48" Background="{DynamicResource UiWindowBrush}"
+    <Border DockPanel.Dock="Left" Width="48" Background="{DynamicResource UiChromeBrush}"
             BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,1,0" Padding="0,6">
       <DockPanel>
         <StackPanel DockPanel.Dock="Bottom" Spacing="2">

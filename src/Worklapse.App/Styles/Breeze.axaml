@@ -51,7 +51,7 @@
 
   <!-- Header areas (tool bars), as in Plasma's "header" colour. -->
   <Style Selector="Border.toolBar">
-    <Setter Property="Background" Value="{DynamicResource UiHeaderBrush}" />
+    <Setter Property="Background" Value="{DynamicResource UiChromeHeaderBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
     <Setter Property="Padding" Value="4,3" />

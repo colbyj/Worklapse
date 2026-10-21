@@ -50,130 +50,133 @@
       </StackPanel>
     </Border>
 
-    <views:RecordingMessages DockPanel.Dock="Top" x:Name="Messages" DataContext="{x:Null}" />
+    <!-- Below the tool bar, solid: Mica shows only through the tool bar (and the window's rail and title bar). -->
+    <DockPanel Background="{DynamicResource UiWindowBrush}">
+      <views:RecordingMessages DockPanel.Dock="Top" x:Name="Messages" DataContext="{x:Null}" />
 
-    <Border DockPanel.Dock="Top" BorderThickness="0,0,0,1" Padding="10,5" IsVisible="{Binding HasExportError}"
-            Background="{x:Static theming:AppBrushes.ErrorBar}" BorderBrush="{x:Static theming:AppBrushes.ErrorBarFrame}">
-      <DockPanel>
-        <Button DockPanel.Dock="Right" Classes="tool" Command="{Binding DismissExportErrorCommand}" ToolTip.Tip="Close" AutomationProperties.Name="Close">
-          <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
-        </Button>
-        <TextBlock Text="{Binding ExportError}" TextWrapping="Wrap" VerticalAlignment="Center" />
-      </DockPanel>
-    </Border>
-
-    <Border DockPanel.Dock="Bottom" Classes="statusBar">
-      <StackPanel Orientation="Horizontal" Margin="8,0" Height="22">
-        <views:RecordingIndicator x:Name="Indicator" DataContext="{x:Null}" />
-        <TextBlock Classes="secondary" VerticalAlignment="Center" Margin="4,0,0,0"
-                   Text="Active: input recorded · Productive: active in productive apps · Assigned: all time marked as the project, idle or not · Logged: what you bill" />
-      </StackPanel>
-    </Border>
-
-    <Grid ColumnDefinitions="*,290" ColumnSpacing="10" Margin="10" Background="{DynamicResource UiWindowBrush}">
-      <!-- A line per project per day, under a heading per day. -->
-      <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" Background="{DynamicResource UiViewBrush}">
+      <Border DockPanel.Dock="Top" BorderThickness="0,0,0,1" Padding="10,5" IsVisible="{Binding HasExportError}"
+              Background="{x:Static theming:AppBrushes.ErrorBar}" BorderBrush="{x:Static theming:AppBrushes.ErrorBarFrame}">
         <DockPanel>
-          <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="200,*,64,76,72,76" Margin="0,0,14,0">
-            <TextBlock Text="Project" />
-            <TextBlock Grid.Column="1" Text="Notes" />
-            <TextBlock Grid.Column="2" Text="Active" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="3" Text="Productive" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="4" Text="Assigned" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="5" Text="Logged" HorizontalAlignment="Right" />
-          </Grid>
-          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="200,*,64,76,72,76" Height="25" Margin="0,0,14,0">
-              <TextBlock Text="{Binding Title}" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="2" Text="{Binding TotalActiveText}" Classes="strong time" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="3" Text="{Binding TotalProductiveText}" Classes="secondary time" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="4" Text="{Binding TotalAssignedText}" Classes="strong time" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="5" Text="{Binding TotalLoggedText}" Classes="strong time" VerticalAlignment="Center" Margin="10,0" />
-            </Grid>
-          </Border>
-          <Panel>
-            <ScrollViewer VerticalScrollBarVisibility="Visible">
-              <ItemsControl ItemsSource="{Binding Rows}">
-                <ItemsControl.DataTemplates>
-                  <DataTemplate DataType="vm:TimesheetDayRow">
-                    <Border Classes="row dayRow" DoubleTapped="OnDayDoubleTapped">
-                      <Grid ColumnDefinitions="200,*,64,76,72,76">
-                        <Button Classes="link" Content="{Binding DayText}" Command="{Binding Open}" Margin="6,0" HorizontalAlignment="Left" FontWeight="SemiBold"
-                                ToolTip.Tip="Open in Day review" />
-                        <TextBlock Grid.Column="1" Classes="note secondary" Text="{Binding NoteText}" Margin="6,0"
-                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding NoteText}" />
-                        <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
-                        <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
-                        <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />
-                        <TextBlock Grid.Column="5" Classes="time" Text="{Binding LoggedText}" Margin="10,0" />
-                      </Grid>
-                    </Border>
-                  </DataTemplate>
-                  <DataTemplate DataType="vm:TimesheetLineRow">
-                    <Border Classes="row">
-                      <Grid ColumnDefinitions="200,*,64,76,72,76">
-                        <StackPanel Orientation="Horizontal" Spacing="7" Margin="24,0,6,0">
-                          <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
-                          <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
-                        </StackPanel>
-                        <TextBox Grid.Column="1" Classes="cell" Margin="2,1" Text="{Binding NoteText, UpdateSourceTrigger=LostFocus}"
-                                 PlaceholderText="Add a note" ToolTip.Tip="{Binding NoteText}"
-                                 AutomationProperties.Name="{Binding Name, StringFormat='Note for {0}'}" />
-                        <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
-                        <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
-                        <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />
-                        <Border Grid.Column="5" Classes="loggedCell">
-                          <TextBox Classes="cell" Margin="2,1" TextAlignment="Right" FontWeight="SemiBold"
-                                   Text="{Binding LoggedText, UpdateSourceTrigger=LostFocus}" PlaceholderText="–"
-                                   AutomationProperties.Name="{Binding Name, StringFormat='Logged for {0}'}" />
-                        </Border>
-                      </Grid>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.DataTemplates>
-              </ItemsControl>
-            </ScrollViewer>
-            <TextBlock Text="{Binding EmptyText}" IsVisible="{Binding IsEmpty}" Classes="secondary"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Margin="20" />
-          </Panel>
+          <Button DockPanel.Dock="Right" Classes="tool" Command="{Binding DismissExportErrorCommand}" ToolTip.Tip="Close" AutomationProperties.Name="Close">
+            <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+          </Button>
+          <TextBlock Text="{Binding ExportError}" TextWrapping="Wrap" VerticalAlignment="Center" />
         </DockPanel>
       </Border>
 
-      <!-- Totals for the range by category, then project. -->
-      <StackPanel Grid.Column="1">
-        <TextBlock Text="Totals" Classes="groupHeader" />
-        <Border Classes="group">
-          <StackPanel Spacing="4">
-            <Grid ColumnDefinitions="*,58,58">
-              <TextBlock Grid.Column="1" Text="Assigned" Classes="secondary" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="2" Text="Logged" Classes="secondary" HorizontalAlignment="Right" />
+      <Border DockPanel.Dock="Bottom" Classes="statusBar">
+        <StackPanel Orientation="Horizontal" Margin="8,0" Height="22">
+          <views:RecordingIndicator x:Name="Indicator" DataContext="{x:Null}" />
+          <TextBlock Classes="secondary" VerticalAlignment="Center" Margin="4,0,0,0"
+                     Text="Active: input recorded · Productive: active in productive apps · Assigned: all time marked as the project, idle or not · Logged: what you bill" />
+        </StackPanel>
+      </Border>
+
+      <Grid ColumnDefinitions="*,290" ColumnSpacing="10" Margin="10" Background="{DynamicResource UiWindowBrush}">
+        <!-- A line per project per day, under a heading per day. -->
+        <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" Background="{DynamicResource UiViewBrush}">
+          <DockPanel>
+            <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="200,*,64,76,72,76" Margin="0,0,14,0">
+              <TextBlock Text="Project" />
+              <TextBlock Grid.Column="1" Text="Notes" />
+              <TextBlock Grid.Column="2" Text="Active" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="3" Text="Productive" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="4" Text="Assigned" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="5" Text="Logged" HorizontalAlignment="Right" />
             </Grid>
-            <ItemsControl ItemsSource="{Binding Totals}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:TimesheetTotalRow">
-                  <Grid ColumnDefinitions="*,58,58" Margin="0,2">
-                    <StackPanel Orientation="Horizontal" Spacing="7" Margin="{Binding Indent}">
-                      <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
-                      <TextBlock Text="{Binding Name}" Classes.strong="{Binding IsCategory}" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                    <TextBlock Grid.Column="1" Text="{Binding AssignedText}" Classes="secondary" HorizontalAlignment="Right" FontFeatures="+tnum" />
-                    <TextBlock Grid.Column="2" Text="{Binding LoggedText}" Classes.strong="{Binding IsCategory}" HorizontalAlignment="Right" FontFeatures="+tnum" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0" Padding="0,4,0,0"
-                    IsVisible="{Binding !HasNoTotals}">
-              <Grid ColumnDefinitions="*,58,58">
-                <TextBlock Text="Total" Classes="strong" />
-                <TextBlock Grid.Column="1" Text="{Binding GrandAssignedText}" Classes="secondary" HorizontalAlignment="Right" FontFeatures="+tnum" />
-                <TextBlock Grid.Column="2" Text="{Binding GrandLoggedText}" Classes="strong" HorizontalAlignment="Right" FontFeatures="+tnum" />
+            <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0">
+              <Grid ColumnDefinitions="200,*,64,76,72,76" Height="25" Margin="0,0,14,0">
+                <TextBlock Text="{Binding Title}" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding TotalActiveText}" Classes="strong time" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding TotalProductiveText}" Classes="secondary time" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="4" Text="{Binding TotalAssignedText}" Classes="strong time" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="5" Text="{Binding TotalLoggedText}" Classes="strong time" VerticalAlignment="Center" Margin="10,0" />
               </Grid>
             </Border>
-            <TextBlock Text="No projects" Classes="secondary" IsVisible="{Binding HasNoTotals}" />
-          </StackPanel>
+            <Panel>
+              <ScrollViewer VerticalScrollBarVisibility="Visible">
+                <ItemsControl ItemsSource="{Binding Rows}">
+                  <ItemsControl.DataTemplates>
+                    <DataTemplate DataType="vm:TimesheetDayRow">
+                      <Border Classes="row dayRow" DoubleTapped="OnDayDoubleTapped">
+                        <Grid ColumnDefinitions="200,*,64,76,72,76">
+                          <Button Classes="link" Content="{Binding DayText}" Command="{Binding Open}" Margin="6,0" HorizontalAlignment="Left" FontWeight="SemiBold"
+                                  ToolTip.Tip="Open in Day review" />
+                          <TextBlock Grid.Column="1" Classes="note secondary" Text="{Binding NoteText}" Margin="6,0"
+                                     TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding NoteText}" />
+                          <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
+                          <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
+                          <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />
+                          <TextBlock Grid.Column="5" Classes="time" Text="{Binding LoggedText}" Margin="10,0" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                    <DataTemplate DataType="vm:TimesheetLineRow">
+                      <Border Classes="row">
+                        <Grid ColumnDefinitions="200,*,64,76,72,76">
+                          <StackPanel Orientation="Horizontal" Spacing="7" Margin="24,0,6,0">
+                            <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                          </StackPanel>
+                          <TextBox Grid.Column="1" Classes="cell" Margin="2,1" Text="{Binding NoteText, UpdateSourceTrigger=LostFocus}"
+                                   PlaceholderText="Add a note" ToolTip.Tip="{Binding NoteText}"
+                                   AutomationProperties.Name="{Binding Name, StringFormat='Note for {0}'}" />
+                          <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
+                          <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
+                          <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />
+                          <Border Grid.Column="5" Classes="loggedCell">
+                            <TextBox Classes="cell" Margin="2,1" TextAlignment="Right" FontWeight="SemiBold"
+                                     Text="{Binding LoggedText, UpdateSourceTrigger=LostFocus}" PlaceholderText="–"
+                                     AutomationProperties.Name="{Binding Name, StringFormat='Logged for {0}'}" />
+                          </Border>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.DataTemplates>
+                </ItemsControl>
+              </ScrollViewer>
+              <TextBlock Text="{Binding EmptyText}" IsVisible="{Binding IsEmpty}" Classes="secondary"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Margin="20" />
+            </Panel>
+          </DockPanel>
         </Border>
-      </StackPanel>
-    </Grid>
+
+        <!-- Totals for the range by category, then project. -->
+        <StackPanel Grid.Column="1">
+          <TextBlock Text="Totals" Classes="groupHeader" />
+          <Border Classes="group">
+            <StackPanel Spacing="4">
+              <Grid ColumnDefinitions="*,58,58">
+                <TextBlock Grid.Column="1" Text="Assigned" Classes="secondary" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="2" Text="Logged" Classes="secondary" HorizontalAlignment="Right" />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Totals}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:TimesheetTotalRow">
+                    <Grid ColumnDefinitions="*,58,58" Margin="0,2">
+                      <StackPanel Orientation="Horizontal" Spacing="7" Margin="{Binding Indent}">
+                        <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Name}" Classes.strong="{Binding IsCategory}" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="1" Text="{Binding AssignedText}" Classes="secondary" HorizontalAlignment="Right" FontFeatures="+tnum" />
+                      <TextBlock Grid.Column="2" Text="{Binding LoggedText}" Classes.strong="{Binding IsCategory}" HorizontalAlignment="Right" FontFeatures="+tnum" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0" Padding="0,4,0,0"
+                      IsVisible="{Binding !HasNoTotals}">
+                <Grid ColumnDefinitions="*,58,58">
+                  <TextBlock Text="Total" Classes="strong" />
+                  <TextBlock Grid.Column="1" Text="{Binding GrandAssignedText}" Classes="secondary" HorizontalAlignment="Right" FontFeatures="+tnum" />
+                  <TextBlock Grid.Column="2" Text="{Binding GrandLoggedText}" Classes="strong" HorizontalAlignment="Right" FontFeatures="+tnum" />
+                </Grid>
+              </Border>
+              <TextBlock Text="No projects" Classes="secondary" IsVisible="{Binding HasNoTotals}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Grid>
+    </DockPanel>
   </DockPanel>
 </UserControl>

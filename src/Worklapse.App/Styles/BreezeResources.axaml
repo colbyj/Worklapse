@@ -13,6 +13,10 @@
   -->
   <SolidColorBrush x:Key="UiWindowBrush" Color="#EFF0F1" />
   <SolidColorBrush x:Key="UiHeaderBrush" Color="#DEE0E2" />
+  <!-- The window and header colours on the main window's chrome (its background, the rail, the views' tool bars):
+       transparent where Windows 11's Mica shows through (Theming/WindowBackdrop). Everything else uses the brushes above. -->
+  <SolidColorBrush x:Key="UiChromeBrush" Color="#EFF0F1" />
+  <SolidColorBrush x:Key="UiChromeHeaderBrush" Color="#DEE0E2" />
   <SolidColorBrush x:Key="UiViewBrush" Color="#FFFFFF" />
   <SolidColorBrush x:Key="UiTextBrush" Color="#232629" />
   <SolidColorBrush x:Key="UiSecondaryTextBrush" Color="#707D8A" />

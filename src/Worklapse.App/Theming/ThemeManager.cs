@@ -42,13 +42,16 @@ public static class ThemeManager
         Update();
     }
 
-    public static void Apply(UiPalette palette)
+    /// <param name="mica">Windows 11's Mica shows through the chrome (<see cref="WindowBackdrop"/>).</param>
+    public static void Apply(UiPalette palette, bool mica = false)
     {
         var app = _app ?? Application.Current ?? throw new InvalidOperationException("No application to theme.");
         Current = palette;
 
         Set(app, "UiWindowBrush", palette.Window);
         Set(app, "UiHeaderBrush", palette.Header);
+        Set(app, "UiChromeBrush", mica ? Colors.Transparent : palette.Window);
+        Set(app, "UiChromeHeaderBrush", mica ? Colors.Transparent : palette.Header);
         Set(app, "UiViewBrush", palette.View);
         Set(app, "UiTextBrush", palette.Text);
         Set(app, "UiSecondaryTextBrush", palette.SecondaryText);
@@ -75,6 +78,7 @@ public static class ThemeManager
 
         // Fluent's own resources for whatever the brushes above don't cover, and dark window title bars.
         app.RequestedThemeVariant = palette.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        WindowBackdrop.Use(mica);
         AppBrushes.Apply(palette);
         Changed?.Invoke();
     }
@@ -104,7 +108,7 @@ public static class ThemeManager
         // Windows always reports its accent; elsewhere this value means the desktop has none.
         var accent = values?.AccentColor1 is { } a && (OperatingSystem.IsWindows() || a != WindowsDefaultAccent) ? a : (Color?)null;
 
-        switch (style == ThemeStyle.Automatic ? DesktopStyle : style)
+        switch (Resolve(style))
         {
             case ThemeStyle.Windows:
                 return UiPalette.Windows11(dark, WindowsAccent.FillShade(dark, accent ?? WindowsDefaultAccent));
@@ -119,6 +123,8 @@ public static class ThemeManager
                 return UiPalette.Breeze(dark, accent);
         }
     }
+
+    private static ThemeStyle Resolve(ThemeStyle style) => style == ThemeStyle.Automatic ? DesktopStyle : style;
 
     /// <summary>The look of the desktop the app runs on.</summary>
     private static ThemeStyle DesktopStyle =>
@@ -138,7 +144,9 @@ public static class ThemeManager
         && Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") is { } desktop
         && desktop.Split(':').Contains(name, StringComparer.OrdinalIgnoreCase);
 
-    private static void Update() => Apply(For(_app?.PlatformSettings?.GetColorValues(), _style, _mode));
+    /// <summary>Mica only with the Windows look: the other desktops' windows are solid.</summary>
+    private static void Update() =>
+        Apply(For(_app?.PlatformSettings?.GetColorValues(), _style, _mode), Resolve(_style) == ThemeStyle.Windows && WindowBackdrop.IsSupported);
 
     /// <summary>
     /// Plasma rewrites kdeglobals when the colour scheme or accent changes; a change between two light (or two

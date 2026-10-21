@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
+using Worklapse.App.Theming;
 using Worklapse.App.ViewModels;
 using Worklapse.Core.Settings;
 
@@ -23,7 +24,11 @@ public partial class MainWindow : Window
     private TimeOnly _dayStart;
 
     // Needed by the XAML loader; the app always uses the other constructor.
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+        WindowBackdrop.Attach(this);
+    }
 
     /// <param name="quit">Quits Worklapse (Ctrl+Q).</param>
     public MainWindow(MainViewModel viewModel, SettingsStore settings, Func<Task> quit) : this()
