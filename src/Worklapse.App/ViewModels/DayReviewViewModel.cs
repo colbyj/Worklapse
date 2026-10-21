@@ -10,6 +10,7 @@ using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
 
 namespace Worklapse.App.ViewModels;
 
@@ -55,6 +56,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     private readonly HistoryStore _history;
     private readonly SettingsStore _settings;
+    private readonly SuggestionEngine _suggestionEngine;
     private readonly Action<DeleteResult>? _capturesDeleted;
     private readonly TimeSpan _maxCaptureLength;
     private readonly DispatcherTimer _playTimer;
@@ -68,11 +70,13 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     /// <param name="capturesDeleted">Called after captures are deleted permanently, to remove their video from disk.</param>
     /// <param name="day">The day to open at its first capture; by default the latest day recorded, at its last.</param>
-    public DayReviewViewModel(HistoryStore history, SettingsStore settings, Action<DeleteResult>? capturesDeleted = null,
-        DateOnly? day = null)
+    /// <param name="suggestionEngine">The app's one suggestion engine, shared with the Overview.</param>
+    public DayReviewViewModel(HistoryStore history, SettingsStore settings, SuggestionEngine suggestionEngine,
+        Action<DeleteResult>? capturesDeleted = null, DateOnly? day = null)
     {
         _history = history;
         _settings = settings;
+        _suggestionEngine = suggestionEngine;
         _focusOnApplication = settings.Current.ReviewFocusOnApplication;
         _panelWidth = settings.Current.ReviewPanelWidth;
         _capturesDeleted = capturesDeleted;

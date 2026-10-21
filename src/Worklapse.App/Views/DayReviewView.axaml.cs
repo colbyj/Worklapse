@@ -249,13 +249,15 @@ public partial class DayReviewView : UserControl
 
     /// <summary>
     /// A suggestion's entries on the timeline's menu: accept it (whole, or just the piece clicked on when it's drawn in
-    /// several), give it another project, reject it, and decide the break or switch clicked on.
+    /// several), accept the piece as another project, give the suggestion another project, reject it, and decide the
+    /// break or switch clicked on.
     /// </summary>
     private List<Control> SuggestionMenuItems(StoredSuggestion suggestion, StoredPart? part, SuggestionPiece? piece)
     {
         var project = _viewModel.ProjectName(suggestion.ProjectId);
         var items = new List<Control>();
-        if (_viewModel.PieceCount(suggestion) > 1)
+        var several = _viewModel.PieceCount(suggestion) > 1;
+        if (several)
         {
             items.Add(MenuEntry($"Accept Whole Suggestion: {project}, {DayReviewViewModel.RangeText(suggestion.Start, suggestion.End)}",
                 () => _viewModel.AcceptSuggestion(suggestion)));
@@ -265,6 +267,13 @@ public partial class DayReviewView : UserControl
         }
         else
             items.Add(MenuEntry($"Accept Suggestion: {project}", () => _viewModel.AcceptSuggestion(suggestion)));
+        // Any piece, a break too: its time set to the project picked, the rest of the suggestion left open.
+        if (piece is { } clicked)
+            items.Add(new MenuItem
+            {
+                Header = several ? "Accept This Piece as" : "Accept as",
+                ItemsSource = ProjectMenuItems(id => _viewModel.AcceptPiece(clicked with { ProjectId = id })),
+            });
         items.Add(new MenuItem
         {
             Header = "Change Suggestion to",

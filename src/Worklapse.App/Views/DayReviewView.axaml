@@ -497,7 +497,8 @@
                             <TextBlock Text=" · unsure" FontStyle="Italic" Classes="secondary" IsVisible="{Binding IsUnsure}"
                                        ToolTip.Tip="The words point to this project less clearly" />
                           </StackPanel>
-                          <TextBlock Text="{Binding EvidenceText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EvidenceText}" />
+                          <TextBlock Text="{Binding EvidenceText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EvidenceText}"
+                                     IsVisible="{Binding HasEvidenceText}" />
                           <TextBlock Text="{Binding ScreenText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ScreenText}"
                                      IsVisible="{Binding HasScreenText}" />
                         </StackPanel>

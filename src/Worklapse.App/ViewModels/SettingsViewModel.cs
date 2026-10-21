@@ -184,6 +184,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private decimal? _glanceMinutes;
     [ObservableProperty] private decimal? _splitMinutes;
+    [ObservableProperty] private decimal? _minimumCertainty;
 
     /// <summary>What suggestions learn from: the time set by hand in the history.</summary>
     [ObservableProperty] private string _learnsFromText = "";
@@ -383,6 +384,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ReadScreenText = ReadScreenText,
         GlanceMinutes = (int)(GlanceMinutes ?? 2),
         SplitMinutes = (int)(SplitMinutes ?? 30),
+        MinimumCertainty = (int)(MinimumCertainty ?? 51),
     };
 
     private void Load(WorklapseSettings settings)
@@ -417,6 +419,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ReadScreenText = settings.ReadScreenText;
         GlanceMinutes = settings.GlanceMinutes;
         SplitMinutes = settings.SplitMinutes;
+        MinimumCertainty = settings.MinimumCertainty;
         _loading = false;
         // Defaults don't touch the Applications and Projects pages (they're history, not settings); their changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)

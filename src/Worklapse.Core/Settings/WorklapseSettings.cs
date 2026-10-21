@@ -129,6 +129,9 @@ public sealed record WorklapseSettings
     /// <summary>Time away longer than this ends a suggested block.</summary>
     public int SplitMinutes { get; init; } = 30;
 
+    /// <summary>How sure the classifier must be of a block, in percent, for it to be offered.</summary>
+    public int MinimumCertainty { get; init; } = 51;
+
     /// <summary>Whether the recorder reads the active window's text.</summary>
     [JsonIgnore]
     public bool ReadsScreen => SuggestProjects && ReadScreenText;
@@ -154,6 +157,7 @@ public sealed record WorklapseSettings
         WebPQuality = Math.Clamp(WebPQuality, 0, 100),
         GlanceMinutes = Math.Clamp(GlanceMinutes, 0, 30),
         SplitMinutes = Math.Clamp(SplitMinutes, Math.Clamp(GlanceMinutes, 0, 30), 240),
+        MinimumCertainty = Math.Clamp(MinimumCertainty, 0, 99),
         ReviewPanelWidth = double.IsFinite(ReviewPanelWidth)
             ? Math.Clamp(ReviewPanelWidth, MinReviewPanelWidth, MaxReviewPanelWidth) : DefaultReviewPanelWidth,
         DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? DefaultDataFolder : DataFolder,

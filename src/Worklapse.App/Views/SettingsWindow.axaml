@@ -334,7 +334,7 @@
             <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
           </DockPanel>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
-                     Text="A project's window titles decide first, then a website, then its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus. Read screen and Learn only affect suggestions; turning Read screen off deletes the text already read." />
+                     Text="A project's window titles decide first, then a website, then its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus." />
           <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
@@ -342,9 +342,9 @@
                   <Button Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
                   <Button Grid.Column="1" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ExcludedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Excluded}" />
                   <Button Grid.Column="2" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ReadScreenHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.ReadScreen}"
-                          ToolTip.Tip="Read the text in its windows, for suggestions" />
+                          ToolTip.Tip="Read the text in its windows, for suggestions · off deletes what was read" />
                   <Button Grid.Column="3" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding LearnHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Learn}"
-                          ToolTip.Tip="Its windows teach and sway suggestions" />
+                          ToolTip.Tip="Its windows teach suggestions and count toward them" />
                   <Button Grid.Column="4" Classes="columnHeader" Content="{Binding NameHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Name}" />
                   <Button Grid.Column="5" Classes="columnHeader" Content="{Binding KindHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Kind}" />
                   <Button Grid.Column="6" Classes="columnHeader" Content="{Binding ProjectHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Project}" />
@@ -567,7 +567,7 @@
                       <CheckBox Content="Suggest it" IsChecked="{Binding Suggest}" />
                       <TextBlock Classes="hint" Text="Off: never suggested, and its time teaches nothing" Margin="26,0,0,4" />
                       <CheckBox Content="Read the screen during its time" IsChecked="{Binding ReadScreen}" />
-                      <TextBlock Classes="hint" Text="Off: its time is never read; text already read is deleted" Margin="26,0,0,0" />
+                      <TextBlock Classes="hint" Text="Off: its time isn't read, and what was read is deleted" Margin="26,0,0,0" />
                     </StackPanel>
 
                     <StackPanel Grid.Row="6" Grid.Column="1" Spacing="2">
@@ -591,19 +591,28 @@
           <Border Classes="group">
             <StackPanel>
               <TextBlock Classes="groupHeader" Text="Suggestions" />
-              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
                 <CheckBox Grid.Column="1" Content="Suggest projects for time without one" IsChecked="{Binding SuggestProjects}" />
-                <TextBlock Grid.Row="1" Classes="label" Text="Learns from:" VerticalAlignment="Top" />
-                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
-                  <TextBlock Text="{Binding LearnsFromText}" TextWrapping="Wrap" />
-                  <TextBlock Classes="hint" Text="Accepting or changing a suggestion teaches it too" />
+                <TextBlock Grid.Row="1" Classes="label" Text="Offer when:" VerticalAlignment="Top" Margin="0,6,10,0" />
+                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2" IsEnabled="{Binding SuggestProjects}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <NumericUpDown Value="{Binding MinimumCertainty}" Minimum="0" Maximum="99" Increment="5" FormatString="0" Width="72"
+                                   AutomationProperties.Name="Offer when at least this sure, percent" />
+                    <TextBlock Text="% sure or more" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Classes="hint" Text="Lower: more suggestions, more of them wrong" />
                 </StackPanel>
-                <TextBlock Grid.Row="2" Classes="label" Text="Reads:" VerticalAlignment="Top" Margin="0,6,10,0" />
-                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2" IsEnabled="{Binding SuggestProjects}">
+                <TextBlock Grid.Row="2" Classes="label" Text="Learns from:" VerticalAlignment="Top" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2">
+                  <TextBlock Text="{Binding LearnsFromText}" TextWrapping="Wrap" />
+                  <TextBlock Classes="hint" Text="Accepted suggestions teach it too" />
+                </StackPanel>
+                <TextBlock Grid.Row="3" Classes="label" Text="Reads:" VerticalAlignment="Top" Margin="0,6,10,0" />
+                <StackPanel Grid.Row="3" Grid.Column="1" Spacing="2" IsEnabled="{Binding SuggestProjects}">
                   <CheckBox Content="Applications, sites and window titles" IsChecked="True" IsEnabled="False" />
                   <CheckBox Content="Text on the screen" IsChecked="{Binding ReadScreenText}" />
-                  <TextBlock Classes="hint" Margin="26,0,0,0" Text="Better guesses for terminals and plain titles · uses CPU after recording" />
-                  <TextBlock Classes="hint" Margin="26,0,0,0" Text="Apps, sites and projects can opt out on their own tabs" />
+                  <TextBlock Classes="hint" Margin="26,0,0,0" Text="Better guesses for terminals and plain titles · some CPU while recording" />
+                  <TextBlock Classes="hint" Margin="26,0,0,0" Text="Apps, sites and projects opt out on their own tabs" />
                   <StackPanel Orientation="Horizontal" Spacing="8" Margin="26,6,0,0" IsVisible="{Binding CanReadScreens}">
                     <Button Content="Read Past Days" Command="{Binding ReadPastDaysCommand}" IsEnabled="{Binding CanReadPastDays}"
                             ToolTip.Tip="Read the screens of everything recorded before, newest first" />
@@ -611,7 +620,7 @@
                     <TextBlock Text="{Binding PastDaysText}" Classes="secondary" VerticalAlignment="Center" />
                   </StackPanel>
                   <TextBlock Classes="hint" Margin="26,0,0,0" IsVisible="{Binding CanReadScreens}"
-                             Text="Slow for months of history; stop any time, what's read is kept" />
+                             Text="Slow for months of history · stopping keeps what's read" />
                 </StackPanel>
               </Grid>
             </StackPanel>
@@ -634,7 +643,7 @@
                   <TextBlock Text="minutes" VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" TextWrapping="Wrap"
-                           Text="Breaks in between wait for you on the Suggestions tab · idle counts as a break" />
+                           Text="Breaks in between are yours to count or not · idle is a break" />
               </Grid>
             </StackPanel>
           </Border>

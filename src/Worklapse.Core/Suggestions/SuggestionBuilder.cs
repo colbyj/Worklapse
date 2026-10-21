@@ -39,6 +39,9 @@ public sealed record SuggestionLimits(TimeSpan Glance, TimeSpan Split)
     /// projects worked on in turn are blocks of their own, not one block swallowing the other.
     /// </summary>
     public TimeSpan Switch { get; init; } = TrainingSet.ShortSwitch;
+
+    /// <summary>A block the classifier is less sure of than this (0 to 1) isn't offered.</summary>
+    public double MinimumCertainty { get; init; }
 }
 
 /// <summary>
@@ -101,7 +104,8 @@ public static class SuggestionBuilder
 
             if (!optOuts.UnsuggestedProjects.Contains(project)
                 && Block(day, i, end, project, limits, classifier) is { } suggestion
-                && (suggestion.Adds >= MinimumAdds || suggestion.Parts.Count > 0))
+                && (suggestion.Adds >= MinimumAdds || suggestion.Parts.Count > 0)
+                && suggestion.Confidence >= limits.MinimumCertainty)
                 suggestions.Add(suggestion);
             i = end + 1;
         }

@@ -44,6 +44,7 @@ public sealed class SuggestionHeadRow : ObservableObject
     public string AddsText { get; }
     public bool IsUnsure => Suggestion.IsUnsure;
     public string EvidenceText { get; }
+    public bool HasEvidenceText => EvidenceText.Length > 0;
     public string ScreenText { get; }
     public bool HasScreenText => ScreenText.Length > 0;
     public bool IsFirst { get; }
@@ -126,8 +127,6 @@ public sealed partial class DayReviewViewModel
     // Words a suggestion shows as its evidence, at most, of each kind.
     private const int EvidenceShown = 6;
 
-    private readonly SuggestionEngine _engine = new();
-    private readonly SemaphoreSlim _engineGate = new(1, 1);
     private int _suggestionVersion;
     private List<StoredSuggestion> _suggestions = [];
     private List<SuggestionPiece> _suggestionPieces = [];
@@ -177,21 +176,8 @@ public sealed partial class DayReviewViewModel
 
         var (day, folder, start) = (Day.Day, _history.Database.DataFolder, _history.DayStart);
         IsWorkingOutSuggestions = true;
-        Task.Run(async () =>
-        {
-            await _engineGate.WaitAsync();
-            try
-            {
-                if (Volatile.Read(ref _suggestionVersion) != version)
-                    return null; // asked again since: that one will do it
-                using var history = new HistoryStore(WorklapseDatabase.Open(folder), start);
-                return _engine.Refresh(history, day, settings);
-            }
-            finally
-            {
-                _engineGate.Release();
-            }
-        }).ContinueWith(task => Dispatcher.UIThread.Post(() =>
+        // Asked again by its turn: that later call will do it.
+        _suggestionEngine.RefreshAsync(folder, start, day, settings, () => Volatile.Read(ref _suggestionVersion) == version).ContinueWith(task => Dispatcher.UIThread.Post(() =>
         {
             if (version != _suggestionVersion)
                 return;
@@ -214,7 +200,8 @@ public sealed partial class DayReviewViewModel
         {
             var add = Adds(suggestion);
             adds += add;
-            var (evidence, screen) = EvidenceTexts(suggestion.Evidence);
+            // The words pointed to the project computed; once another is chosen they'd only mislead.
+            var (evidence, screen) = suggestion.State == SuggestionState.Chosen ? ("", "") : EvidenceTexts(suggestion.Evidence);
             SuggestionRows.Add(new SuggestionHeadRow(suggestion, OptionOf(suggestion.ProjectId),
                 RangeText(suggestion.Start, suggestion.End), ProjectTimes.Hm(suggestion.End - suggestion.Start),
                 add > TimeSpan.Zero ? $"Adds {ProjectTimes.Hm(add)} without a project"

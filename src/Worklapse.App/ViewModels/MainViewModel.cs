@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Worklapse.Core.Settings;
+using Worklapse.Core.Suggestions;
 
 namespace Worklapse.App.ViewModels;
 
@@ -23,12 +24,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     /// <param name="createDayReview">Makes Day review on a day, or on the latest day recorded (null).</param>
     public MainViewModel(RecordingViewModel recording, Func<DateOnly?, DayReviewViewModel> createDayReview, Func<Task> openSettings,
-        SettingsStore settings, MainView first)
+        SettingsStore settings, SuggestionEngine suggestionEngine, MainView first)
     {
         Recording = recording;
         _createDayReview = createDayReview;
         _openSettings = openSettings;
-        Overview = new OverviewViewModel(settings, OpenDay);
+        Overview = new OverviewViewModel(settings, suggestionEngine, OpenDay);
         Timesheet = new TimesheetViewModel(settings, OpenDay);
         View = first;
         if (first == MainView.DayReview)

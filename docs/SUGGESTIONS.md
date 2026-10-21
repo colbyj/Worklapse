@@ -297,6 +297,23 @@ outside ranges teach too, and each project starts from its name, links and rules
 - "No suggestions for this day" no longer shows beside "Suggestions are off"; "Working out suggestions…" no longer sticks
   when they're turned off mid-run.
 
+**After the review, 2026-10-20** (the developer's answers):
+- *Accept This Piece as ▸* (any piece, a break too) on the timeline's right-click; *Accept as ▸* when the suggestion is one
+  piece.
+- A certainty limit, `MinimumCertainty` (51%, Settings → Suggestions → "Offer when"): a block less sure than that isn't
+  offered. A block that guesses no time (only breaks to decide around linked time) counts as sure. Evidence from the
+  evaluation's new table (offered blocks by certainty, all labelled days with words): under 51%, 3 blocks adding 5 minutes,
+  almost all wrong; 60–70% right 100% (1 min), 70–80% 94%, 80–90% 74%, 90%+ 86%.
+- Once the developer picks a suggestion's project, its evidence words are hidden and it's no longer shown as unsure.
+- One `SuggestionEngine` for the app (made by `App`, shared by Day review and the Overview), taking one call at a time.
+  It remembers what each day was worked out from (the classifier's stamp, the day's captures and words, the settings) and
+  reads the stored suggestions instead when nothing changed.
+- The Overview, week and month alike, shows the stored counts at once, then works out again (newest first, in the
+  background) each day with time without a project or open suggestions, updating each count as it's done. On a copy of
+  the developer's data, October (1–20, only 13–20 worked out before) took 13 s the first time.
+- Settings text: the Applications hint is back to what it was (the Read screen and Learn notes moved to their column
+  tips); "Accepted suggestions teach it too"; "some CPU while recording" (was "after"); shorter hints elsewhere.
+
 Left for phase 5 (Linux): Tesseract behind `IScreenTextReader`, with its own cost and quality test on Kubuntu.
 
 ## Risks and unknowns

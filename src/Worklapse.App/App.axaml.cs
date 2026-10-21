@@ -15,6 +15,7 @@ using Worklapse.Core.Platform;
 using Worklapse.Core.Recording;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
+using Worklapse.Core.Suggestions;
 using Worklapse.Video;
 
 namespace Worklapse.App;
@@ -22,6 +23,9 @@ namespace Worklapse.App;
 public partial class App : Application
 {
     private SettingsStore? _settings;
+
+    // One for the app: Day review and the Overview share its trained classifier.
+    private readonly SuggestionEngine _suggestionEngine = new();
     private PlatformServices? _platform;
     private Recorder? _recorder;
     private volatile FrameSink? _sink; // the recorder's current one, created on its thread
@@ -246,7 +250,7 @@ public partial class App : Application
     {
         if (_mainWindow is null)
         {
-            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, _settings!, view ?? MainView.Overview);
+            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, _settings!, _suggestionEngine, view ?? MainView.Overview);
             _mainWindow = new MainWindow(viewModel, _settings!, QuitAsync);
             _mainWindow.Closed += (_, _) =>
             {
@@ -284,7 +288,7 @@ public partial class App : Application
         var history = new HistoryStore(WorklapseDatabase.Open(settings.DataFolder), settings.DayStart);
         // The recorder's batch encoder (open even while paused or locked) removes the deleted video and images from
         // disk. Frames in the segments still being recorded go once those are closed and encoded.
-        return new DayReviewViewModel(history, _settings, result =>
+        return new DayReviewViewModel(history, _settings, _suggestionEngine, result =>
         {
             _sink?.Encoder.RequestReclaim();
             if (result.StagedSegmentsAffected)

@@ -1,51 +1,116 @@
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Settings;
+using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.Suggestions;
 
 /// <summary>
 /// Works out a day's suggestions from what history teaches and keeps them (<see cref="SuggestionStore"/>). The classifier
 /// is trained on every day with ranges set by hand and kept until something it learns from changes: the ranges, links,
-/// title rules, projects and opt-outs (and, coarsely, the words read off screens). Training reads those days whole, so
-/// call it off the UI thread. Not thread-safe.
+/// title rules, projects and opt-outs (and, coarsely, the words read off screens). A day is worked out again only when
+/// the classifier, the day's captures or words, or the settings it uses have changed since; otherwise its suggestions
+/// are read as stored. One engine serves the whole app (Day review and the Overview), so the classifier is trained and
+/// held once; it takes one call at a time. Training reads the labelled days whole, so call it off the UI thread.
 /// </summary>
 public sealed class SuggestionEngine
 {
     /// <summary>Screen words are counted in steps of this many when telling whether to train again.</summary>
     private const int WordsStep = 1000;
 
+    private readonly SemaphoreSlim _turn = new(1, 1);
     private (string Stamp, ProjectClassifier Classifier)? _trained;
 
+    /// <summary>What each day was last worked out from (<see cref="DayStamp"/>), by data folder and day.</summary>
+    private readonly Dictionary<(string Folder, DateOnly Day), string> _workedOut = [];
+
     /// <summary>
-    /// Works <paramref name="day"/>'s suggestions out again and returns them all, open and decided; none when suggestions
-    /// are turned off.
+    /// Works <paramref name="day"/>'s suggestions out again (when anything they rest on changed) and returns them all,
+    /// open and decided; none when suggestions are turned off.
     /// </summary>
     public List<StoredSuggestion> Refresh(HistoryStore history, DateOnly day, WorklapseSettings settings)
+    {
+        _turn.Wait();
+        try
+        {
+            return RefreshInTurn(history, day, settings);
+        }
+        finally
+        {
+            _turn.Release();
+        }
+    }
+
+    /// <summary>
+    /// As <see cref="Refresh"/>, on a background thread with a connection of its own, after the calls already waiting;
+    /// null when, by its turn, <paramref name="stillWanted"/> says the result isn't needed any more.
+    /// </summary>
+    public async Task<List<StoredSuggestion>?> RefreshAsync(string dataFolder, TimeOnly dayStart, DateOnly day,
+        WorklapseSettings settings, Func<bool> stillWanted)
+    {
+        await _turn.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!stillWanted())
+                return null;
+            return await Task.Run(() =>
+            {
+                using var history = new HistoryStore(WorklapseDatabase.Open(dataFolder), dayStart);
+                return RefreshInTurn(history, day, settings);
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            _turn.Release();
+        }
+    }
+
+    /// <summary>The classifier for history as it is now, trained again only when what it learns from has changed.</summary>
+    public ProjectClassifier Classifier(HistoryStore history, SuggestionOptOuts optOuts, TimeSpan maxCaptureLength)
+    {
+        _turn.Wait();
+        try
+        {
+            return Trained(history, Stamp(history), optOuts, maxCaptureLength);
+        }
+        finally
+        {
+            _turn.Release();
+        }
+    }
+
+    private List<StoredSuggestion> RefreshInTurn(HistoryStore history, DateOnly day, WorklapseSettings settings)
     {
         var store = new SuggestionStore(history.Database);
         var (start, end) = history.DayRange(day);
         if (!settings.SuggestProjects)
             return [];
 
+        var classifierStamp = Stamp(history);
+        var key = (history.Database.DataFolder, day);
+        var dayStamp = DayStamp(history, start, end, settings, classifierStamp);
+        if (_workedOut.GetValueOrDefault(key) == dayStamp)
+            return store.Get(start, end);
+
         var optOuts = SuggestionOptOuts.Load(history.Database);
-        var classifier = Classifier(history, optOuts, settings.MaxCaptureLength);
+        var classifier = Trained(history, classifierStamp, optOuts, settings.MaxCaptureLength);
         var projects = new ProjectStore(history.Database);
         var words = new ScreenWordStore(history.Database).Get(start, end);
         var computed = SuggestionBuilder.ForDay(history.LoadDay(day).Captures, projects.GetSpans(start, end), classifier,
-            new SuggestionLimits(TimeSpan.FromMinutes(settings.GlanceMinutes), TimeSpan.FromMinutes(settings.SplitMinutes)),
+            new SuggestionLimits(TimeSpan.FromMinutes(settings.GlanceMinutes), TimeSpan.FromMinutes(settings.SplitMinutes))
+            {
+                MinimumCertainty = settings.MinimumCertainty / 100.0,
+            },
             settings.MaxCaptureLength, optOuts, id => words.GetValueOrDefault(id));
         store.Replace(start, end, computed);
+        _workedOut[key] = dayStamp;
         return store.Get(start, end);
     }
 
-    /// <summary>The classifier for history as it is now, trained again only when what it learns from has changed.</summary>
-    public ProjectClassifier Classifier(HistoryStore history, SuggestionOptOuts optOuts, TimeSpan maxCaptureLength)
+    private ProjectClassifier Trained(HistoryStore history, string stamp, SuggestionOptOuts optOuts, TimeSpan maxCaptureLength)
     {
-        var stamp = Stamp(history);
         if (_trained is { } trained && trained.Stamp == stamp)
             return trained.Classifier;
-
         var projects = new ProjectStore(history.Database);
         var screenWords = new ScreenWordStore(history.Database);
         var examples = new List<TrainingExample>(TrainingSet.Starters(projects.GetProjects(), projects.GetTitleRules(),
@@ -60,6 +125,24 @@ public sealed class SuggestionEngine
         var classifier = ProjectClassifier.Train(examples);
         _trained = (stamp, classifier);
         return classifier;
+    }
+
+    /// <summary>
+    /// A summary of what a day's suggestions rest on besides the classifier's history: the day's bounds, its captures (new
+    /// ones, idle marking, deletions), the words read off them, and the settings used; with the classifier's stamp.
+    /// </summary>
+    private static string DayStamp(HistoryStore history, DateTimeOffset start, DateTimeOffset end, WorklapseSettings settings,
+        string classifierStamp)
+    {
+        using var command = history.Database.Command("""
+            SELECT count(*) || ':' || coalesce(max(c.id), 0) || ':' || coalesce(sum(c.kind), 0) || ':' || coalesce(sum(c.pending_delete), 0)
+                || ':' || (SELECT count(*) FROM screen_words w JOIN captures d ON d.id = w.capture_id WHERE d.ts_ms >= $start AND d.ts_ms < $end)
+            FROM captures c WHERE c.ts_ms >= $start AND c.ts_ms < $end;
+            """);
+        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
+        return string.Join('|', start.ToUnixTimeMilliseconds(), end.ToUnixTimeMilliseconds(), (string)command.ExecuteScalar()!,
+            settings.GlanceMinutes, settings.SplitMinutes, settings.MinimumCertainty, settings.MaxCaptureLength.Ticks, classifierStamp);
     }
 
     /// <summary>The local days with at least one range set by hand.</summary>

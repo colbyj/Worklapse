@@ -22,7 +22,8 @@ public sealed record StoredPart(DateTimeOffset Start, DateTimeOffset End, Sugges
 public sealed record StoredSuggestion(long Id, DateTimeOffset Start, DateTimeOffset End, long ProjectId, double Confidence,
     IReadOnlyList<string> Evidence, SuggestionState State, IReadOnlyList<StoredPart> Parts)
 {
-    public bool IsUnsure => Confidence < Suggestion.UnsureBelow;
+    /// <summary>The classifier wasn't sure of its project; a project the developer chose is sure.</summary>
+    public bool IsUnsure => State != SuggestionState.Chosen && Confidence < Suggestion.UnsureBelow;
 
     /// <summary>Still to be accepted or rejected.</summary>
     public bool IsOpen => State is SuggestionState.Open or SuggestionState.Chosen;

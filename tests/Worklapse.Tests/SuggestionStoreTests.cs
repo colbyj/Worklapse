@@ -209,4 +209,67 @@ public class SuggestionStoreTests
 
         Assert.Empty(engine.Refresh(history, Day, settings with { SuggestProjects = false }));
     }
+
+    [Fact]
+    public void TheEngineWorksADayOutAgainOnlyWhenSomethingItRestsOnChanged()
+    {
+        using var folder = new TempFolder();
+        using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
+        var db = history.Database;
+        var projects = new ProjectStore(db);
+        var presayo = projects.AddProject("Presayo", null);
+        var recording = new RecordingStore(db);
+        var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        var yesterday = Nine.AddDays(-1);
+        for (var s = 0; s < 600; s += 10)
+        {
+            recording.InsertCapture(yesterday.AddSeconds(s), CaptureKind.Active, terminal, "Group label presets by printer type", null);
+            recording.InsertCapture(Nine.AddSeconds(s), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
+        }
+        projects.SetSpan(yesterday, yesterday.AddSeconds(600), presayo);
+        var settings = new WorklapseSettings();
+        var engine = new SuggestionEngine();
+        Assert.Single(engine.Refresh(history, Day, settings));
+
+        // Marked so that working it out again would show: left as it is while nothing changed.
+        db.Execute("UPDATE suggestions SET evidence = 'title:marked';");
+        Assert.Equal(["title:marked"], Assert.Single(engine.Refresh(history, Day, settings)).Evidence);
+
+        // A new capture on the day: worked out again.
+        recording.InsertCapture(Nine.AddSeconds(600), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
+        Assert.Contains("title:presets", Assert.Single(engine.Refresh(history, Day, settings)).Evidence);
+    }
+
+    [Fact]
+    public void ABlockLessCertainThanTheLimitIsntOffered()
+    {
+        using var folder = new TempFolder();
+        using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
+        var db = history.Database;
+        var projects = new ProjectStore(db);
+        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
+        var recording = new RecordingStore(db);
+        var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        var yesterday = Nine.AddDays(-1);
+        for (var s = 0; s < 600; s += 10)
+        {
+            // Yesterday the same words went to both projects in turn, so today's guess is far from sure.
+            recording.InsertCapture(yesterday.AddSeconds(s), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
+            recording.InsertCapture(Nine.AddSeconds(s), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
+        }
+        projects.SetSpan(yesterday, yesterday.AddSeconds(300), presayo);
+        projects.SetSpan(yesterday.AddSeconds(300), yesterday.AddSeconds(610), frankensystem);
+        var engine = new SuggestionEngine();
+        var classifier = engine.Classifier(history, SuggestionOptOuts.None, Max);
+        var captures = history.LoadDay(Day).Captures;
+        List<Suggestion> At(double certainty) => SuggestionBuilder.ForDay(captures, [], classifier,
+            SuggestionLimits.Default with { MinimumCertainty = certainty }, Max, SuggestionOptOuts.None);
+
+        var certain = Assert.Single(At(0)).Confidence;
+        Assert.InRange(certain, 0.3, 0.9);
+        Assert.Single(At(certain));
+        Assert.Empty(At(certain + 0.01));
+    }
 }

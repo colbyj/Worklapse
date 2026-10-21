@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Worklapse.App.Controls;
 using Worklapse.App.Theming;
+using Worklapse.Core.Diagnostics;
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Settings;
@@ -104,7 +105,8 @@ public sealed partial class OverviewNoteRow(DateOnly day, string dayNote, IReadO
 /// The Overview, Worklapse's start view: a week of day timelines (or a month grid) over a tree of totals by category
 /// and project, with the days' notes beside it.
 /// </summary>
-public sealed partial class OverviewViewModel(SettingsStore settings, Action<DateOnly> openDay)
+/// <param name="suggestionEngine">The app's one suggestion engine, shared with Day review.</param>
+public sealed partial class OverviewViewModel(SettingsStore settings, SuggestionEngine suggestionEngine, Action<DateOnly> openDay)
     : PeriodViewModel<OverviewData>(settings, openDay)
 {
     private const string NoCategoryKey = "category:none";
@@ -113,8 +115,8 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
     private readonly HashSet<string> _collapsed = [];
     private readonly HashSet<DateOnly> _expandedNotes = [];
 
-    // Works out the week's suggestions, so the days needing a look stand out; kept for its trained classifier.
-    private readonly SuggestionEngine _suggestions = new();
+    // Counts the periods shown, so working out the suggestions of one shown before stops.
+    private int _shown;
 
     /// <summary>The weekdays' short names, Monday first, over the month grid.</summary>
     public static IReadOnlyList<string> WeekdayNames { get; } =
@@ -150,13 +152,8 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
 
     public bool HasError => ErrorText.Length > 0;
 
-    protected override OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength, TimeOnly dayStart)
-    {
-        // Loads may overlap (a quick change of week); the engine is one thread's at a time.
-        lock (_suggestions)
-            return OverviewData.Load(dataFolder, period, maxCaptureLength, dayStart, Settings.Current,
-                period.Kind == PeriodKind.Week ? _suggestions : null);
-    }
+    protected override OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength, TimeOnly dayStart) =>
+        OverviewData.Load(dataFolder, period, maxCaptureLength, dayStart, Settings.Current);
 
     /// <summary>Shows why the period can't be read, and nothing of the one shown before (it isn't this one).</summary>
     protected override void ShowError(string message)
@@ -178,6 +175,54 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Action<Dat
         ShowMonth(data);
         ShowTree(data);
         ShowNotes(data);
+        WorkOutSuggestions(data);
+    }
+
+    /// <summary>
+    /// The counts shown first are those stored, which can be out of date (new captures, other labels learned since). So
+    /// each shown day that has time without a project, or open suggestions from before, is worked out again in the
+    /// background, newest first, and its count updated as it's done. A day nothing has changed in costs next to nothing.
+    /// </summary>
+    private async void WorkOutSuggestions(OverviewData data)
+    {
+        var shown = Interlocked.Increment(ref _shown);
+        var settings = Settings.Current;
+        if (!settings.SuggestProjects)
+            return;
+        var days = data.Days
+            .Where(d => d.Extent is not null
+                && (d.Time.Unassigned.Productive + d.Time.Unassigned.Other > TimeSpan.Zero || data.Suggestions.GetValueOrDefault(d.Day) > 0))
+            .Select(d => d.Day)
+            .OrderByDescending(d => d)
+            .ToList();
+        foreach (var day in days)
+        {
+            List<StoredSuggestion>? worked;
+            try
+            {
+                worked = await suggestionEngine.RefreshAsync(settings.DataFolder, data.DayStart, day, settings,
+                    () => Volatile.Read(ref _shown) == shown && !IsDisposed);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Working out the Overview's suggestions failed.", ex);
+                return;
+            }
+            if (worked is null || shown != _shown || IsDisposed)
+                return;
+            ShowSuggestionCount(data, day, worked.Count(s => s.IsOpen));
+        }
+    }
+
+    private void ShowSuggestionCount(OverviewData data, DateOnly day, int count)
+    {
+        data.Suggestions[day] = count;
+        for (var i = 0; i < Days.Count; i++)
+            if (Days[i].Day == day && Days[i].Suggestions != count)
+                Days[i] = Days[i] with { Suggestions = count };
+        for (var i = 0; i < MonthCells.Count; i++)
+            if (MonthCells[i].Day == day && MonthCells[i].Suggestions != count)
+                MonthCells[i] = MonthCells[i] with { Suggestions = count };
     }
 
     private void ShowDays(OverviewData data)
@@ -356,11 +401,11 @@ public sealed record OverviewData(
 {
     /// <summary>
     /// Reads a period with a connection of its own (connections are single-thread); for a background thread. A week
-    /// also works out each day's activity for its timeline; a month only its totals. With <paramref name="suggestions"/>,
-    /// each recorded day's suggestions are worked out again; without, those stored are counted.
+    /// also works out each day's activity for its timeline; a month only its totals. Each day's open suggestions are
+    /// counted as stored (the Overview then works them out again).
     /// </summary>
     public static OverviewData Load(string dataFolder, Period period, TimeSpan maxCaptureLength, TimeOnly dayStart,
-        WorklapseSettings settings, SuggestionEngine? suggestions)
+        WorklapseSettings settings)
     {
         using var db = WorklapseDatabase.Open(dataFolder);
         var history = new HistoryStore(db, dayStart);
@@ -371,17 +416,8 @@ public sealed record OverviewData(
             projects.GetDayNotes(period.Start, period.End),
             ProjectCatalog.Read(projects),
             dayStart,
-            OpenSuggestions(history, days, settings, suggestions));
-    }
-
-    private static Dictionary<DateOnly, int> OpenSuggestions(HistoryStore history, List<DaySummary> days, WorklapseSettings settings,
-        SuggestionEngine? engine)
-    {
-        if (!settings.SuggestProjects)
-            return [];
-        if (engine is null)
-            return new SuggestionStore(history.Database).CountOpen(days.Select(d => (d.Day, history.DayRange(d.Day).Start, history.DayRange(d.Day).End)));
-        return days.Where(d => d.Extent is not null)
-            .ToDictionary(d => d.Day, d => engine.Refresh(history, d.Day, settings).Count(s => s.IsOpen));
+            settings.SuggestProjects
+                ? new SuggestionStore(db).CountOpen(days.Select(d => (d.Day, history.DayRange(d.Day).Start, history.DayRange(d.Day).End)))
+                : []);
     }
 }
