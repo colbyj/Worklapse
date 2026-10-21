@@ -61,11 +61,14 @@ public sealed class DecodedFrame
 /// </summary>
 internal sealed class FramePool
 {
-    /// <summary>Free buffers kept per frame size; anything beyond is left to the GC.</summary>
-    private const int MaxFreePerSize = 2;
+    /// <summary>
+    /// Free buffers kept, of all sizes together (two each for four monitors); anything beyond is left to the GC. A limit
+    /// per size let pictures cropped to their window (imported TimeSnapper days, thousands of sizes) pile up gigabytes.
+    /// </summary>
+    private const int MaxFree = 8;
 
     private readonly Lock _gate = new();
-    private readonly Dictionary<int, Stack<byte[]>> _free = [];
+    private readonly List<byte[]> _free = []; // oldest returned first
 
     public DecodedFrame Rent(int width, int height)
     {
@@ -73,8 +76,12 @@ internal sealed class FramePool
         byte[]? buffer = null;
         lock (_gate)
         {
-            if (_free.TryGetValue(size, out var stack) && stack.Count > 0)
-                buffer = stack.Pop();
+            var i = _free.FindLastIndex(b => b.Length == size);
+            if (i >= 0)
+            {
+                buffer = _free[i];
+                _free.RemoveAt(i);
+            }
         }
         return new DecodedFrame(this, width, height, buffer ?? GC.AllocateUninitializedArray<byte>(size));
     }
@@ -83,10 +90,9 @@ internal sealed class FramePool
     {
         lock (_gate)
         {
-            if (!_free.TryGetValue(buffer.Length, out var stack))
-                _free[buffer.Length] = stack = new Stack<byte[]>();
-            if (stack.Count < MaxFreePerSize)
-                stack.Push(buffer);
+            _free.Add(buffer);
+            if (_free.Count > MaxFree)
+                _free.RemoveAt(0);
         }
     }
 
