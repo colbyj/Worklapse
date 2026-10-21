@@ -3,6 +3,7 @@
         xmlns:vm="using:Worklapse.App.ViewModels"
         xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:controls="using:Worklapse.App.Controls"
+        xmlns:views="using:Worklapse.App.Views"
         x:Class="Worklapse.App.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Settings — Worklapse"
@@ -53,6 +54,11 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="0" />
+    </Style>
+    <!-- At most twelve swatches a row (each 18 + 2×2 padding + 2×2 border + 2 margin = 28), fewer when narrow. -->
+    <Style Selector="ListBox.palette WrapPanel">
+      <Setter Property="MaxWidth" Value="336" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
     <Style Selector="ListBox.palette ListBoxItem">
       <Setter Property="Padding" Value="2" />
@@ -434,17 +440,20 @@
                     <TextBlock Classes="label" Text="Name:" />
                     <TextBox Grid.Column="1" Text="{Binding Name}" AutomationProperties.Name="Category name" />
                     <TextBlock Grid.Row="1" Classes="label" Text="Colour:" VerticalAlignment="Top" Margin="0,4,10,0" />
-                    <ListBox Grid.Row="1" Grid.Column="1" Classes="palette" ItemsSource="{Binding Palette}" SelectedItem="{Binding SelectedPaletteColor}"
-                             AutomationProperties.Name="Category colour">
-                      <ListBox.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                      </ListBox.ItemsPanel>
-                      <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:PaletteColor">
-                          <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Brush}" />
-                        </DataTemplate>
-                      </ListBox.ItemTemplate>
-                    </ListBox>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+                      <ListBox Classes="palette" ItemsSource="{Binding Palette}" SelectedItem="{Binding SelectedPaletteColor}"
+                               AutomationProperties.Name="Category colour">
+                        <ListBox.ItemsPanel>
+                          <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:PaletteColor">
+                            <Border Width="18" Height="18" CornerRadius="3" Background="{Binding Brush}" />
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                      <views:ColorField Rgb="{Binding Color}" />
+                    </StackPanel>
                     <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" Text="Its projects use this colour unless they have their own" />
                   </Grid>
                 </DataTemplate>
@@ -499,6 +508,7 @@
                           </DataTemplate>
                         </ListBox.ItemTemplate>
                       </ListBox>
+                      <views:ColorField Margin="22,0,0,0" Rgb="{Binding OwnColor}" IsEnabled="{Binding UsesOwnColor}" />
                     </StackPanel>
 
                     <TextBlock Grid.Row="3" Classes="label" Text="Linked:" VerticalAlignment="Top" />

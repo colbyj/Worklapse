@@ -14,10 +14,15 @@ public sealed class PaletteColor(int rgb)
     public int Rgb { get; } = rgb;
     public IBrush Brush { get; } = ProjectColors.Brush(rgb);
 
+    /// <summary>Two rows of twelve, each new colour under the nearest original one. New projects take the
+    /// first unused colour, so the original row stays first and in order.</summary>
     public static IReadOnlyList<PaletteColor> All { get; } =
     [
         new(0x138D75), new(0x16A085), new(0x2E7D32), new(0x00838F), new(0x3949AB), new(0x7D3C98),
         new(0x8E44AD), new(0xC0397A), new(0xAD1457), new(0xD35400), new(0xB9770E), new(0x5D6D7E),
+
+        new(0x00695C), new(0x558B2F), new(0x827717), new(0x0288D1), new(0x1565C0), new(0x1A237E),
+        new(0x5E35B1), new(0xC0392B), new(0x7B241C), new(0xE67E22), new(0x6D4C41), new(0x37474F),
     ];
 
     public static PaletteColor? Find(int? rgb) => rgb is { } value ? All.FirstOrDefault(c => c.Rgb == value) : null;

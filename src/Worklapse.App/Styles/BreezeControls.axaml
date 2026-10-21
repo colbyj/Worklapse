@@ -690,4 +690,88 @@
       <Setter Property="BorderBrush" Value="{DynamicResource SystemErrorTextColor}" />
     </Style>
   </ControlTheme>
+
+  <!--
+    The custom colour picker's parts (Views/ColorField): a colour square and a hue strip, framed like the other
+    fields, with a radio-button-style handle. These are their only themes: the ColorPicker package's Fluent ones
+    aren't loaded.
+  -->
+  <ControlTheme x:Key="{x:Type ColorSpectrum}" TargetType="ColorSpectrum">
+    <Setter Property="Template">
+      <ControlTemplate TargetType="ColorSpectrum">
+        <Panel Name="PART_LayoutRoot">
+          <!-- Sized square by the control. The ring shapes are for its ring mode, unused but looked up. -->
+          <Panel Name="PART_SizingPanel" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True">
+            <Rectangle Name="PART_SpectrumRectangle" IsHitTestVisible="False" RadiusX="3" RadiusY="3" />
+            <Rectangle Name="PART_SpectrumOverlayRectangle" IsHitTestVisible="False" RadiusX="3" RadiusY="3" />
+            <Ellipse Name="PART_SpectrumEllipse" IsHitTestVisible="False" IsVisible="False" />
+            <Ellipse Name="PART_SpectrumOverlayEllipse" IsHitTestVisible="False" IsVisible="False" />
+            <Canvas Name="PART_InputTarget" Background="Transparent">
+              <Panel Name="PART_SelectionEllipsePanel" Width="14" Height="14">
+                <Ellipse Name="SelectionEllipse" StrokeThickness="2" Stroke="#232629" IsHitTestVisible="False" />
+              </Panel>
+            </Canvas>
+            <Rectangle IsHitTestVisible="False" RadiusX="3" RadiusY="3" StrokeThickness="1" Stroke="{DynamicResource UiFrameBrush}" />
+          </Panel>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+    <!-- The control marks a dark colour under the ring as wanting a light ring. -->
+    <Style Selector="^:light-selector /template/ Ellipse#SelectionEllipse">
+      <Setter Property="Stroke" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Ellipse#SelectionEllipse">
+      <Setter Property="StrokeThickness" Value="3" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="BreezeColorSliderThumb" TargetType="Thumb">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Ellipse Name="Ring" StrokeThickness="1" Fill="{DynamicResource UiViewBrush}" Stroke="{DynamicResource UiFrameBrush}" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Ellipse#Ring">
+      <Setter Property="Stroke" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+    <Style Selector="^:pressed /template/ Ellipse#Ring">
+      <Setter Property="Fill" Value="{DynamicResource UiAccentPressedBrush}" />
+      <Setter Property="Stroke" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="BreezeColorSliderTrackButton" TargetType="RepeatButton">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="Transparent" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- Horizontal only (all the picker uses). The strip fills the slider: the control draws its gradient for the
+       slider's whole size, and a smaller strip (even one inside a frame) would get it shrunk, keeping its
+       proportions, into its middle. So the frame is drawn over it. -->
+  <ControlTheme x:Key="{x:Type ColorSlider}" TargetType="ColorSlider">
+    <Setter Property="Height" Value="16" />
+    <Setter Property="Template">
+      <ControlTemplate TargetType="ColorSlider">
+        <Panel>
+          <Border CornerRadius="3" Background="{TemplateBinding Background}" />
+          <Border CornerRadius="3" BorderThickness="1" BorderBrush="{DynamicResource UiFrameBrush}" />
+          <Track Name="PART_Track" Orientation="Horizontal"
+                 Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                 Value="{TemplateBinding Value, Mode=TwoWay}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+            <Track.DecreaseButton>
+              <RepeatButton Name="PART_DecreaseButton" Theme="{StaticResource BreezeColorSliderTrackButton}" />
+            </Track.DecreaseButton>
+            <Track.IncreaseButton>
+              <RepeatButton Name="PART_IncreaseButton" Theme="{StaticResource BreezeColorSliderTrackButton}" />
+            </Track.IncreaseButton>
+            <Thumb Name="ColorSliderThumb" Width="16" Height="16" Theme="{StaticResource BreezeColorSliderThumb}" />
+          </Track>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
 </ResourceDictionary>

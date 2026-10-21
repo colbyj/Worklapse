@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Worklapse.App.Views.ColorField">
+  <!-- A colour off the palette: a colour square, a hue strip and a hex field drop down from "Custom…". The button
+       shows the colour while it's one the palette doesn't have. -->
+  <Button Name="CustomButton" HorizontalAlignment="Left" AutomationProperties.Name="Custom colour">
+    <StackPanel Orientation="Horizontal" Spacing="6">
+      <Rectangle Name="CustomSwatch" Width="12" Height="12" RadiusX="2" RadiusY="2" IsVisible="False" VerticalAlignment="Center" />
+      <TextBlock Text="Custom…" />
+    </StackPanel>
+    <Button.Flyout>
+      <Flyout Placement="BottomEdgeAlignedLeft" Opening="OnPickerOpening" Closed="OnPickerClosed">
+        <StackPanel Name="PickerPanel" Width="180" Spacing="8">
+          <ColorSpectrum Name="Spectrum" Height="180" Components="SaturationValue" ColorChanged="OnSpectrumColorChanged"
+                         AutomationProperties.Name="Saturation and brightness" />
+          <ColorSlider Name="HueSlider" ColorModel="Hsva" ColorComponent="Component1" IsAlphaVisible="False"
+                       HsvColor="{Binding #Spectrum.HsvColor, Mode=TwoWay}" AutomationProperties.Name="Hue" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Rectangle Name="Preview" Width="24" Height="24" RadiusX="3" RadiusY="3" StrokeThickness="1"
+                       Stroke="{DynamicResource UiFrameBrush}" VerticalAlignment="Center" />
+            <TextBox Name="HexBox" Width="90" MaxLength="7" TextChanged="OnHexChanged" LostFocus="OnHexLostFocus"
+                     AutomationProperties.Name="Hex colour" />
+          </StackPanel>
+        </StackPanel>
+      </Flyout>
+    </Button.Flyout>
+  </Button>
+</UserControl>
