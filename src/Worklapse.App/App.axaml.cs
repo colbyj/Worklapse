@@ -28,6 +28,8 @@ public partial class App : Application
     private readonly SuggestionEngine _suggestionEngine = new();
     private PlatformServices? _platform;
     private Recorder? _recorder;
+    private BackgroundScreenReading? _pastReading; // null where the platform can't read screens
+    private PastReadingWindow? _pastReadingWindow;
     private volatile FrameSink? _sink; // the recorder's current one, created on its thread
     private RecordingViewModel? _recording;
     private MainWindow? _mainWindow;
@@ -95,6 +97,13 @@ public partial class App : Application
         ThemeManager.Use(_settings.Current);
         _settings.Changed += (_, settings) => Dispatcher.UIThread.Post(() => ThemeManager.Use(settings));
         _platform = CreatePlatform();
+        // A Read Past Days left running goes on now, quietly.
+        if (_platform.TextReader is { } reader)
+        {
+            _pastReading = new BackgroundScreenReading(_settings, reader, action => Dispatcher.UIThread.Post(action));
+            // Its threads' pictures and OCR engines leave hundreds of MB behind (more with many threads).
+            _pastReading.Ended += (_, _) => ReleaseMemory();
+        }
         _recorder = new Recorder(_settings, _platform, CreateSink);
         if (!_settings.Current.RecordAtStartup)
             _recorder.IsPaused = true;
@@ -301,7 +310,7 @@ public partial class App : Application
         var monitors = _platform!.Screen.GetMonitors();
         // The recording preview captures the primary monitor with a source of its own.
         var sampler = _platform.CreateScreenSource is { } createSource ? new PrimaryScreenSampler(createSource()) : null;
-        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler, _platform.KnowsPrimaryMonitor, _platform.TextReader) };
+        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler, _platform.KnowsPrimaryMonitor, _pastReading, ShowPastReading) };
         var owner = ShowMainWindow();
         await dialog.ShowDialog(owner);
         // Projects and links may have changed (they live in the history, not the settings file).
@@ -310,13 +319,33 @@ public partial class App : Application
         ReleaseMemory();
     }
 
+    /// <summary>Shows Read Past Days' progress, making its window if it isn't open (closing it leaves the reading going).</summary>
+    private void ShowPastReading()
+    {
+        if (_pastReading is null)
+            return;
+        if (_pastReadingWindow is null)
+        {
+            _pastReadingWindow = new PastReadingWindow { DataContext = new PastReadingViewModel(_pastReading) };
+            _pastReadingWindow.Closed += (_, _) => _pastReadingWindow = null;
+            _pastReadingWindow.Show();
+        }
+        if (_pastReadingWindow.WindowState == WindowState.Minimized)
+            _pastReadingWindow.WindowState = WindowState.Normal;
+        _pastReadingWindow.Activate();
+    }
+
     /// <summary>
-    /// Collects once a window is torn down and gives the memory back to the OS. Otherwise the GC keeps what the window
-    /// left behind committed for a long time, since recording allocates too little to trigger collections.
+    /// Collects once a window is torn down (or Read Past Days ends) and gives the memory back to the OS. Otherwise the GC
+    /// keeps what was left behind committed for a long time, since recording allocates too little to trigger collections.
+    /// Finalizers run in between, so what they release (COM objects such as OCR engines) goes in the second collection.
     /// </summary>
-    private static void ReleaseMemory() => Dispatcher.UIThread.Post(
-        () => GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true),
-        DispatcherPriority.Background);
+    private static void ReleaseMemory() => Dispatcher.UIThread.Post(() =>
+    {
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+    }, DispatcherPriority.Background);
 
     /// <summary>Once per run, when closing the main window leaves Worklapse running in the tray (if the settings want that).</summary>
     private void TellStillInTray()
@@ -335,7 +364,10 @@ public partial class App : Application
         if (_quitting)
             return;
         _quitting = true;
+        _pastReadingWindow?.Close();
         _mainWindow?.Close();
+        // A run under way stops here and goes on at the next start.
+        _pastReading?.Dispose();
         if (_recorder is not null)
             await _recorder.DisposeAsync();
         _platform?.Dispose();

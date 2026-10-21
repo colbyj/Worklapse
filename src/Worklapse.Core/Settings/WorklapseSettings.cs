@@ -132,10 +132,19 @@ public sealed record WorklapseSettings
     /// <summary>How sure the classifier must be of a block, in percent, for it to be offered.</summary>
     public int MinimumCertainty { get; init; } = 51;
 
-    /// <summary>Threads reading the screens of past days (Settings, Read Past Days), each a core's worth of CPU.</summary>
+    /// <summary>Threads reading the screens of past days (Read Past Days), each a core's worth of CPU.</summary>
     public int PastReadingThreads { get; init; } = DefaultPastReadingThreads;
 
     public const int DefaultPastReadingThreads = 4;
+
+    /// <summary>Read Past Days was started and hasn't finished or been stopped: it goes on when Worklapse starts.</summary>
+    public bool PastReadingRunning { get; init; }
+
+    /// <summary>
+    /// What the last finished Read Past Days covered (up to when it started); afterwards, captures from then on that the
+    /// recorder didn't get to read are caught up. Null until one finishes.
+    /// </summary>
+    public DateTimeOffset? PastReadingReadUpTo { get; init; }
 
     /// <summary>Whether the recorder reads the active window's text.</summary>
     [JsonIgnore]

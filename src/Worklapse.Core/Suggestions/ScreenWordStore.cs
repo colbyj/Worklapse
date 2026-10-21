@@ -17,13 +17,12 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
 
     /// <summary>
     /// Keeps the words read off a capture's screen, replacing any it had, unless reading isn't allowed for it (any more)
-    /// or the capture is gone (deleted while it was being read).
+    /// or the capture is gone (deleted while it was being read). No words is kept too, so the capture counts as read and
+    /// isn't read again.
     /// </summary>
     /// <returns>Whether they were kept.</returns>
     public bool Set(long captureId, IReadOnlyCollection<string> words)
     {
-        if (words.Count == 0)
-            return false;
         // Checked and written in one (immediate) transaction: reading turned off in between would prune before the
         // words arrived, and they'd stay.
         using var transaction = db.BeginTransaction();
@@ -41,11 +40,11 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
     }
 
     /// <summary>Gives a capture the words of another, for a capture whose screen didn't change; the same rules apply.</summary>
-    /// <returns>Whether there were words to copy and they were kept.</returns>
+    /// <returns>Whether the other was read (words or none) and they were kept.</returns>
     public bool Copy(long fromCaptureId, long toCaptureId) =>
         Get(fromCaptureId) is { } words && Set(toCaptureId, words);
 
-    /// <summary>A capture's words, or null when none were read (or kept).</summary>
+    /// <summary>A capture's words (empty when its screen showed none), or null when it wasn't read (or they weren't kept).</summary>
     public string[]? Get(long captureId)
     {
         using var command = db.Command("SELECT words FROM screen_words WHERE capture_id = $id;");
@@ -53,7 +52,7 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
         return command.ExecuteScalar() is string words ? words.Split(' ', StringSplitOptions.RemoveEmptyEntries) : null;
     }
 
-    /// <summary>The words of every capture from start up to (not including) end that has some, by capture id.</summary>
+    /// <summary>The words of every capture from start up to (not including) end that was read, by capture id.</summary>
     public Dictionary<long, string[]> Get(DateTimeOffset start, DateTimeOffset end)
     {
         using var command = db.Command("""

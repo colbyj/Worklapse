@@ -18,8 +18,8 @@ public partial class SettingsWindow : Window
         Closed += (_, _) =>
         {
             (DataContext as SettingsViewModel)?.Preview?.Dispose();
-            // Reading past days' screens works for the dialog; closing it stops (what was read is kept).
-            (DataContext as SettingsViewModel)?.StopReadingPastDays();
+            // Read Past Days carries on in the background.
+            (DataContext as SettingsViewModel)?.Detach();
         };
     }
 

@@ -244,12 +244,12 @@ public class ScreenWordTests
         }
 
         var reader = new FakeReader();
-        var reports = new List<(int Done, int Total)>();
+        var reports = new List<PastReadingProgress>();
         var progress = new SynchronousProgress(reports);
         Assert.Equal(20, PastScreenReading.Run(folder.Path, reader, Nine, Nine.AddHours(1), default, 4, progress, TestContext.Current.CancellationToken));
 
         Assert.Equal(20, reader.Reads);
-        Assert.Equal((20, 20), reports[^1]);
+        Assert.Equal(new PastReadingProgress(0, 0, 20, 20), reports[^1]);
         Assert.True(reports.Zip(reports.Skip(1)).All(p => p.First.Done <= p.Second.Done)); // never goes back
         using var check = WorklapseDatabase.Open(folder.Path);
         var words = new ScreenWordStore(check);
@@ -292,9 +292,9 @@ public class ScreenWordTests
     }
 
     /// <summary>Progress kept as it's reported, on the reporting thread (<see cref="Progress{T}"/> posts it elsewhere).</summary>
-    private sealed class SynchronousProgress(List<(int Done, int Total)> reports) : IProgress<(int Done, int Total)>
+    private sealed class SynchronousProgress(List<PastReadingProgress> reports) : IProgress<PastReadingProgress>
     {
-        public void Report((int Done, int Total) value) => reports.Add(value); // PastScreenReading reports under a lock
+        public void Report(PastReadingProgress value) => reports.Add(value); // PastScreenReading reports under a lock
     }
 
     /// <summary>A capture's words, failing the test when it has none.</summary>

@@ -231,12 +231,23 @@ outside ranges teach too, and each project starts from its name, links and rules
   dropping new work when full). A capture showing the same frame and window copies the words instead.
 - `PastScreenReading` (Worklapse.Video): reads the captures of a time range that have no words from their stored frames
   (AV1, images, imported TimeSnapper pictures), once per distinct frame and window, on `PastReadingThreads` lowest-priority
-  threads (Settings, default 4; each its own decoder and OCR engine). First the segments holding a capture training learns
+  threads (default 4; each its own decoder and OCR engine). A screen with no words is stored as an empty row, so it counts
+  as read; a frame that can't be decoded, or a reader failure, leaves the capture for another run. First the segments holding a capture training learns
   from (`TrainingSet.Assignments` on the labelled days; a video segment whole, a picture is its own segment), then the
   rest; oldest first, each segment's frames in order. Reading a video's frames backward (the first version went newest
   first) restarted the decoder at the key frame every few frames: 412 ms a capture on Oct 19 against 128 ms in order on
   one thread, 19 ms on 8. Imported TimeSnapper pictures: ~110 ms on one thread, ~21 ms on 8 (OCR is ~90% of it). On the
   developer's history (2026-10-20): 404k captures unread, 32k of them training data.
+- `BackgroundScreenReading` (Worklapse.Video), owned by the app: runs Read Past Days on its own thread until done or
+  stopped, whatever windows are open. `PastReadingRunning` (settings) makes it go on at the next start, quietly;
+  `PastReadingReadUpTo` records what a finished run covered. After that, every 5 minutes, one thread catches up the
+  captures since then (older than 2 minutes) that the recorder's queue dropped; each gets one try (the mark moves on).
+  Turning reading off stops it; another data folder starts the run again there. Changing threads starts the workers again
+  (~1 s), counts carried over. When a run's threads have ended (done, stopped, failed) the app collects (finalizers in
+  between: the OCR engines are COM objects) — about 550 MB back to ~50 MB after 8 threads.
+- Progress window (`PastReadingWindow`): time with a project ✓/▸/·, everything else, a bar, "N of M · about X" (speed over
+  the last 2 minutes, shown after 20 s), threads changeable while running (applied 1 s after the last click), Stop or
+  Read Past Days, Close (reading goes on). Opened from Settings' Read Past Days, which reads "Show Progress" while it runs.
 - Settings: `SuggestProjects`, `ReadScreenText` (both on), `GlanceMinutes` (2), `SplitMinutes` (30).
 - Measured while recording (Active application mode, 10 s interval, real screen, alternating runs of 3 minutes): CPU
   25.8% / 27.3% of one core with reading against 27.1% / 29.5% without (within the noise; capture and AV1 encoding are
@@ -277,8 +288,8 @@ outside ranges teach too, and each project starts from its name, links and rules
 **Phase 4 built 2026-10-20** (Settings):
 - A Suggestions tab: suggest projects on or off, what it learns from ("Time you set by hand: 164 blocks over 18 days"), text
   on the screen on or off, Read Past Days (reads the screens of everything recorded before, what training learns from first,
-  in the background on the number of threads chosen beside it, with progress and Stop; closing the dialog stops it, what was read stays; only where the platform has a
-  reader), and the glance and split limits. Turning reading off here stops it but keeps the words read so far; turning
+  in the background with its own progress window; it goes on after the dialog closes and after a restart; only where the
+  platform has a reader), and the glance and split limits. Turning reading off here stops it but keeps the words read so far; turning
   it off for an app, site or project deletes them.
 - Applications: Read screen and Learn columns (sortable, greyed while the app is excluded), saved on Apply.
 - Projects: a Suggestions row in a project's details, Suggest it and Read the screen during its time, saved on Apply.

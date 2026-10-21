@@ -26,17 +26,19 @@ public static class PastScreenReading
     /// <param name="dayStart">When a day starts (settings), for finding the days training learns from.</param>
     /// <returns>How many captures got words.</returns>
     public static int Run(string dataFolder, IScreenTextReader reader, DateTimeOffset from, DateTimeOffset to, TimeOnly dayStart,
-        int threads, IProgress<(int Done, int Total)>? progress, CancellationToken cancel)
+        int threads, IProgress<PastReadingProgress>? progress, CancellationToken cancel)
     {
-        List<Unread[]> segments;
+        List<Segment> segments;
         using (var history = new HistoryStore(WorklapseDatabase.Open(dataFolder), dayStart))
-            segments = InReadingOrder(FindUnread(history.Database, from, to), Training(history));
-        var total = segments.Sum(s => s.Length);
-        progress?.Report((0, total));
+        {
+            var unread = FindUnread(history.Database, from, to);
+            segments = InReadingOrder(unread, unread.Count > 0 ? Training(history) : []); // (catching up mostly finds nothing)
+        }
+        var run = new RunState(segments.Where(s => s.Training).Sum(s => s.Captures.Length), segments.Sum(s => s.Captures.Length), progress);
+        progress?.Report(run.Progress);
 
         // A thread failing stops the others, and its exception is the run's.
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-        var run = new RunState();
         var next = -1;
         Exception? failure = null;
         var workers = Enumerable.Range(0, Math.Max(1, threads)).Select(n => new Thread(() =>
@@ -49,8 +51,8 @@ public static class PastScreenReading
                 int i;
                 while ((i = Interlocked.Increment(ref next)) < segments.Count)
                 {
-                    var kept = ReadSegment(segments[i], frames, store, reader, run, stop.Token);
-                    run.Finished(segments[i].Length, kept, total, progress);
+                    var kept = ReadSegment(segments[i].Captures, frames, store, reader, run, stop.Token);
+                    run.Finished(segments[i], kept);
                 }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested)
@@ -78,14 +80,14 @@ public static class PastScreenReading
         RunState run, CancellationToken cancel)
     {
         var kept = 0;
-        (FrameRef Frame, PixelRect Window, string[] Words)? last = null;
+        (FrameRef Frame, PixelRect Window, string[]? Words)? last = null;
         foreach (var capture in captures)
         {
             cancel.ThrowIfCancellationRequested();
             if (!store.MayRead(capture.Id))
                 continue;
 
-            string[] words;
+            string[]? words;
             if (last is { } previous && previous.Frame == capture.Frame && previous.Window == capture.Window)
                 words = previous.Words;
             else
@@ -93,13 +95,15 @@ public static class PastScreenReading
                 words = Read(frames, reader, capture, run);
                 last = (capture.Frame, capture.Window, words);
             }
-            if (store.Set(capture.Id, words))
+            // No words is kept too (the capture counts as read); one that couldn't be read is left for another run.
+            if (words is not null && store.Set(capture.Id, words) && words.Length > 0)
                 kept++;
         }
         return kept;
     }
 
-    private static string[] Read(FrameProvider frames, IScreenTextReader reader, Unread capture, RunState run)
+    /// <returns>The words; null when the frame couldn't be decoded or the reader failed.</returns>
+    private static string[]? Read(FrameProvider frames, IScreenTextReader reader, Unread capture, RunState run)
     {
         DecodedFrame frame;
         try
@@ -111,7 +115,7 @@ public static class PastScreenReading
             // Its file is gone, moved (an imported picture) or damaged: that capture goes without words, the rest are read.
             if (run.FirstUnreadable())
                 Log.Error($"Reading past screens: frame {capture.Frame.FrameIndex} of segment {capture.Frame.SegmentId} can't be decoded; such captures are skipped.", ex);
-            return [];
+            return null;
         }
         try
         {
@@ -124,7 +128,7 @@ public static class PastScreenReading
             // As on the recorder's queue: that capture goes without words, the rest are still tried.
             if (run.FirstFailure())
                 Log.Error("Reading past screens: reading the screen failed; captures where it fails go without screen words.", ex);
-            return [];
+            return null;
         }
         finally
         {
@@ -136,11 +140,15 @@ public static class PastScreenReading
     /// The captures in the order they're read: grouped by segment, those with a <paramref name="training"/> capture first,
     /// then oldest segment first (as <paramref name="oldestFirst"/> has them), each segment's in frame order.
     /// </summary>
-    private static List<Unread[]> InReadingOrder(List<Unread> oldestFirst, HashSet<long> training) =>
+    private static List<Segment> InReadingOrder(List<Unread> oldestFirst, HashSet<long> training) =>
         oldestFirst.GroupBy(c => c.Frame.SegmentId)
             .Select(s => s.OrderBy(c => c.Frame.FrameIndex).ToArray())
-            .OrderBy(s => s.Any(c => training.Contains(c.Id)) ? 0 : 1) // stable: oldest first within each
+            .Select(captures => new Segment(captures, captures.Any(c => training.Contains(c.Id))))
+            .OrderBy(s => s.Training ? 0 : 1) // stable: oldest first within each
             .ToList();
+
+    /// <param name="Training">Whether training learns from any of its captures (they're read first).</param>
+    private sealed record Segment(Unread[] Captures, bool Training);
 
     /// <summary>
     /// The captures training learns from: those of the labelled days with a project set by hand (or none), a link or a
@@ -165,23 +173,29 @@ public static class PastScreenReading
     }
 
     /// <summary>What the reading threads share: the counts, and what was logged already (each kind once per run).</summary>
-    private sealed class RunState
+    private sealed class RunState(int trainingTotal, int total, IProgress<PastReadingProgress>? progress)
     {
         private readonly Lock _gate = new();
-        private int _done;
         private int _reportedUnreadable;
         private int _reportedFailure;
+
+        public PastReadingProgress Progress { get; private set; } = new(0, trainingTotal, 0, total);
 
         public int Kept { get; private set; }
 
         /// <summary>Counts a segment read. Reported under the lock, so progress never goes back.</summary>
-        public void Finished(int captures, int kept, int total, IProgress<(int Done, int Total)>? progress)
+        public void Finished(Segment segment, int kept)
         {
             lock (_gate)
             {
-                _done += captures;
+                var read = segment.Captures.Length;
+                Progress = Progress with
+                {
+                    TrainingDone = Progress.TrainingDone + (segment.Training ? read : 0),
+                    Done = Progress.Done + read,
+                };
                 Kept += kept;
-                progress?.Report((_done, total));
+                progress?.Report(Progress);
             }
         }
 
@@ -250,3 +264,10 @@ public static class PastScreenReading
         return captures;
     }
 }
+
+/// <summary>How far a <see cref="PastScreenReading"/> run got, in captures.</summary>
+/// <param name="TrainingDone">Captures read of the segments read first, those training learns from.</param>
+/// <param name="TrainingTotal">Captures in those segments.</param>
+/// <param name="Done">Captures read in all (those segments' included).</param>
+/// <param name="Total">Captures to read in all.</param>
+public readonly record struct PastReadingProgress(int TrainingDone, int TrainingTotal, int Done, int Total);

@@ -24,8 +24,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     public const int QualityWarningThreshold = 48;
 
     private readonly SettingsStore _store;
-    private readonly IScreenTextReader? _textReader;
-    private CancellationTokenSource? _reading;
+    private readonly BackgroundScreenReading? _pastReading;
+    private readonly Action? _showPastReading;
     private bool _loading;
     private IReadOnlyList<string> _unpluggedSelected = []; // selected monitors not attached now: kept as they are
     private bool _startAtLoginApplied; // as the OS has it
@@ -35,12 +35,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// Whether the desktop says which monitor is primary (KDE Plasma doesn't tell Worklapse); without it there's no
     /// "Primary monitor" choice.
     /// </param>
-    /// <param name="textReader">Reads text off pictures, for reading past days' screens; null where the platform can't.</param>
+    /// <param name="pastReading">Read Past Days; null where the platform can't read screens.</param>
+    /// <param name="showPastReading">Shows Read Past Days' progress window.</param>
     public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, PrimaryScreenSampler? sampler = null,
-        bool knowsPrimaryMonitor = true, IScreenTextReader? textReader = null)
+        bool knowsPrimaryMonitor = true, BackgroundScreenReading? pastReading = null, Action? showPastReading = null)
     {
         _store = store;
-        _textReader = textReader;
+        _pastReading = pastReading;
+        _showPastReading = showPastReading;
+        if (pastReading is not null)
+        {
+            pastReading.Changed += OnPastReadingChanged;
+            OnPastReadingChanged(null, EventArgs.Empty);
+        }
         // Still shown if it's the setting (from another desktop's settings file), so the dialog shows what is set.
         ShowsPrimaryMonitor = knowsPrimaryMonitor || store.Current.CaptureMode == CaptureMode.PrimaryMonitor;
         // Captured before the dialog shows, so it isn't in the picture.
@@ -102,45 +109,39 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool HasDefaults => SelectedTab is RecordingTab or GeneralTab;
 
     /// <summary>
-    /// Reads the screens of every past capture without words yet (what training learns from first), in the background: slow, so it says how
-    /// far it got and can be stopped (closing the dialog stops it); what it read stays.
+    /// Starts reading the screens of every past capture without words yet (what training learns from first), in the
+    /// background (it goes on after the dialog closes), and shows its progress; while it runs, shows the progress.
     /// </summary>
     [RelayCommand]
-    private async Task ReadPastDaysAsync()
+    private void ReadPastDays()
     {
-        if (_textReader is not { } reader || IsReadingPastDays)
+        if (_pastReading is null)
             return;
-        var cancel = _reading = new CancellationTokenSource();
-        IsReadingPastDays = true;
-        PastDaysText = "Finding what to read…";
-        var (folder, dayStart) = (_store.Current.DataFolder, _store.Current.DayStart);
-        var progress = new Progress<(int Done, int Total)>(p =>
-            PastDaysText = p.Total == 0 ? "Nothing left to read." : $"Read {p.Done:N0} of {p.Total:N0} captures…");
-        try
-        {
-            var threads = ChosenPastReadingThreads;
-            var kept = await Task.Run(() => PastScreenReading.Run(folder, reader, DateTimeOffset.MinValue.AddYears(1), DateTimeOffset.Now,
-                dayStart, threads, progress, cancel.Token));
-            PastDaysText = kept == 0 ? "Nothing left to read." : $"Done: {kept:N0} captures got words.";
-        }
-        catch (OperationCanceledException)
-        {
-            PastDaysText = "Stopped; what was read is kept.";
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
-        {
-            PastDaysText = "Couldn't read the history: " + ex.Message;
-        }
-        finally
-        {
-            IsReadingPastDays = false;
-            _reading = null;
-            cancel.Dispose();
-        }
+        if (!IsReadingPastDays)
+            _pastReading.Start();
+        _showPastReading?.Invoke();
     }
 
-    [RelayCommand]
-    public void StopReadingPastDays() => _reading?.Cancel();
+    /// <summary>Stops following Read Past Days (the dialog is closing); reading carries on.</summary>
+    public void Detach()
+    {
+        if (_pastReading is not null)
+            _pastReading.Changed -= OnPastReadingChanged;
+    }
+
+    private void OnPastReadingChanged(object? sender, EventArgs e)
+    {
+        var state = _pastReading!.State;
+        IsReadingPastDays = state == PastReadingState.Running;
+        PastDaysText = state switch
+        {
+            PastReadingState.Running => "Reading in the background",
+            PastReadingState.Done => "Done",
+            PastReadingState.Stopped => "Stopped; what was read is kept",
+            PastReadingState.Failed => "Couldn't read the history: " + _pastReading.Problem,
+            _ => "",
+        };
+    }
 
     /// <summary>The chosen format and quality applied to the screen; null when the screen couldn't be captured.</summary>
     public RecordingPreviewViewModel? Preview { get; }
@@ -186,21 +187,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private decimal? _glanceMinutes;
     [ObservableProperty] private decimal? _splitMinutes;
     [ObservableProperty] private decimal? _minimumCertainty;
-    [ObservableProperty] private decimal? _pastReadingThreads;
-
-    /// <summary>The most threads Read Past Days can use: one per logical core.</summary>
-    public int MaxPastReadingThreads { get; } = Environment.ProcessorCount;
 
     /// <summary>What suggestions learn from: the time set by hand in the history.</summary>
     [ObservableProperty] private string _learnsFromText = "";
 
     /// <summary>The screens of past days can be read here (Windows' OCR; none on Linux yet).</summary>
-    public bool CanReadScreens => _textReader is not null;
+    public bool CanReadScreens => _pastReading is not null;
 
-    public bool CanReadPastDays => CanReadScreens && SuggestProjects && ReadScreenText && !IsReadingPastDays;
+    /// <summary>Starting needs reading on, applied as well as ticked; a run under way can always be shown.</summary>
+    public bool CanReadPastDays => CanReadScreens && (IsReadingPastDays || (SuggestProjects && ReadScreenText && _store.Current.ReadsScreen));
+
+    public string ReadPastDaysText => IsReadingPastDays ? "Show Progress" : "Read Past Days";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanReadPastDays))]
+    [NotifyPropertyChangedFor(nameof(CanReadPastDays), nameof(ReadPastDaysText))]
     private bool _isReadingPastDays;
 
     [ObservableProperty] private string _pastDaysText = "";
@@ -311,6 +311,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
         _store.Save(ToSettings());
         IsDirty = false;
+        OnPropertyChanged(nameof(CanReadPastDays)); // it follows the applied reading setting too
         if (!string.Equals(_store.Current.DataFolder, folder, StringComparison.OrdinalIgnoreCase))
             _ = LoadHistoryAsync(_store.Current.DataFolder);
     }
@@ -390,12 +391,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         GlanceMinutes = (int)(GlanceMinutes ?? 2),
         SplitMinutes = (int)(SplitMinutes ?? 30),
         MinimumCertainty = (int)(MinimumCertainty ?? 51),
-        PastReadingThreads = ChosenPastReadingThreads,
     };
-
-    /// <summary>The thread count in the dialog, applied or not.</summary>
-    private int ChosenPastReadingThreads =>
-        Math.Clamp((int)(PastReadingThreads ?? WorklapseSettings.DefaultPastReadingThreads), 1, MaxPastReadingThreads);
 
     private void Load(WorklapseSettings settings)
     {
@@ -430,7 +426,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         GlanceMinutes = settings.GlanceMinutes;
         SplitMinutes = settings.SplitMinutes;
         MinimumCertainty = settings.MinimumCertainty;
-        PastReadingThreads = settings.PastReadingThreads;
         _loading = false;
         // Defaults don't touch the Applications and Projects pages (they're history, not settings); their changes still count.
         IsDirty = !settings.Equals(_store.Current) || !settings.SelectedMonitors.SequenceEqual(_store.Current.SelectedMonitors)
@@ -441,7 +436,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         // CanApply follows IsDirty: counting it as a change kept the dialog dirty right after Apply.
         if (e.PropertyName is not (nameof(IsDirty) or nameof(CanApply) or nameof(CanConfirm) or nameof(SelectedTab) or nameof(HasDefaults)
-            or nameof(LearnsFromText) or nameof(IsReadingPastDays) or nameof(PastDaysText) or nameof(CanReadPastDays)))
+            or nameof(LearnsFromText) or nameof(IsReadingPastDays) or nameof(PastDaysText) or nameof(CanReadPastDays)
+            or nameof(ReadPastDaysText)))
             MarkDirty();
         if (e.PropertyName is nameof(IsVideo) or nameof(IsJpeg) or nameof(IsWebP) or nameof(Quality) or nameof(JpegQuality) or nameof(WebPQuality)
             or nameof(IntervalSeconds))
