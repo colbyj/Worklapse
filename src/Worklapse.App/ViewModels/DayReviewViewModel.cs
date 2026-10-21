@@ -332,6 +332,13 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         IsPlaying = false;
     }
 
+    /// <summary>Pauses playback (Day review is no longer shown: playing on unseen would keep decoding).</summary>
+    public void StopPlaying()
+    {
+        if (IsPlaying)
+            Stop();
+    }
+
     private void PlayTick()
     {
         var step = SpeedSteps[Math.Max(0, Speeds.ToList().IndexOf(Speed))];

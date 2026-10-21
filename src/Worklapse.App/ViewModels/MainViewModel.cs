@@ -46,6 +46,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(IsOverview), nameof(IsDayReview), nameof(IsTimesheet), nameof(Title))]
     private MainView _view;
 
+    partial void OnViewChanged(MainView value)
+    {
+        // Hidden, Day review is kept as it was, but not playing: its decoders then close after a while.
+        if (value != MainView.DayReview)
+            DayReview?.StopPlaying();
+    }
+
     public bool IsOverview => View == MainView.Overview;
     public bool IsDayReview => View == MainView.DayReview;
     public bool IsTimesheet => View == MainView.Timesheet;
