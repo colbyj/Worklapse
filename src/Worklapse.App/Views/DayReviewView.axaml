@@ -464,6 +464,14 @@
               </StackPanel>
             </TabItem.Header>
             <DockPanel>
+              <!-- Suggestions worked out again after an edit wait here instead of replacing the list being worked through. -->
+              <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,0,0,1" Padding="6,4"
+                      IsVisible="{Binding HasNewSuggestions}">
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Content="Refresh" Command="{Binding ShowNewSuggestionsCommand}" />
+                  <TextBlock Text="Suggestions changed" VerticalAlignment="Center" />
+                </DockPanel>
+              </Border>
               <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,104,40,124">
                 <TextBlock Text="Suggested project" />
                 <TextBlock Grid.Column="1" Text="Block" />

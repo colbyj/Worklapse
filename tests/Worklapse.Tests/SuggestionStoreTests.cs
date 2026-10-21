@@ -69,6 +69,26 @@ public class SuggestionStoreTests
     }
 
     [Fact]
+    public void WorkingOutAgainChangesTheBlocksOnlyWhenOneIsAddedTakenAwayOrMoved()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var projects = new ProjectStore(db);
+        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)), Block(1000, 1600, frankensystem)]);
+        store.Reject(store.Get(Nine, Nine.AddDays(1))[1].Id);
+
+        // Only the certainty and evidence differ, and the rejected block is computed again: nothing to show.
+        Assert.False(store.Changes(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)) with { Confidence = 0.5, Evidence = [] },
+            Block(1000, 1600, frankensystem)]));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), [Block(0, 650, presayo, Break(200, 300))]));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(250, 300))]));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)), Block(2000, 2600, presayo)]));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), []));
+    }
+
+    [Fact]
     public void ASmallRejectedBlockHidesItselfButNotALargerOneAroundIt()
     {
         using var folder = new TempFolder();
@@ -239,6 +259,41 @@ public class SuggestionStoreTests
         // A new capture on the day: worked out again.
         recording.InsertCapture(Nine.AddSeconds(600), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
         Assert.Contains("title:presets", Assert.Single(engine.Refresh(history, Day, settings)).Evidence);
+    }
+
+    [Fact]
+    public async Task SuggestionsWorkedOutAgainAreStoredOnlyWhenAskedFor()
+    {
+        using var folder = new TempFolder();
+        using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
+        var db = history.Database;
+        var projects = new ProjectStore(db);
+        var presayo = projects.AddProject("Presayo", null);
+        var recording = new RecordingStore(db);
+        var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        var yesterday = Nine.AddDays(-1);
+        for (var s = 0; s < 600; s += 10)
+        {
+            recording.InsertCapture(yesterday.AddSeconds(s), CaptureKind.Active, terminal, "Group label presets by printer type", null);
+            recording.InsertCapture(Nine.AddSeconds(s), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
+        }
+        projects.SetSpan(yesterday, yesterday.AddSeconds(600), presayo);
+        var settings = new WorklapseSettings();
+        var engine = new SuggestionEngine();
+        var store = new SuggestionStore(db);
+        var (start, end) = history.DayRange(Day);
+
+        var worked = await engine.WorkOutAsync(db.DataFolder, history.DayStart, Day, settings, () => true);
+        Assert.Equal(presayo, Assert.Single(worked!.Suggestions).ProjectId);
+        Assert.Empty(store.Get(start, end));
+        Assert.True(store.Changes(start, end, worked.Suggestions));
+
+        // Stored: shown as they are, and not worked out again while nothing changes.
+        engine.Store(history, worked);
+        Assert.Single(store.Get(start, end));
+        Assert.Null(await engine.WorkOutAsync(db.DataFolder, history.DayStart, Day, settings, () => true));
+        Assert.Null(await engine.WorkOutAsync(db.DataFolder, history.DayStart, Day, settings with { SuggestProjects = false }, () => true));
     }
 
     [Fact]

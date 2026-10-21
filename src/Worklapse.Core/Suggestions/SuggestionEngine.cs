@@ -5,6 +5,11 @@ using Worklapse.Core.Storage;
 
 namespace Worklapse.Core.Suggestions;
 
+/// <summary>A day's suggestions worked out again and not stored yet (<see cref="SuggestionEngine.Store"/>).</summary>
+/// <param name="Stamp">What they were worked out from, so storing them saves working the day out again.</param>
+public sealed record WorkedOutDay(DateOnly Day, DateTimeOffset Start, DateTimeOffset End, IReadOnlyList<Suggestion> Suggestions,
+    string Stamp);
+
 /// <summary>
 /// Works out a day's suggestions from what history teaches and keeps them (<see cref="SuggestionStore"/>). The classifier
 /// is trained on every day with ranges set by hand and kept until something it learns from changes: the ranges, links,
@@ -22,7 +27,10 @@ public sealed class SuggestionEngine
     private readonly SemaphoreSlim _turn = new(1, 1);
     private (string Stamp, ProjectClassifier Classifier)? _trained;
 
-    /// <summary>What each day was last worked out from (<see cref="DayStamp"/>), by data folder and day.</summary>
+    /// <summary>
+    /// What each day's stored suggestions were worked out from (<see cref="DayStamp"/>), by data folder and day. Locked:
+    /// <see cref="Store"/> is called outside the turn.
+    /// </summary>
     private readonly Dictionary<(string Folder, DateOnly Day), string> _workedOut = [];
 
     /// <summary>
@@ -46,8 +54,29 @@ public sealed class SuggestionEngine
     /// As <see cref="Refresh"/>, on a background thread with a connection of its own, after the calls already waiting;
     /// null when, by its turn, <paramref name="stillWanted"/> says the result isn't needed any more.
     /// </summary>
-    public async Task<List<StoredSuggestion>?> RefreshAsync(string dataFolder, TimeOnly dayStart, DateOnly day,
-        WorklapseSettings settings, Func<bool> stillWanted)
+    public Task<List<StoredSuggestion>?> RefreshAsync(string dataFolder, TimeOnly dayStart, DateOnly day,
+        WorklapseSettings settings, Func<bool> stillWanted) =>
+        InTurnAsync(dataFolder, dayStart, stillWanted, history => RefreshInTurn(history, day, settings));
+
+    /// <summary>
+    /// Works <paramref name="day"/>'s suggestions out again as <see cref="RefreshAsync"/> does, without storing them, so
+    /// they can be shown later (<see cref="Store"/>); null when nothing they rest on changed since they were stored, when
+    /// suggestions are turned off, or when by its turn <paramref name="stillWanted"/> says they aren't needed any more.
+    /// </summary>
+    public Task<WorkedOutDay?> WorkOutAsync(string dataFolder, TimeOnly dayStart, DateOnly day, WorklapseSettings settings,
+        Func<bool> stillWanted) =>
+        InTurnAsync(dataFolder, dayStart, stillWanted, history => settings.SuggestProjects ? WorkOutInTurn(history, day, settings) : null);
+
+    /// <summary>Stores a day's suggestions as worked out (<see cref="SuggestionStore.Replace"/>), keeping its decisions.</summary>
+    public void Store(HistoryStore history, WorkedOutDay worked)
+    {
+        new SuggestionStore(history.Database).Replace(worked.Start, worked.End, worked.Suggestions);
+        lock (_workedOut)
+            _workedOut[(history.Database.DataFolder, worked.Day)] = worked.Stamp;
+    }
+
+    private async Task<T?> InTurnAsync<T>(string dataFolder, TimeOnly dayStart, Func<bool> stillWanted, Func<HistoryStore, T?> work)
+        where T : class
     {
         await _turn.WaitAsync().ConfigureAwait(false);
         try
@@ -57,7 +86,7 @@ public sealed class SuggestionEngine
             return await Task.Run(() =>
             {
                 using var history = new HistoryStore(WorklapseDatabase.Open(dataFolder), dayStart);
-                return RefreshInTurn(history, day, settings);
+                return work(history);
             }).ConfigureAwait(false);
         }
         finally
@@ -82,16 +111,23 @@ public sealed class SuggestionEngine
 
     private List<StoredSuggestion> RefreshInTurn(HistoryStore history, DateOnly day, WorklapseSettings settings)
     {
-        var store = new SuggestionStore(history.Database);
-        var (start, end) = history.DayRange(day);
         if (!settings.SuggestProjects)
             return [];
+        if (WorkOutInTurn(history, day, settings) is { } worked)
+            Store(history, worked);
+        var (start, end) = history.DayRange(day);
+        return new SuggestionStore(history.Database).Get(start, end);
+    }
 
+    /// <summary>The day's suggestions worked out again; null when nothing they rest on changed since they were stored.</summary>
+    private WorkedOutDay? WorkOutInTurn(HistoryStore history, DateOnly day, WorklapseSettings settings)
+    {
+        var (start, end) = history.DayRange(day);
         var classifierStamp = Stamp(history);
-        var key = (history.Database.DataFolder, day);
         var dayStamp = DayStamp(history, start, end, settings, classifierStamp);
-        if (_workedOut.GetValueOrDefault(key) == dayStamp)
-            return store.Get(start, end);
+        lock (_workedOut)
+            if (_workedOut.GetValueOrDefault((history.Database.DataFolder, day)) == dayStamp)
+                return null;
 
         var optOuts = SuggestionOptOuts.Load(history.Database);
         var classifier = Trained(history, classifierStamp, optOuts, settings.MaxCaptureLength);
@@ -104,9 +140,7 @@ public sealed class SuggestionEngine
             },
             settings.MaxCaptureLength, optOuts, id => words.GetValueOrDefault(id),
             projects.GetProjects().Where(p => !p.RunsOn(day)).Select(p => p.Id).ToHashSet());
-        store.Replace(start, end, computed);
-        _workedOut[key] = dayStamp;
-        return store.Get(start, end);
+        return new WorkedOutDay(day, start, end, computed, dayStamp);
     }
 
     private ProjectClassifier Trained(HistoryStore history, string stamp, SuggestionOptOuts optOuts, TimeSpan maxCaptureLength)

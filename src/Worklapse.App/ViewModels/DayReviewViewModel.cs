@@ -523,6 +523,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasCaptureSelection));
         ShowSelectionPanel(false);
         Current = -1;
+        StopHoldingSuggestions();
         RebuildDerived();
         UpdateMonitorChoices();
 
@@ -623,7 +624,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasMarked));
         OnPropertyChanged(nameof(HasNoMarked));
         UpdateSummary();
-        RebuildProjects();
+        RebuildProjects(edited: false);
     }
 
     // --- derived text -------------------------------------------------------------------------

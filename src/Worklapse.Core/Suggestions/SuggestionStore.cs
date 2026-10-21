@@ -114,15 +114,12 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     {
         using var transaction = db.BeginTransaction();
         var before = Get(start, end);
-        var decided = before.Where(s => s.State != SuggestionState.Open).ToList(); // accepted, rejected or chosen
         var open = before.Where(s => s.State == SuggestionState.Open).ToList();
         var decisions = open.SelectMany(s => s.Parts).Where(p => p.Decided).ToList();
         var kept = new HashSet<long>();
 
-        foreach (var suggestion in computed)
+        foreach (var suggestion in Offered(before, computed))
         {
-            if (decided.Any(d => SameBlock(d, suggestion)))
-                continue;
             long id;
             if (open.FirstOrDefault(o => !kept.Contains(o.Id) && o.Start == suggestion.Start && o.End == suggestion.End
                     && o.ProjectId == suggestion.ProjectId) is { } same)
@@ -174,6 +171,33 @@ public sealed class SuggestionStore(WorklapseDatabase db)
             delete.ExecuteNonQuery();
         }
         transaction.Commit();
+    }
+
+    /// <summary>
+    /// Whether <see cref="Replace"/> would change the open blocks starting from start up to end: offer another, take one
+    /// away, or move one or its breaks and switches; not when only their certainty and evidence would change.
+    /// </summary>
+    public bool Changes(DateTimeOffset start, DateTimeOffset end, IReadOnlyList<Suggestion> computed)
+    {
+        var before = Get(start, end);
+        var open = before.Where(s => s.State == SuggestionState.Open).ToList();
+        foreach (var suggestion in Offered(before, computed))
+        {
+            var parts = suggestion.Parts.Select(p => (p.Start, p.End, p.Kind, p.ProjectId)).OrderBy(p => p.Start);
+            var same = open.FindIndex(o => o.Start == suggestion.Start && o.End == suggestion.End && o.ProjectId == suggestion.ProjectId
+                && o.Parts.Select(p => (p.Start, p.End, p.Kind, p.ProjectId)).SequenceEqual(parts));
+            if (same < 0)
+                return true;
+            open.RemoveAt(same);
+        }
+        return open.Count > 0;
+    }
+
+    /// <summary>The computed blocks offered: those not matching one decided or chosen already (<see cref="SameBlock"/>).</summary>
+    private static IEnumerable<Suggestion> Offered(List<StoredSuggestion> before, IReadOnlyList<Suggestion> computed)
+    {
+        var decided = before.Where(s => s.State != SuggestionState.Open).ToList(); // accepted, rejected or chosen
+        return computed.Where(suggestion => !decided.Any(d => SameBlock(d, suggestion)));
     }
 
     /// <summary>Records the decision on a break (counted) or a switch (kept in the block) of an open suggestion.</summary>

@@ -321,10 +321,13 @@ public sealed partial class DayReviewViewModel
 
     /// <summary>
     /// Works out the day's projects again: after the day is (re)loaded, or a range is set, or a note or logged time
-    /// changes. Links and productive marks need the day reloaded first (they come with the captures).
+    /// changes. Links and productive marks need the day reloaded first (they come with the captures). After an edit
+    /// (<paramref name="edited"/>), suggestions worked out again wait to be shown.
     /// </summary>
-    private void RebuildProjects()
+    private void RebuildProjects(bool edited = true)
     {
+        if (edited)
+            _holdSuggestions = true;
         var (dayStart, dayEnd) = _history.DayRange(Day.Day);
         _categoriesById = Projects.GetCategories().ToDictionary(c => c.Id);
         _projectsById = Projects.GetProjects().ToDictionary(p => p.Id);
@@ -468,7 +471,7 @@ public sealed partial class DayReviewViewModel
     {
         if (Projects.ProjectExists(row.ProjectId))
             return true;
-        Dispatcher.UIThread.Post(RebuildProjects);
+        Dispatcher.UIThread.Post(() => RebuildProjects());
         return false;
     }
 

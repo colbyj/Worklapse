@@ -131,12 +131,21 @@ public sealed partial class DayReviewViewModel
     private List<StoredSuggestion> _suggestions = [];
     private List<SuggestionPiece> _suggestionPieces = [];
 
+    /// <summary>
+    /// After an edit (an accept, a range set by hand), suggestions worked out again wait for <see cref="ShowNewSuggestions"/>
+    /// instead of replacing the list being worked through; also when the day is reloaded meanwhile (the window activated).
+    /// Until another day is opened, they're shown, or working them out again changes nothing.
+    /// </summary>
+    private bool _holdSuggestions;
+    private WorkedOutDay? _newSuggestions;
+
     /// <summary>The Suggestions tab: each open suggestion, then its breaks and switches.</summary>
     public ObservableCollection<object> SuggestionRows { get; } = [];
 
     [ObservableProperty] private int _openSuggestionCount;
     [ObservableProperty] private string _suggestionSummary = "";
     [ObservableProperty] private bool _isWorkingOutSuggestions;
+    [ObservableProperty] private bool _hasNewSuggestions;
 
     public bool HasOpenSuggestions => OpenSuggestionCount > 0;
     public bool HasNoOpenSuggestions => OpenSuggestionCount == 0;
@@ -156,7 +165,8 @@ public sealed partial class DayReviewViewModel
 
     /// <summary>
     /// Shows the day's suggestions as stored, then works them out again in the background (the classifier may train on
-    /// the history first) and shows those when they're ready, unless the day or its projects changed meanwhile.
+    /// the history first) and shows those when they're ready, unless the day or its projects changed meanwhile. While
+    /// held (<see cref="_holdSuggestions"/>), ones that change the blocks wait to be asked for instead.
     /// </summary>
     private void RefreshSuggestions()
     {
@@ -168,6 +178,7 @@ public sealed partial class DayReviewViewModel
         {
             // A run still under way when they were turned off ends unseen (its version is old).
             IsWorkingOutSuggestions = false;
+            StopHoldingSuggestions();
             ShowSuggestions([]);
             return;
         }
@@ -176,17 +187,60 @@ public sealed partial class DayReviewViewModel
 
         var (day, folder, start) = (Day.Day, _history.Database.DataFolder, _history.DayStart);
         IsWorkingOutSuggestions = true;
-        // Asked again by its turn: that later call will do it.
-        _suggestionEngine.RefreshAsync(folder, start, day, settings, () => Volatile.Read(ref _suggestionVersion) == version).ContinueWith(task => Dispatcher.UIThread.Post(() =>
+        // Asked again by its turn: that later call will do it. New suggestions waiting meanwhile stay until it's done.
+        _suggestionEngine.WorkOutAsync(folder, start, day, settings, () => Volatile.Read(ref _suggestionVersion) == version).ContinueWith(task => Dispatcher.UIThread.Post(() =>
         {
-            if (version != _suggestionVersion)
+            if (version != _suggestionVersion || Day.Day != day)
                 return;
             IsWorkingOutSuggestions = false;
             if (task.Exception is { } failed)
+            {
                 Log.Error("Working out the day's suggestions failed.", failed.GetBaseException());
-            else if (task.Result is { } worked && Day.Day == day)
-                ShowSuggestions(worked);
+                return;
+            }
+            // With none open there's no list being worked through to keep.
+            if (task.Result is { } worked && _holdSuggestions && OpenSuggestionCount > 0
+                && new SuggestionStore(_history.Database).Changes(worked.Start, worked.End, worked.Suggestions))
+            {
+                SetNewSuggestions(worked);
+                return;
+            }
+            // Shown now; none means those stored, and shown, are up to date.
+            StopHoldingSuggestions();
+            if (task.Result is { } fresh)
+                StoreSuggestions(fresh);
         }), TaskScheduler.Default);
+    }
+
+    /// <summary>Suggestions worked out again are shown as they come: after another day is opened, or nothing changed.</summary>
+    private void StopHoldingSuggestions()
+    {
+        _holdSuggestions = false;
+        SetNewSuggestions(null);
+    }
+
+    /// <summary>Shows the suggestions worked out again after an edit, keeping the decisions made since.</summary>
+    [RelayCommand]
+    private void ShowNewSuggestions()
+    {
+        if (_newSuggestions is not { } worked)
+            return;
+        StopHoldingSuggestions();
+        // Another edit's suggestions still being worked out wait in turn.
+        _holdSuggestions = IsWorkingOutSuggestions;
+        StoreSuggestions(worked);
+    }
+
+    private void SetNewSuggestions(WorkedOutDay? worked)
+    {
+        _newSuggestions = worked;
+        HasNewSuggestions = worked is not null;
+    }
+
+    private void StoreSuggestions(WorkedOutDay worked)
+    {
+        _suggestionEngine.Store(_history, worked);
+        ShowStoredSuggestions();
     }
 
     /// <summary>Lists the open suggestions and draws them on the projects lane.</summary>

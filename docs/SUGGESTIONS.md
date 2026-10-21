@@ -325,6 +325,16 @@ never suggested on a day outside its dates. On such a day the classifier leaves 
 probability, so the next likeliest wins rather than the time going unsuggested. Set under a project's Suggestions row
 in Settings → Projects (first day, last day; blank: no limit). Changing the dates works the affected days out again.
 
+**New suggestions wait after an edit, 2026-10-20**: accepting retrains (the accepted time is a range set by hand) and
+works the day out again, which replaced the list a while after the click, mid-way through it. Now, after an edit in Day
+review (an accept, a range set by hand), suggestions worked out again that change the blocks wait behind *Suggestions
+changed · Refresh* above the list; the lane keeps drawing the ones listed. Only certainty or evidence changing is shown at
+once, as is anything when no suggestion is open. Window activation reloads the day, so the wait also holds through
+reloads of the same day; opening another day, or Refresh, ends it. What waits isn't stored
+(`SuggestionEngine.WorkOutAsync`, then `Store` on Refresh), so rejecting, Count/Keep and changing a project meanwhile act
+on the suggestions shown, and Refresh keeps those decisions as working a day out again always does. Rejecting and
+changing a project don't work the day out again: the classifier learns only from time with a project.
+
 Left for phase 5 (Linux): Tesseract behind `IScreenTextReader`, with its own cost and quality test on Kubuntu.
 
 ## Risks and unknowns
