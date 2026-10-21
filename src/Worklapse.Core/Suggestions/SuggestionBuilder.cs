@@ -65,11 +65,13 @@ public static class SuggestionBuilder
     /// <summary>How many words a suggestion shows as evidence.</summary>
     private const int EvidenceWords = 8;
 
+    /// <param name="notRunning">Projects outside their dates on this day: never guessed nor suggested.</param>
     public static List<Suggestion> ForDay(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans,
         ProjectClassifier classifier, SuggestionLimits limits, TimeSpan maxCaptureLength, SuggestionOptOuts optOuts,
-        Func<long, IReadOnlyCollection<string>?>? screenWords = null)
+        Func<long, IReadOnlyCollection<string>?>? screenWords = null, IReadOnlySet<long>? notRunning = null)
     {
-        var day = Day.Read(captures, spans, classifier, maxCaptureLength, optOuts, screenWords, useAssignments: true);
+        notRunning ??= new HashSet<long>();
+        var day = Day.Read(captures, spans, classifier, maxCaptureLength, optOuts, screenWords, useAssignments: true, notRunning);
         var pieces = day.Pieces;
         var suggestions = new List<Suggestion>();
         var i = 0;
@@ -102,7 +104,7 @@ public static class SuggestionBuilder
                     break;
             }
 
-            if (!optOuts.UnsuggestedProjects.Contains(project)
+            if (!optOuts.UnsuggestedProjects.Contains(project) && !notRunning.Contains(project)
                 && Block(day, i, end, project, limits, classifier) is { } suggestion
                 && (suggestion.Adds >= MinimumAdds || suggestion.Parts.Count > 0)
                 && suggestion.Confidence >= limits.MinimumCertainty)
@@ -120,7 +122,7 @@ public static class SuggestionBuilder
     public static long?[] Guess(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans, ProjectClassifier classifier,
         TimeSpan maxCaptureLength, SuggestionOptOuts optOuts, Func<long, IReadOnlyCollection<string>?>? screenWords, bool useAssignments)
     {
-        var day = Day.Read(captures, spans, classifier, maxCaptureLength, optOuts, screenWords, useAssignments);
+        var day = Day.Read(captures, spans, classifier, maxCaptureLength, optOuts, screenWords, useAssignments, new HashSet<long>());
         var guesses = new long?[captures.Count];
         for (var i = 0; i < day.Pieces.Count; i++)
             if (captures[day.Pieces[i].Capture].IsActive)
@@ -252,7 +254,8 @@ public static class SuggestionBuilder
     private sealed record Day(List<Piece> Pieces, long?[] Labels)
     {
         public static Day Read(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans, ProjectClassifier classifier,
-            TimeSpan maxCaptureLength, SuggestionOptOuts optOuts, Func<long, IReadOnlyCollection<string>?>? screenWords, bool useAssignments)
+            TimeSpan maxCaptureLength, SuggestionOptOuts optOuts, Func<long, IReadOnlyCollection<string>?>? screenWords, bool useAssignments,
+            IReadOnlySet<long> notRunning)
         {
             var assignments = TrainingSet.Assignments(captures, spans);
             var lengths = CaptureLengths.Spans(captures, maxCaptureLength);
@@ -295,9 +298,15 @@ public static class SuggestionBuilder
                         break;
                     default:
                         var probabilities = classifier.Probabilities(pieces[p].Words);
+                        // A project outside its dates isn't a guess: the others share its probability.
+                        var allowed = 0.0;
                         for (var l = 0; l < probabilities.Length; l++)
-                            emission[l] = Math.Log(probabilities[l]);
-                        if (probabilities.Length == 0)
+                            if (labels[l] is not { } id || !notRunning.Contains(id))
+                                allowed += probabilities[l];
+                        for (var l = 0; l < probabilities.Length; l++)
+                            if (allowed > 0 && (labels[l] is not { } id || !notRunning.Contains(id)))
+                                emission[l] = Math.Log(probabilities[l] / allowed);
+                        if (probabilities.Length == 0 || allowed <= 0)
                             emission[none] = 0;
                         break;
                 }

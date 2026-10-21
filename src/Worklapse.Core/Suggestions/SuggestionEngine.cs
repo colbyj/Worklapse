@@ -8,7 +8,8 @@ namespace Worklapse.Core.Suggestions;
 /// <summary>
 /// Works out a day's suggestions from what history teaches and keeps them (<see cref="SuggestionStore"/>). The classifier
 /// is trained on every day with ranges set by hand and kept until something it learns from changes: the ranges, links,
-/// title rules, projects and opt-outs (and, coarsely, the words read off screens). A day is worked out again only when
+/// title rules, projects and opt-outs (and, coarsely, the words read off screens). A project is never suggested on a day
+/// outside its dates (<see cref="Project.RunsOn"/>). A day is worked out again only when
 /// the classifier, the day's captures or words, or the settings it uses have changed since; otherwise its suggestions
 /// are read as stored. One engine serves the whole app (Day review and the Overview), so the classifier is trained and
 /// held once; it takes one call at a time. Training reads the labelled days whole, so call it off the UI thread.
@@ -101,7 +102,8 @@ public sealed class SuggestionEngine
             {
                 MinimumCertainty = settings.MinimumCertainty / 100.0,
             },
-            settings.MaxCaptureLength, optOuts, id => words.GetValueOrDefault(id));
+            settings.MaxCaptureLength, optOuts, id => words.GetValueOrDefault(id),
+            projects.GetProjects().Where(p => !p.RunsOn(day)).Select(p => p.Id).ToHashSet());
         store.Replace(start, end, computed);
         _workedOut[key] = dayStamp;
         return store.Get(start, end);
@@ -168,7 +170,7 @@ public sealed class SuggestionEngine
                            WHERE project_id IS NOT NULL OR learn = 0 OR productive = 1)
                 || '|' || (SELECT coalesce(group_concat(domain || ',' || coalesce(project_id, '') || ',' || learn || ',' || productive, ';'), '') FROM sites
                            WHERE project_id IS NOT NULL OR learn = 0 OR productive = 1)
-                || '|' || (SELECT coalesce(group_concat(id || ',' || name || ',' || archived || ',' || suggest, ';'), '') FROM projects)
+                || '|' || (SELECT coalesce(group_concat(id || ',' || name || ',' || archived || ',' || suggest || ',' || coalesce(starts_on, '') || ',' || coalesce(ends_on, ''), ';'), '') FROM projects)
                 || '|' || (SELECT count(*) / {WordsStep} FROM screen_words);
             """);
         return (string)command.ExecuteScalar()!;

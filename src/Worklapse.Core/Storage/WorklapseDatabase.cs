@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 13;
+    private const int SchemaVersion = 14;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -412,6 +412,18 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 13;");
+            transaction.Commit();
+        }
+
+        if (version < 14)
+        {
+            // When a project runs: suggestions don't offer it outside those days.
+            using var transaction = BeginTransaction();
+            Execute("""
+                ALTER TABLE projects ADD COLUMN starts_on TEXT;   -- its first day (yyyy-MM-dd); NULL = no limit
+                ALTER TABLE projects ADD COLUMN ends_on   TEXT;   -- its last day
+                """);
+            Execute("PRAGMA user_version = 14;");
             transaction.Commit();
         }
     }

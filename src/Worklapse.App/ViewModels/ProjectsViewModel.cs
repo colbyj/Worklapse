@@ -80,7 +80,7 @@ public sealed partial class ProjectItem : ProjectsEntry
     private readonly ProjectsViewModel _owner;
 
     public ProjectItem(ProjectsViewModel owner, long? id, string name, CategoryItem category, int? ownColor, bool archived,
-        bool suggest = true, bool readScreen = true)
+        bool suggest = true, bool readScreen = true, DateOnly? startsOn = null, DateOnly? endsOn = null)
     {
         _owner = owner;
         Id = id;
@@ -90,6 +90,8 @@ public sealed partial class ProjectItem : ProjectsEntry
         _archived = archived;
         _suggest = suggest;
         _readScreen = readScreen;
+        _startsOn = startsOn?.ToDateTime(TimeOnly.MinValue);
+        _endsOn = endsOn?.ToDateTime(TimeOnly.MinValue);
         Watch(category);
     }
 
@@ -138,6 +140,12 @@ public sealed partial class ProjectItem : ProjectsEntry
 
     /// <summary>The screen is read during its time, for suggestions.</summary>
     [ObservableProperty] private bool _readScreen;
+
+    /// <summary>Its first day (the date picker's value; the time of day is ignored); null for no limit.</summary>
+    [ObservableProperty] private DateTime? _startsOn;
+
+    /// <summary>Its last day; null for no limit.</summary>
+    [ObservableProperty] private DateTime? _endsOn;
 
     /// <summary>The name, marked when archived (it's still listed where it's in use).</summary>
     public string DisplayName => Archived ? $"{Name} (archived)" : Name;
@@ -330,7 +338,8 @@ public sealed partial class ProjectsViewModel(TimeSpan maxCaptureLength) : Obser
         foreach (var project in projects)
         {
             var category = _categories.FirstOrDefault(c => c.Id == project.CategoryId) ?? CategoryItem.None;
-            Track(new ProjectItem(this, project.Id, project.Name, category, project.Color, project.Archived, project.Suggest, project.ReadScreen));
+            Track(new ProjectItem(this, project.Id, project.Name, category, project.Color, project.Archived, project.Suggest, project.ReadScreen,
+                project.StartsOn, project.EndsOn));
         }
 
         _titles = titles;
@@ -378,6 +387,8 @@ public sealed partial class ProjectsViewModel(TimeSpan maxCaptureLength) : Obser
                 project.Id ??= store.AddProject(project.Name, categoryId, project.OwnColor);
                 store.UpdateProject(new Project(project.Id.Value, project.Name, categoryId, project.OwnColor, project.Archived));
                 store.SetSuggestionOptOuts(project.Id.Value, project.Suggest, project.ReadScreen);
+                store.SetDates(project.Id.Value, project.StartsOn is { } starts ? DateOnly.FromDateTime(starts) : null,
+                    project.EndsOn is { } ends ? DateOnly.FromDateTime(ends) : null);
 
                 // Rules with nothing to look for aren't saved; a saved one emptied is deleted, and saved anew if it gets text again.
                 var rules = project.TitleRules.Where(r => r.Trimmed.Length > 0).ToList();
@@ -601,7 +612,8 @@ public sealed partial class ProjectsViewModel(TimeSpan maxCaptureLength) : Obser
         // Only what's saved counts as a change. The list is redrawn when an item moves to another category or hides;
         // not while a name is typed (redrawing would take the focus away), so renamed items get sorted next time.
         if (e.PropertyName is nameof(CategoryItem.Name) or nameof(CategoryItem.Color) or nameof(ProjectItem.Category)
-            or nameof(ProjectItem.OwnColor) or nameof(ProjectItem.Archived) or nameof(ProjectItem.Suggest) or nameof(ProjectItem.ReadScreen))
+            or nameof(ProjectItem.OwnColor) or nameof(ProjectItem.Archived) or nameof(ProjectItem.Suggest) or nameof(ProjectItem.ReadScreen)
+            or nameof(ProjectItem.StartsOn) or nameof(ProjectItem.EndsOn))
         {
             MarkChanged();
             if (e.PropertyName is nameof(ProjectItem.Category) or nameof(ProjectItem.Archived))

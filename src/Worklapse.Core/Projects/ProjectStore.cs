@@ -12,7 +12,14 @@ public sealed record Category(long Id, string Name, int Color);
 /// <param name="Archived">Hidden from lists, kept in history.</param>
 /// <param name="Suggest">Suggested for time without a project, and its time teaches suggestions (<see cref="ProjectStore.SetSuggestionOptOuts"/>).</param>
 /// <param name="ReadScreen">The screen is read during its time, for suggestions.</param>
-public sealed record Project(long Id, string Name, long? CategoryId, int? Color, bool Archived, bool Suggest = true, bool ReadScreen = true);
+/// <param name="StartsOn">Its first day; null for no limit (<see cref="ProjectStore.SetDates"/>).</param>
+/// <param name="EndsOn">Its last day; null for no limit.</param>
+public sealed record Project(long Id, string Name, long? CategoryId, int? Color, bool Archived, bool Suggest = true, bool ReadScreen = true,
+    DateOnly? StartsOn = null, DateOnly? EndsOn = null)
+{
+    /// <summary>Whether a day is within its dates (both included): suggestions don't offer it on other days.</summary>
+    public bool RunsOn(DateOnly day) => (StartsOn is not { } start || day >= start) && (EndsOn is not { } end || day <= end);
+}
 
 /// <summary>A range set by hand. <paramref name="ProjectId"/> null means "no project", overriding any link.</summary>
 public sealed record ProjectSpan(DateTimeOffset Start, DateTimeOffset End, long? ProjectId);
@@ -75,7 +82,7 @@ public sealed class ProjectStore(WorklapseDatabase db)
     public List<Project> GetProjects(bool includeArchived = true)
     {
         using var command = db.Command($"""
-            SELECT id, name, category_id, color, archived, suggest, read_screen FROM projects
+            SELECT id, name, category_id, color, archived, suggest, read_screen, starts_on, ends_on FROM projects
             {(includeArchived ? "" : "WHERE archived = 0")}
             ORDER BY name COLLATE NOCASE, id;
             """);
@@ -89,8 +96,20 @@ public sealed class ProjectStore(WorklapseDatabase db)
                 reader.IsDBNull(3) ? null : reader.GetInt32(3),
                 reader.GetInt64(4) != 0,
                 Suggest: reader.GetInt64(5) != 0,
-                ReadScreen: reader.GetInt64(6) != 0));
+                ReadScreen: reader.GetInt64(6) != 0,
+                StartsOn: reader.IsDBNull(7) ? null : ParseDay(reader.GetString(7)),
+                EndsOn: reader.IsDBNull(8) ? null : ParseDay(reader.GetString(8))));
         return projects;
+    }
+
+    /// <summary>A project's first and last days (null: no limit). Suggestions don't offer it on days outside them.</summary>
+    public void SetDates(long projectId, DateOnly? startsOn, DateOnly? endsOn)
+    {
+        using var command = db.Command("UPDATE projects SET starts_on = $starts, ends_on = $ends WHERE id = $id;");
+        command.Parameters.AddWithValue("$id", projectId);
+        command.Parameters.AddWithValue("$starts", startsOn is { } starts ? DayKey(starts) : (object)DBNull.Value);
+        command.Parameters.AddWithValue("$ends", endsOn is { } ends ? DayKey(ends) : (object)DBNull.Value);
+        command.ExecuteNonQuery();
     }
 
     /// <summary>Whether the project is still there (it may have been deleted in Settings meanwhile).</summary>
@@ -110,7 +129,10 @@ public sealed class ProjectStore(WorklapseDatabase db)
         return (long)command.ExecuteScalar()!;
     }
 
-    /// <summary>Saves a project's name, category, colour and archived state (not its opt-outs: <see cref="SetSuggestionOptOuts"/>).</summary>
+    /// <summary>
+    /// Saves a project's name, category, colour and archived state (not its opt-outs, <see cref="SetSuggestionOptOuts"/>, nor
+    /// its dates, <see cref="SetDates"/>).
+    /// </summary>
     public void UpdateProject(Project project)
     {
         using var command = db.Command("""

@@ -163,7 +163,7 @@ public class HistoryTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using (var version = db.Command("PRAGMA user_version;"))
-                Assert.Equal(13L, version.ExecuteScalar());
+                Assert.Equal(14L, version.ExecuteScalar());
             var history = new HistoryStore(db);
             var captures = history.LoadDay(DateOnly.FromDateTime(Nine.LocalDateTime)).Captures;
             Assert.Equal([true, false], captures.Select(c => c.Productive));

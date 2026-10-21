@@ -314,6 +314,11 @@ outside ranges teach too, and each project starts from its name, links and rules
 - Settings text: the Applications hint is back to what it was (the Read screen and Learn notes moved to their column
   tips); "Accepted suggestions teach it too"; "some CPU while recording" (was "after"); shorter hints elsewhere.
 
+**Project dates, 2026-10-20** (schema 14, `projects.starts_on` / `ends_on`, both optional and inclusive): a project is
+never suggested on a day outside its dates. On such a day the classifier leaves it out and the projects running share its
+probability, so the next likeliest wins rather than the time going unsuggested. Set under a project's Suggestions row
+in Settings → Projects (first day, last day; blank: no limit). Changing the dates works the affected days out again.
+
 Left for phase 5 (Linux): Tesseract behind `IScreenTextReader`, with its own cost and quality test on Kubuntu.
 
 ## Risks and unknowns

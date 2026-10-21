@@ -369,7 +369,7 @@ public class ReclaimTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using var version = db.Command("PRAGMA user_version;");
-            Assert.Equal(13L, version.ExecuteScalar());
+            Assert.Equal(14L, version.ExecuteScalar());
             using var queued = db.Command("SELECT group_concat(segment_id) FROM reclaim_queue;");
             Assert.Equal(partlyDeleted.ToString(), queued.ExecuteScalar());
         }

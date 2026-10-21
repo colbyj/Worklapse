@@ -242,6 +242,40 @@ public class SuggestionStoreTests
     }
 
     [Fact]
+    public void AProjectIsntSuggestedOutsideItsDates()
+    {
+        using var folder = new TempFolder();
+        using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
+        var db = history.Database;
+        var projects = new ProjectStore(db);
+        var (presayo, arduino) = (projects.AddProject("Presayo", null), projects.AddProject("Arduino", null));
+        var recording = new RecordingStore(db);
+        var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
+        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        var later = Nine.AddDays(5);
+        for (var s = 0; s < 600; s += 10)
+        {
+            recording.InsertCapture(Nine.AddDays(-1).AddSeconds(s), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
+            recording.InsertCapture(later.AddSeconds(s), CaptureKind.Active, terminal, "Servo sketch: arduino uno", null);
+            recording.InsertCapture(Nine.AddSeconds(s), CaptureKind.Active, terminal, "Servo sketch: arduino uno", null);
+        }
+        projects.SetSpan(Nine.AddDays(-1), Nine.AddDays(-1).AddSeconds(600), presayo);
+        projects.SetSpan(later, later.AddSeconds(600), arduino);
+        var settings = new WorklapseSettings { MinimumCertainty = 0 };
+        var engine = new SuggestionEngine();
+        Assert.Equal(arduino, Assert.Single(engine.Refresh(history, Day, settings)).ProjectId);
+
+        // Arduino starts later: that day's time isn't suggested as Arduino any more (the others share its probability).
+        projects.SetDates(arduino, Day.AddDays(3), null);
+        Assert.Equal((Day.AddDays(3), (DateOnly?)null), (projects.GetProjects().Single(p => p.Id == arduino).StartsOn,
+            projects.GetProjects().Single(p => p.Id == arduino).EndsOn));
+        Assert.DoesNotContain(engine.Refresh(history, Day, settings), s => s.ProjectId == arduino && s.IsOpen);
+
+        projects.SetDates(arduino, null, null);
+        Assert.Equal(arduino, Assert.Single(engine.Refresh(history, Day, settings), s => s.IsOpen).ProjectId);
+    }
+
+    [Fact]
     public void ABlockLessCertainThanTheLimitIsntOffered()
     {
         using var folder = new TempFolder();
