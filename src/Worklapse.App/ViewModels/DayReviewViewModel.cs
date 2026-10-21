@@ -140,6 +140,9 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     public bool HasCaptureSelection => SelectionStart is not null && SelectionEnd is not null;
     public bool HasMarked => MarkedRanges.Count > 0;
     public bool HasNoMarked => MarkedRanges.Count == 0;
+    /// <summary>The days with captures, oldest first: the day arrows step between them.</summary>
+    public IReadOnlyList<DateOnly> Days => _days;
+
     public bool CanGoNextDay => _days.Any(d => d > Day.Day);
     public bool CanGoPreviousDay => _days.Any(d => d < Day.Day);
 

@@ -2,11 +2,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Worklapse.App.ViewModels"
         xmlns:ic="using:FluentIcons.Avalonia"
+        xmlns:controls="using:Worklapse.App.Controls"
         x:Class="Worklapse.App.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Settings — Worklapse"
         Icon="avares://Worklapse/Assets/worklapse.ico"
-        Width="760" Height="720" MinWidth="600" MinHeight="420"
+        Width="760" Height="800" MinWidth="600" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
   <Window.Styles>
@@ -449,7 +450,19 @@
                 </DataTemplate>
 
                 <DataTemplate DataType="vm:ProjectItem">
-                  <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="10">
+                  <!-- The titles matched take the height left, down to a few rows; below that the form scrolls. -->
+                  <ScrollViewer>
+                  <controls:ViewportGrid ColumnDefinitions="90,*" RowSpacing="10">
+                    <controls:ViewportGrid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="*" MinHeight="72" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                    </controls:ViewportGrid.RowDefinitions>
                     <TextBlock Classes="label" Text="Name:" />
                     <TextBox Grid.Column="1" Text="{Binding Name}" AutomationProperties.Name="Project name" />
 
@@ -535,53 +548,56 @@
                                    Text="Ignores case · beats site and app links · applies to all history" />
                       </DockPanel>
 
-                      <TextBlock DockPanel.Dock="Top" Classes="secondary" Text="{Binding MatchesHeading}" Margin="0,10,0,3" TextTrimming="CharacterEllipsis" />
-                      <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" MinHeight="72"
-                              Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
-                        <Panel>
-                          <ListBox Classes="titleMatches" ItemsSource="{Binding Matches}" Background="Transparent" BorderThickness="0"
-                                   AutomationProperties.Name="Titles matched">
-                            <ListBox.ItemTemplate>
-                              <DataTemplate x:DataType="vm:TitleMatchRow">
-                                <Grid ColumnDefinitions="120,*,Auto,64" ColumnSpacing="8">
-                                  <TextBlock Text="{Binding App}" Classes="secondary" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                  <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                             ToolTip.Tip="{Binding Title}" />
-                                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsTaken}" VerticalAlignment="Center"
-                                              ToolTip.Tip="{Binding TakenByName, StringFormat='A rule of {0} decides for this title'}">
-                                    <Rectangle Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{Binding TakenByBrush}" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding TakenByName}" Classes="secondary" VerticalAlignment="Center" />
-                                  </StackPanel>
-                                  <TextBlock Grid.Column="3" Classes="time" Margin="0" Text="{Binding TimeText}" />
-                                </Grid>
-                              </DataTemplate>
-                            </ListBox.ItemTemplate>
-                          </ListBox>
-                          <TextBlock Classes="secondary" Margin="8,6" Text="{Binding NoMatchesText}" IsVisible="{Binding HasNoMatches}" />
-                        </Panel>
-                      </Border>
+                      <TextBlock DockPanel.Dock="Top" Classes="secondary" Text="{Binding MatchesHeading}" Margin="0,10,0,0" TextTrimming="CharacterEllipsis" />
                     </DockPanel>
 
-                    <TextBlock Grid.Row="5" Classes="label" Text="Suggestions:" VerticalAlignment="Top" Margin="0,6,10,0" />
-                    <StackPanel Grid.Row="5" Grid.Column="1" Spacing="2">
+                    <!-- The one row that shrinks, so the rows that can't are all measured in full. 3 below its heading, not 10. -->
+                    <Border Grid.Row="5" Grid.Column="1" Margin="0,-7,0,0" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4"
+                            Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
+                      <Panel>
+                        <ListBox Classes="titleMatches" ItemsSource="{Binding Matches}" Background="Transparent" BorderThickness="0"
+                                 AutomationProperties.Name="Titles matched">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TitleMatchRow">
+                              <Grid ColumnDefinitions="120,*,Auto,64" ColumnSpacing="8">
+                                <TextBlock Text="{Binding App}" Classes="secondary" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                           ToolTip.Tip="{Binding Title}" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsTaken}" VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding TakenByName, StringFormat='A rule of {0} decides for this title'}">
+                                  <Rectangle Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{Binding TakenByBrush}" VerticalAlignment="Center" />
+                                  <TextBlock Text="{Binding TakenByName}" Classes="secondary" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Classes="time" Margin="0" Text="{Binding TimeText}" />
+                              </Grid>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Classes="secondary" Margin="8,6" Text="{Binding NoMatchesText}" IsVisible="{Binding HasNoMatches}" />
+                      </Panel>
+                    </Border>
+
+                    <TextBlock Grid.Row="6" Classes="label" Text="Suggestions:" VerticalAlignment="Top" Margin="0,6,10,0" />
+                    <StackPanel Grid.Row="6" Grid.Column="1" Spacing="2">
                       <CheckBox Content="Suggest it" IsChecked="{Binding Suggest}" />
                       <TextBlock Classes="hint" Text="Off: never suggested, and its time teaches nothing" Margin="26,0,0,2" />
                       <StackPanel Orientation="Horizontal" Spacing="4" Margin="26,0,0,4" IsEnabled="{Binding Suggest}">
-                        <CalendarDatePicker SelectedDate="{Binding StartsOn}" PlaceholderText="First day" Width="165"
+                        <CalendarDatePicker SelectedDate="{Binding StartsOn}" PlaceholderText="First day" Width="130"
                                             AutomationProperties.Name="Suggested from" ToolTip.Tip="Its first day; blank: no limit" />
                         <TextBlock Text="to" VerticalAlignment="Center" />
-                        <CalendarDatePicker SelectedDate="{Binding EndsOn}" PlaceholderText="Last day" Width="165"
+                        <CalendarDatePicker SelectedDate="{Binding EndsOn}" PlaceholderText="Last day" Width="130"
                                             AutomationProperties.Name="Suggested to" ToolTip.Tip="Its last day; blank: no limit" />
                       </StackPanel>
                       <CheckBox Content="Read the screen during its time" IsChecked="{Binding ReadScreen}" />
                       <TextBlock Classes="hint" Text="Off: its time isn't read, and what was read is deleted" Margin="26,0,0,0" />
                     </StackPanel>
 
-                    <StackPanel Grid.Row="6" Grid.Column="1" Spacing="2">
+                    <StackPanel Grid.Row="7" Grid.Column="1" Spacing="2">
                       <CheckBox Content="Archived" IsChecked="{Binding Archived}" />
                       <TextBlock Classes="hint" Text="Hidden from lists, history kept" />
                     </StackPanel>
-                  </Grid>
+                  </controls:ViewportGrid>
+                  </ScrollViewer>
                 </DataTemplate>
 
                 <DataTemplate DataType="vm:NoCategoryHeading">

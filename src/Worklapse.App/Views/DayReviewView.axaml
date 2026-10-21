@@ -166,7 +166,14 @@
           <Button Classes="tool" Command="{Binding PreviousDayCommand}" ToolTip.Tip="Previous day" AutomationProperties.Name="Previous day">
             <ic:SymbolIcon Symbol="ChevronLeft" />
           </Button>
-          <TextBlock Text="{Binding DayText}" Classes="strong" VerticalAlignment="Center" MinWidth="118" TextAlignment="Center" />
+          <Button Name="DayButton" Classes="tool" MinWidth="118" ToolTip.Tip="Go to a day" AutomationProperties.Name="Day">
+            <TextBlock Text="{Binding DayText}" Classes="strong" />
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="calendar" Opening="OnDayFlyoutOpening" Opened="OnDayFlyoutOpened">
+                <Calendar Name="DayCalendar" BorderThickness="0" AutomationProperties.Name="Day" />
+              </Flyout>
+            </Button.Flyout>
+          </Button>
           <Button Classes="tool" Command="{Binding NextDayCommand}" ToolTip.Tip="Next day" AutomationProperties.Name="Next day">
             <ic:SymbolIcon Symbol="ChevronRight" />
           </Button>

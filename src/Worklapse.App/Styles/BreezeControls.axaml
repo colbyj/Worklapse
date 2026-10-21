@@ -3,8 +3,8 @@
   <!--
     Desktop templates for the controls whose Fluent templates are touch-shaped beyond what resources can change:
     scroll bars (Fluent's are thin overlays that only appear on hover), tabs (Fluent's are text with an underline),
-    check boxes and radio buttons (20 px marks fixed inside Fluent's templates), and number box spinners (Fluent
-    puts two large buttons side by side).
+    check boxes and radio buttons (20 px marks fixed inside Fluent's templates), number box spinners (Fluent
+    puts two large buttons side by side), and calendars and date fields (Fluent's are 40 px touch grids).
   -->
 
   <!-- Scroll bars: an always-visible track with a thumb inside it and small arrow buttons at the ends. -->
@@ -424,6 +424,269 @@
       <Setter Property="BorderThickness" Value="0,0,1,0" />
     </Style>
     <Style Selector="^:error">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemErrorTextColor}" />
+    </Style>
+  </ControlTheme>
+
+  <!--
+    Calendars: a small month grid in a framed view, the month above it with arrows to step (Fluent's is a 300 px
+    touch grid of framed squares). Today is framed in the accent, the chosen day has the selection tint, other
+    months' days are dimmed and days that can't be picked are greyed out.
+  -->
+  <StreamGeometry x:Key="BreezeChevronDown">M1939 486L2029 576L1024 1581L19 576L109 486L1024 1401L1939 486Z</StreamGeometry>
+
+  <ControlTheme x:Key="{x:Type Calendar}" TargetType="Calendar">
+    <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    <Setter Property="Background" Value="{DynamicResource UiViewBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource UiFrameBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Name="PART_Root" HorizontalAlignment="Center" ClipToBounds="True">
+          <CalendarItem Name="PART_CalendarItem"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}" />
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- The calendar fills PART_MonthView (day names, then six weeks) and PART_YearView (months, or years) itself. -->
+  <ControlTheme x:Key="{x:Type CalendarItem}" TargetType="CalendarItem">
+    <Setter Property="DayTitleTemplate">
+      <Template x:DataType="x:String">
+        <TextBlock Text="{Binding}" Foreground="{DynamicResource UiSecondaryTextBrush}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </Template>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="5">
+          <!-- As wide as a month in either view, so stepping from months to years doesn't resize it. -->
+          <Grid RowDefinitions="Auto,*" MinWidth="210">
+            <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,4">
+              <!-- Tool buttons (Breeze.axaml): flat until hovered. -->
+              <Button Name="PART_HeaderButton" Classes="tool" FontWeight="SemiBold" HorizontalAlignment="Left" />
+              <Button Name="PART_PreviousButton" Grid.Column="1" Classes="tool" MinWidth="24"
+                      AutomationProperties.Name="Previous">
+                <PathIcon Width="10" Height="10" Data="{StaticResource BreezeChevronDown}" RenderTransform="rotate(90deg)" />
+              </Button>
+              <Button Name="PART_NextButton" Grid.Column="2" Classes="tool" MinWidth="24"
+                      AutomationProperties.Name="Next">
+                <PathIcon Width="10" Height="10" Data="{StaticResource BreezeChevronDown}" RenderTransform="rotate(-90deg)" />
+              </Button>
+            </Grid>
+            <Grid Name="PART_MonthView" Grid.Row="1" IsVisible="False"
+                  RowDefinitions="22,Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,*,*,*,*,*,*" />
+            <Grid Name="PART_YearView" Grid.Row="1" IsVisible="False" MinHeight="166"
+                  RowDefinitions="*,*,*" ColumnDefinitions="*,*,*,*" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- A day in the month grid. -->
+  <ControlTheme x:Key="{x:Type CalendarDayButton}" TargetType="CalendarDayButton">
+    <Setter Property="ClickMode" Value="Release" />
+    <Setter Property="MinWidth" Value="30" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:inactive">
+      <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{DynamicResource UiAccentPressedBrush}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Background" Value="{DynamicResource UiAccentPressedBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^:today">
+      <Setter Property="BorderBrush" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+    <Style Selector="^:blackout, ^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </ControlTheme>
+
+  <!-- A month (or year) when the calendar steps out to the year (or decade). -->
+  <ControlTheme x:Key="{x:Type CalendarButton}" TargetType="CalendarButton">
+    <Setter Property="ClickMode" Value="Release" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="Margin" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:inactive">
+      <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{DynamicResource UiAccentPressedBrush}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource UiAccentBrush}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <!--
+    Date fields: a text field you can type a date in, with a drop-down arrow like a drop-down list's that opens a
+    calendar below it.
+  -->
+  <ControlTheme x:Key="BreezeDropDownArrowButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource ComboBoxDropDownGlyphForeground}" />
+    <Setter Property="Padding" Value="6,0,10,0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+          <PathIcon Width="12" Height="12" UseLayoutRounding="False" VerticalAlignment="Center"
+                    Foreground="{TemplateBinding Foreground}" Data="{StaticResource BreezeChevronDown}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource UiTextBrush}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type CalendarDatePicker}" TargetType="CalendarDatePicker">
+    <Setter Property="Background" Value="{DynamicResource TextControlBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+    <Setter Property="PlaceholderForeground" Value="{DynamicResource TextControlPlaceholderForeground}" />
+    <Setter Property="IsTodayHighlighted" Value="True" />
+    <Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource TextControlBorderThemeThickness}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+    <Setter Property="MinHeight" Value="{DynamicResource TextControlThemeMinHeight}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Padding" Value="{DynamicResource TextControlThemePadding}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <DataValidationErrors>
+          <Panel>
+            <Border Name="Background"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}" />
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox Name="PART_TextBox"
+                       Foreground="{TemplateBinding Foreground}"
+                       Background="Transparent"
+                       BorderBrush="Transparent"
+                       BorderThickness="0"
+                       MinHeight="0"
+                       Margin="{TemplateBinding BorderThickness}"
+                       Padding="{TemplateBinding Padding}"
+                       PlaceholderText="{TemplateBinding PlaceholderText}"
+                       PlaceholderForeground="{TemplateBinding PlaceholderForeground}"
+                       VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                       HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}">
+                <!-- The field around it shows hover and focus, not the text box. -->
+                <TextBox.Styles>
+                  <Style Selector="TextBox#PART_TextBox:pointerover /template/ Border#PART_BorderElement, TextBox#PART_TextBox:focus /template/ Border#PART_BorderElement, TextBox#PART_TextBox:disabled /template/ Border#PART_BorderElement">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                  </Style>
+                </TextBox.Styles>
+              </TextBox>
+              <!-- Its own minimum, not push buttons' (Breeze.axaml): that would be 76 px. -->
+              <Button Name="PART_Button" Grid.Column="1" Theme="{StaticResource BreezeDropDownArrowButton}" Focusable="False"
+                      MinWidth="0" MinHeight="0" AutomationProperties.Name="Calendar" />
+              <Popup Name="PART_Popup" PlacementTarget="{TemplateBinding}" IsLightDismissEnabled="True">
+                <Calendar Name="PART_Calendar"
+                          Margin="0,2,0,0"
+                          FirstDayOfWeek="{TemplateBinding FirstDayOfWeek}"
+                          IsTodayHighlighted="{TemplateBinding IsTodayHighlighted}"
+                          SelectedDate="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=SelectedDate, Mode=TwoWay}"
+                          DisplayDate="{TemplateBinding DisplayDate}"
+                          DisplayDateStart="{TemplateBinding DisplayDateStart}"
+                          DisplayDateEnd="{TemplateBinding DisplayDateEnd}" />
+              </Popup>
+            </Grid>
+          </Panel>
+        </DataValidationErrors>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Border#Background">
+      <Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrushPointerOver}" />
+    </Style>
+    <Style Selector="^:focus-within /template/ Border#Background, ^:flyout-open /template/ Border#Background">
+      <Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrushFocused}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+      <Style Selector="^ /template/ Border#Background">
+        <Setter Property="Background" Value="{DynamicResource UiWindowBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource UiSeparatorBrush}" />
+      </Style>
+      <Style Selector="^ /template/ Button#PART_Button">
+        <Setter Property="Foreground" Value="{DynamicResource UiDisabledTextBrush}" />
+      </Style>
+    </Style>
+    <Style Selector="^:error /template/ Border#Background">
       <Setter Property="BorderBrush" Value="{DynamicResource SystemErrorTextColor}" />
     </Style>
   </ControlTheme>

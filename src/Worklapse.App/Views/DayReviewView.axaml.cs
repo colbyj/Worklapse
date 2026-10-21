@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Worklapse.App.Controls;
 using Worklapse.App.Playback;
 using Worklapse.App.ViewModels;
@@ -65,6 +67,8 @@ public partial class DayReviewView : UserControl
         VerticalBar.ValueChanged += (_, _) => OnBarScrolled();
         FillWhenOpening((MenuFlyout)MonitorButton.Flyout!, MonitorMenuItems);
         FillWhenOpening((MenuFlyout)SetProjectButton.Flyout!, SetProjectButtonItems);
+        DayCalendar.AddHandler(PointerReleasedEvent, OnDayCalendarPointerReleased, handledEventsToo: true);
+        DayCalendar.AddHandler(KeyDownEvent, OnDayCalendarKeyDown, RoutingStrategies.Tunnel);
 
         // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, set the
         // selection's project or mark it for deletion, and mark what it contains (or the frame's, without one).
@@ -106,7 +110,10 @@ public partial class DayReviewView : UserControl
         _bitmaps.Clear();
     }
 
-    /// <summary>F5 refreshes; arrow keys step through frames wherever the focus is, except in text and open lists.</summary>
+    /// <summary>
+    /// F5 refreshes; arrow keys step through frames wherever the focus is, except in text, open lists and the day
+    /// calendar.
+    /// </summary>
     public void HandleKey(KeyEventArgs e)
     {
         if (e.Key == Key.F5)
@@ -115,7 +122,8 @@ public partial class DayReviewView : UserControl
             e.Handled = true;
             return;
         }
-        if (e.Source is ComboBox { IsDropDownOpen: true } or ComboBoxItem or TextBox)
+        if (e.Source is ComboBox { IsDropDownOpen: true } or ComboBoxItem or TextBox
+            || (e.Source as Visual)?.FindAncestorOfType<Calendar>(includeSelf: true) is not null)
             return;
 
         switch (e.Key)
@@ -131,6 +139,75 @@ public partial class DayReviewView : UserControl
                 break;
         }
     }
+
+    // --- going to a day -----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Opens the calendar at the day shown, from the first day recorded to the last, with the days in between that
+    /// have no captures greyed out: the day arrows skip them too.
+    /// </summary>
+    private void OnDayFlyoutOpening(object? sender, EventArgs e)
+    {
+        var shown = _viewModel.Day.Day;
+        var recorded = _viewModel.Days.ToHashSet();
+        recorded.Add(shown);
+        var first = recorded.Min();
+        var last = recorded.Max();
+
+        // The calendar throws if its selected day falls outside its range or on a greyed-out day, so it has none
+        // while those change.
+        DayCalendar.SelectedDate = null;
+        DayCalendar.BlackoutDates.Clear();
+        DayCalendar.DisplayDateStart = null;
+        DayCalendar.DisplayDateEnd = null;
+        DayCalendar.DisplayDateStart = ToDateTime(first);
+        DayCalendar.DisplayDateEnd = ToDateTime(last);
+        DateOnly? gapStart = null;
+        for (var day = first; day <= last; day = day.AddDays(1))
+        {
+            if (!recorded.Contains(day))
+                gapStart ??= day;
+            else if (gapStart is { } start)
+            {
+                DayCalendar.BlackoutDates.Add(new CalendarDateRange(ToDateTime(start), ToDateTime(day.AddDays(-1))));
+                gapStart = null;
+            }
+        }
+        DayCalendar.DisplayMode = CalendarMode.Month;
+        DayCalendar.DisplayDate = ToDateTime(shown);
+        DayCalendar.SelectedDate = ToDateTime(shown);
+    }
+
+    // So the arrow keys move around the calendar straight away.
+    private void OnDayFlyoutOpened(object? sender, EventArgs e) => DayCalendar.Focus();
+
+    // A click on a day goes to it (the calendar has selected it by then). The arrow keys only move the selection.
+    private void OnDayCalendarPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if ((e.Source as Visual)?.FindAncestorOfType<CalendarDayButton>(includeSelf: true) is { IsEnabled: true } dayButton
+            && !dayButton.Classes.Contains(":blackout"))
+            GoToCalendarDay();
+    }
+
+    // Enter goes to the selected day. Seen before the calendar's own handling, which turns Enter on a month (in the
+    // year view) into showing that month.
+    private void OnDayCalendarKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && DayCalendar.DisplayMode == CalendarMode.Month)
+        {
+            GoToCalendarDay();
+            e.Handled = true;
+        }
+    }
+
+    private void GoToCalendarDay()
+    {
+        DayButton.Flyout!.Hide();
+        if (DayCalendar.SelectedDate is { } picked && DateOnly.FromDateTime(picked) != _viewModel.Day.Day)
+            _viewModel.GoToDay(DateOnly.FromDateTime(picked));
+    }
+
+    private static DateTime ToDateTime(DateOnly day) => day.ToDateTime(TimeOnly.MinValue);
 
     /// <summary>
     /// Fills a menu flyout from the state at the moment it opens. The flyout keeps one collection for good: its popup
