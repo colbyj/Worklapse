@@ -219,6 +219,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int _themeStyleIndex;
     [ObservableProperty] private int _themeModeIndex;
 
+    /// <summary>Read once at startup (Program.BuildAvaloniaApp), so a change applies at the next start.</summary>
+    [ObservableProperty] private bool _useGpuRendering;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QualityWarning))]
     private bool _isVideo;
@@ -265,13 +268,15 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>
     /// Puts the shown tab's settings back to their defaults: what is recorded and how on Recording; startup,
-    /// notifications, the day start and the look on General. Settings the dialog doesn't show (set in the settings file) are kept.
+    /// notifications, the day start, the look and GPU drawing on General. Settings the dialog doesn't show (set in the
+    /// settings file) are kept.
     /// </summary>
     public void RestoreDefaults()
     {
-        var defaults = new WorklapseSettings { UseGpuRendering = _store.Current.UseGpuRendering };
+        var defaults = new WorklapseSettings();
         if (SelectedTab == GeneralTab)
         {
+            UseGpuRendering = defaults.UseGpuRendering;
             StartAtLogin = false;
             RecordAtStartup = defaults.RecordAtStartup;
             NotifyWhenRecordingStarts = defaults.NotifyWhenRecordingStarts;
@@ -290,6 +295,12 @@ public sealed partial class SettingsViewModel : ObservableObject
                 DayStart = ChosenDayStart ?? _store.Current.DayStart,
                 ThemeStyle = (ThemeStyle)ThemeStyleIndex,
                 ThemeMode = (ThemeMode)ThemeModeIndex,
+                UseGpuRendering = UseGpuRendering,
+                SuggestProjects = SuggestProjects,
+                ReadScreenText = ReadScreenText,
+                GlanceMinutes = (int)(GlanceMinutes ?? 2),
+                SplitMinutes = (int)(SplitMinutes ?? 30),
+                MinimumCertainty = (int)(MinimumCertainty ?? 51),
             });
         }
     }
@@ -386,6 +397,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         DayStart = ChosenDayStart ?? _store.Current.DayStart,
         ThemeStyle = (ThemeStyle)ThemeStyleIndex,
         ThemeMode = (ThemeMode)ThemeModeIndex,
+        UseGpuRendering = UseGpuRendering,
         SuggestProjects = SuggestProjects,
         ReadScreenText = ReadScreenText,
         GlanceMinutes = (int)(GlanceMinutes ?? 2),
@@ -421,6 +433,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         DayStartText = ClockText(settings.DayStart);
         ThemeStyleIndex = (int)settings.ThemeStyle;
         ThemeModeIndex = (int)settings.ThemeMode;
+        UseGpuRendering = settings.UseGpuRendering;
         SuggestProjects = settings.SuggestProjects;
         ReadScreenText = settings.ReadScreenText;
         GlanceMinutes = settings.GlanceMinutes;

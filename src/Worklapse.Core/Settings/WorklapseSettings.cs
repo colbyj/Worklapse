@@ -88,8 +88,8 @@ public sealed record WorklapseSettings
     public TimeOnly DayStart { get; init; }
 
     /// <summary>
-    /// Draw the windows with the GPU instead of the CPU. Set in the settings file only; takes effect at the
-    /// next start, and only on Windows so far. Off by default: GPU rendering measured ~80 MB more while
+    /// Draw the windows with the GPU instead of the CPU. Set in Settings (General); takes effect at the
+    /// next start. Off by default: GPU rendering measured ~80 MB more while
     /// recording and ~450 MB more while reviewing four monitors, for no CPU saving in a normal-sized window.
     /// It may be smoother with Day review maximized on a very large or high-DPI screen.
     /// </summary>

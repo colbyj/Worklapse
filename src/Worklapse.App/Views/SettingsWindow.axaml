@@ -331,6 +331,18 @@
               </Grid>
             </StackPanel>
           </Border>
+
+          <Border Classes="group">
+            <StackPanel>
+              <TextBlock Classes="groupHeader" Text="Drawing" />
+              <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="2">
+                <TextBlock Classes="label" Text="Graphics:" />
+                <CheckBox Grid.Column="1" Content="Draw with the GPU" IsChecked="{Binding UseGpuRendering}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint"
+                           Text="Smoother on large screens, but more memory; applies at the next start" />
+              </Grid>
+            </StackPanel>
+          </Border>
         </StackPanel>
       </TabItem>
 
