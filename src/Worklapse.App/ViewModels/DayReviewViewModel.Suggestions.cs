@@ -290,7 +290,7 @@ public sealed partial class DayReviewViewModel
             adds += groupAdds;
             SuggestionRows.Add(new SuggestionGroupRow(NameOf(group.Project), BrushOf(group.Project), TintOf(group.Project),
                 group.Stretches.Count == 1 ? "1 stretch" : $"{group.Stretches.Count} stretches", ProjectTimes.Hm(groupAdds),
-                SuggestionRows.Count == 0, group.Stretches, AcceptSuggestions, RejectSuggestions));
+                SuggestionRows.Count == 0, group.Stretches, AcceptGroup, RejectGroup));
             foreach (var stretch in group.Stretches)
             {
                 // The words pointed to the project computed; once another is chosen they'd only mislead.
@@ -440,14 +440,27 @@ public sealed partial class DayReviewViewModel
             _suggestions.Breaks.FirstOrDefault(b => b.IsOpen && b.Start <= at && at < b.End));
     }
 
-    public void AcceptSuggestion(StoredSuggestion suggestion) => AcceptSuggestions([suggestion]);
+    public void AcceptSuggestion(StoredSuggestion suggestion) =>
+        Edit($"Accept Suggestion: {NameOf(suggestion.ProjectId)}, {RangeText(suggestion.Start, suggestion.End)}", () => AcceptSuggestions([suggestion]));
 
     /// <summary>Accepts a stretch as another project than suggested.</summary>
-    public void AcceptSuggestionAs(StoredSuggestion suggestion, long projectId)
-    {
-        new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
-        AcceptSuggestions([suggestion]);
-    }
+    public void AcceptSuggestionAs(StoredSuggestion suggestion, long projectId) =>
+        Edit($"Accept as {NameOf(projectId)}, {RangeText(suggestion.Start, suggestion.End)}", () =>
+        {
+            new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
+            AcceptSuggestions([suggestion]);
+        });
+
+    /// <summary>Accepts a project's open stretches, from its row on the Suggestions tab.</summary>
+    private void AcceptGroup(IReadOnlyList<StoredSuggestion> stretches) =>
+        Edit(SeveralText("Accept", stretches), () => AcceptSuggestions(stretches));
+
+    private void RejectGroup(IReadOnlyList<StoredSuggestion> stretches) =>
+        Edit(SeveralText("Reject", stretches), () => RejectSuggestions(stretches));
+
+    /// <summary>"Accept 3 Suggestions: Presayo", for a project's stretches decided together.</summary>
+    private string SeveralText(string verb, IReadOnlyList<StoredSuggestion> stretches) =>
+        $"{verb} {stretches.Count} {(stretches.Count == 1 ? "Suggestion" : "Suggestions")}: {NameOf(stretches[0].ProjectId)}";
 
     /// <summary>
     /// Accepts stretches as they're stored now: the panel's rows may differ by a click made since they were read. One worked
@@ -476,13 +489,15 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>Gives an open stretch another project, as the Suggestions tab's project list does.</summary>
-    public void ChangeSuggestionProject(StoredSuggestion suggestion, long projectId)
-    {
-        new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
-        ShowStoredSuggestions();
-    }
+    public void ChangeSuggestionProject(StoredSuggestion suggestion, long projectId) =>
+        Edit($"Change Suggestion to {NameOf(projectId)}, {RangeText(suggestion.Start, suggestion.End)}", () =>
+        {
+            new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
+            ShowStoredSuggestions();
+        });
 
-    public void RejectSuggestion(StoredSuggestion suggestion) => RejectSuggestions([suggestion]);
+    public void RejectSuggestion(StoredSuggestion suggestion) =>
+        Edit($"Reject Suggestion: {NameOf(suggestion.ProjectId)}, {RangeText(suggestion.Start, suggestion.End)}", () => RejectSuggestions([suggestion]));
 
     private void RejectSuggestions(IReadOnlyList<StoredSuggestion> stretches)
     {
@@ -493,41 +508,42 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>Counts a break toward a project: its time is set to it at once.</summary>
-    public void CountBreak(StoredBreak suggestedBreak, long projectId)
-    {
-        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
-        new SuggestionStore(_history.Database).Count(suggestedBreak, projectId, _history.LoadDay(Day.Day).Captures,
-            Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
-        RebuildProjects();
-    }
+    public void CountBreak(StoredBreak suggestedBreak, long projectId) =>
+        Edit($"Count Break toward {NameOf(projectId)}, {RangeText(suggestedBreak.Start, suggestedBreak.End)}", () =>
+        {
+            var (dayStart, dayEnd) = _history.DayRange(Day.Day);
+            new SuggestionStore(_history.Database).Count(suggestedBreak, projectId, _history.LoadDay(Day.Day).Captures,
+                Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
+            RebuildProjects();
+        });
 
     /// <summary>Leaves a break out: it stays without a project, and isn't offered again.</summary>
-    public void LeaveBreakOut(StoredBreak suggestedBreak)
-    {
-        new SuggestionStore(_history.Database).LeaveOut(suggestedBreak.Id);
-        ShowStoredSuggestions();
-    }
+    public void LeaveBreakOut(StoredBreak suggestedBreak) =>
+        Edit($"Don't Count Break, {RangeText(suggestedBreak.Start, suggestedBreak.End)}", () =>
+        {
+            new SuggestionStore(_history.Database).LeaveOut(suggestedBreak.Id);
+            ShowStoredSuggestions();
+        });
 
     /// <summary>Accepts the stretches the classifier is sure of, leaving the unsure ones and the breaks to decide.</summary>
     [RelayCommand(CanExecute = nameof(HasOpenSuggestions))]
-    private void AcceptSureSuggestions() => AcceptSuggestions(_suggestions.Stretches.Where(s => s.IsOpen && !s.IsUnsure).ToList());
+    private void AcceptSureSuggestions() =>
+        Edit("Accept Sure Suggestions", () => AcceptSuggestions(_suggestions.Stretches.Where(s => s.IsOpen && !s.IsUnsure).ToList()));
 
     /// <summary>Accepts every open stretch and leaves out the breaks not counted: the day is decided.</summary>
     [RelayCommand(CanExecute = nameof(HasOpenSuggestions))]
-    private void AcceptAllSuggestions()
+    private void AcceptAllSuggestions() => Edit("Accept All Suggestions", () =>
     {
         var store = new SuggestionStore(_history.Database);
         foreach (var suggestedBreak in _suggestions.Breaks.Where(b => b.IsOpen))
             store.LeaveOut(suggestedBreak.Id);
         AcceptSuggestions(_suggestions.Stretches.Where(s => s.IsOpen).ToList());
-    }
+    });
 
     private void ChooseSuggestionProject(SuggestionRow row, ProjectOption project) => Dispatcher.UIThread.Post(() =>
     {
-        if (project.Id is not { } id)
-            return;
-        new SuggestionStore(_history.Database).SetProject(row.Suggestion.Id, id);
-        ShowStoredSuggestions();
+        if (project.Id is { } id)
+            ChangeSuggestionProject(row.Suggestion, id);
     });
 
     /// <summary>Shows the day's suggestions as stored, after a decision (nothing to work out again).</summary>

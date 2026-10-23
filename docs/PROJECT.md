@@ -314,6 +314,22 @@ marked for deletion are never exported. The developer chose all of this, and AV1
 - Possible speed-up, not built: encode alternate 2-second chunks with two or three encoders at once (each chunk starts
   with a key frame anyway); needs its own decoders per encoder, or a chunk of frames held in memory.
 
+### How undo works in Day review (built 2026-10-23)
+
+- The tool bar's Undo (and Ctrl+Z, except while typing) takes back Day review's edits one at a time, last first:
+  projects set, cleared or replaced on time, suggestions accepted, rejected or given another project, breaks counted
+  or left out, apps and sites marked Productive or Other or linked to a project, time marked for deletion or restored,
+  notes, the day note and logged time. Its tip names the edit it would undo. No redo.
+- Kept for the day shown (up to 100 edits). Cleared when another day is opened, another view is shown (the developer's
+  choice), Settings open (they can delete projects and change links), or marked time is deleted for good.
+- `UndoHistory` (Core): while an edit runs, temporary triggers on the tables it may change log the SQL that reverses
+  each row change; undo runs one edit's log backward in a transaction. The triggers belong to Day review's connection
+  and log only during an edit, so the recorder's captures and suggestions worked out in the background are never
+  undone. An update is reversed only in the columns it changed, so a capture the recorder marked idle meanwhile
+  stays idle.
+- Screen words pruned because time went to a project whose screen isn't read don't come back with an undo (deleted
+  content stays deleted).
+
 ### Storage
 
 Default data folder `%LOCALAPPDATA%\Worklapse` (Linux: `~/.local/share/Worklapse`); settings in

@@ -77,6 +77,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         _history = history;
         _settings = settings;
         _suggestionEngine = suggestionEngine;
+        _undo = new UndoHistory(history.Database, UndoneTables);
         _focusOnApplication = settings.Current.ReviewFocusOnApplication;
         _panelWidth = settings.Current.ReviewPanelWidth;
         _capturesDeleted = capturesDeleted;
@@ -378,9 +379,14 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     /// <summary>Marks the captures in stretches of time (an app's, say) for deletion.</summary>
     public void MarkForDeletion(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges)
     {
+        if (ranges.Count == 0)
+            return;
         var keepId = Current >= 0 && Current < Captures.Count ? Captures[Current].Id : (long?)null;
-        foreach (var (start, end) in ranges)
-            _history.SetPendingDelete(start, end, pending: true);
+        Edit($"Mark for Deletion, {RangeText(ranges.Min(r => r.Start), ranges.Max(r => r.End))}", () =>
+        {
+            foreach (var (start, end) in ranges)
+                _history.SetPendingDelete(start, end, pending: true);
+        });
         ConfirmMessage = "";
         Reload(keepId);
     }
@@ -391,6 +397,8 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         var keep = NextVisible(Current, 1) is var v and >= 0 ? Captures[v].Id : (long?)null;
         var removed = Enumerable.Range(0, Captures.Count).Where(i => Captures[i].PendingDelete).Sum(i => CaptureLength(i).TotalSeconds);
         var result = _history.DeleteMarked(Day.Day);
+        // What's deleted for good can't come back, nor can edits made to it.
+        ClearUndo();
         ConfirmMessage = result.Captures == 0 ? "" : $"Deleted {Duration(TimeSpan.FromSeconds(removed))}.";
         Reload(keep);
         if (result.Captures > 0)
@@ -399,7 +407,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     private void Restore(DateTimeOffset start, DateTimeOffset end)
     {
-        _history.SetPendingDelete(start, end, pending: false);
+        Edit($"Restore, {RangeText(start, end)}", () => _history.SetPendingDelete(start, end, pending: false));
         ConfirmMessage = "";
         Reload(Current >= 0 ? Captures[Current].Id : null);
     }
@@ -444,7 +452,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     /// <summary>Marks an app or site; it applies to all history, and the timeline and totals update.</summary>
     public void SetProductive(ProgramKey program, bool productive)
     {
-        _history.SetProductive(program, productive);
+        Edit($"Mark {program.Name} as {(productive ? "Productive" : "Other")}", () => _history.SetProductive(program, productive));
         Reload(Current >= 0 && Current < Captures.Count ? Captures[Current].Id : null);
     }
 
@@ -532,6 +540,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         Current = -1;
         StopHoldingSuggestions();
         _checking = null;
+        ClearUndo();
         RebuildDerived();
         UpdateMonitorChoices();
 

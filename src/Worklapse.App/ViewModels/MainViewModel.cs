@@ -48,9 +48,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnViewChanged(MainView value)
     {
-        // Hidden, Day review is kept as it was, but not playing: its decoders then close after a while.
+        // Hidden, Day review is kept as it was, but not playing: its decoders then close after a while. Its edits can't
+        // be undone once another view is shown.
         if (value != MainView.DayReview)
+        {
             DayReview?.StopPlaying();
+            DayReview?.ClearUndo();
+        }
     }
 
     public bool IsOverview => View == MainView.Overview;
@@ -78,7 +82,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void ShowTimesheet() => View = MainView.Timesheet;
 
     [RelayCommand]
-    private Task OpenSettings() => _openSettings();
+    private Task OpenSettings()
+    {
+        // Settings can delete projects and change links, which Day review's undo history would then put back wrongly.
+        DayReview?.ClearUndo();
+        return _openSettings();
+    }
 
     /// <summary>Opens a day in Day review (from the Timesheet or the Overview), reading it once.</summary>
     public void OpenDay(DateOnly day)

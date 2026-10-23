@@ -201,6 +201,10 @@
                   ToolTip.Tip="Read today again (F5)" AutomationProperties.Name="Refresh">
             <ic:SymbolIcon Symbol="ArrowClockwise" />
           </Button>
+          <Button Classes="tool" Command="{Binding UndoCommand}" ToolTip.Tip="{Binding UndoTip}" ToolTip.ShowOnDisabled="True"
+                  AutomationProperties.Name="Undo">
+            <ic:SymbolIcon Symbol="ArrowUndo" />
+          </Button>
 
           <Border Classes="separator" />
 

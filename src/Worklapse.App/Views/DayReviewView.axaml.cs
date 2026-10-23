@@ -117,8 +117,8 @@ public partial class DayReviewView : UserControl
     }
 
     /// <summary>
-    /// F5 refreshes; arrow keys step through frames wherever the focus is, except in text, open lists and the day
-    /// calendar.
+    /// F5 refreshes; Ctrl+Z undoes the last edit and arrow keys step through frames wherever the focus is, except in
+    /// text, open lists and the day calendar.
     /// </summary>
     public void HandleKey(KeyEventArgs e)
     {
@@ -131,6 +131,14 @@ public partial class DayReviewView : UserControl
         if (e.Source is ComboBox { IsDropDownOpen: true } or ComboBoxItem or TextBox
             || (e.Source as Visual)?.FindAncestorOfType<Calendar>(includeSelf: true) is not null)
             return;
+        // In text, Ctrl+Z undoes the typing instead.
+        if (e.Key == Key.Z && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (_viewModel.UndoCommand.CanExecute(null))
+                _viewModel.UndoCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
 
         switch (e.Key)
         {

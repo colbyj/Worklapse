@@ -266,14 +266,19 @@ public sealed partial class DayReviewViewModel
     /// <summary>Sets stretches of time (an app's, say) to a project by hand, or to no project (null).</summary>
     public void SetProject(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges, long? projectId)
     {
-        foreach (var (start, end) in ranges)
-            Projects.SetSpan(start, end, projectId);
-        RebuildProjects();
+        if (ranges.Count == 0)
+            return;
+        Edit($"{(projectId is { } id ? $"Set Project: {NameOf(id)}" : "Clear Project")}, {RangeText(ranges.Min(r => r.Start), ranges.Max(r => r.End))}", () =>
+        {
+            foreach (var (start, end) in ranges)
+                Projects.SetSpan(start, end, projectId);
+            RebuildProjects();
+        });
     }
 
     /// <summary>Sets what has no project in stretches of time to one, by hand: idle and unrecorded gaps too, so blocks join.</summary>
     public void SetUnassigned(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges, long projectId) =>
-        SetProject(UnassignedIn(ranges), projectId);
+        Edit($"Set Unassigned to {NameOf(projectId)}", () => SetProject(UnassignedIn(ranges), projectId));
 
     public bool HasUnassigned(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges) => UnassignedIn(ranges).Count > 0;
 
@@ -287,7 +292,7 @@ public sealed partial class DayReviewViewModel
     /// or a title rule); the rest of that time, other projects' or none, stays as it is.
     /// </summary>
     public void ReplaceProject(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges, long from, long to) =>
-        SetProject(ranges.SelectMany(r => Clip(_projectTime.Blocks.Where(b => b.ProjectId == from).Select(b => (b.Start, b.End)), r)).ToList(), to);
+        Edit($"Replace {NameOf(from)} with {NameOf(to)}", () => SetProject(ranges.SelectMany(r => Clip(_projectTime.Blocks.Where(b => b.ProjectId == from).Select(b => (b.Start, b.End)), r)).ToList(), to));
 
     /// <summary>The parts of stretches of time with no project block over them.</summary>
     private List<(DateTimeOffset Start, DateTimeOffset End)> UnassignedIn(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges)

@@ -316,7 +316,7 @@ public sealed partial class DayReviewViewModel
     partial void OnDayNoteChanged(string value)
     {
         if (!_loadingDayNote)
-            Projects.SetDayNote(Day.Day, value);
+            Edit("Day Note", () => Projects.SetDayNote(Day.Day, value));
     }
 
     // --- building -------------------------------------------------------------------------------
@@ -444,7 +444,7 @@ public sealed partial class DayReviewViewModel
         if (!StillThere(row))
             return row.NoteText;
         var note = typed.Trim();
-        Projects.SetNote(Day.Day, row.ProjectId, note);
+        Edit($"Note: {row.Name}", () => Projects.SetNote(Day.Day, row.ProjectId, note));
         return note;
     }
 
@@ -456,12 +456,12 @@ public sealed partial class DayReviewViewModel
         var current = Projects.GetLogged(Day.Day, Day.Day.AddDays(1)).FirstOrDefault(l => l.ProjectId == row.ProjectId)?.Logged;
         if (string.IsNullOrWhiteSpace(typed))
         {
-            Projects.SetLogged(Day.Day, row.ProjectId, null);
+            Edit($"Logged: {row.Name}", () => Projects.SetLogged(Day.Day, row.ProjectId, null));
             current = null;
         }
         else if (ProjectTimes.ParseDuration(typed) is { } value)
         {
-            Projects.SetLogged(Day.Day, row.ProjectId, value);
+            Edit($"Logged: {row.Name}", () => Projects.SetLogged(Day.Day, row.ProjectId, value));
             current = value;
         }
         UpdateTimeLogTotals(Projects.GetLogged(Day.Day, Day.Day.AddDays(1)).Select(l => l.Logged));
@@ -622,11 +622,8 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>Sets a stretch of time to a project by hand, or to no project; only that stretch, not the app's link.</summary>
-    private void SetSpanProjectSoon(DateTimeOffset from, DateTimeOffset to, ProjectOption project) => Dispatcher.UIThread.Post(() =>
-    {
-        Projects.SetSpan(from, to, project.Id);
-        RebuildProjects();
-    });
+    private void SetSpanProjectSoon(DateTimeOffset from, DateTimeOffset to, ProjectOption project) =>
+        Dispatcher.UIThread.Post(() => SetProject((from, to), project.Id));
 
     private void SetProductiveSoon(ProgramKey program, bool productive) =>
         Dispatcher.UIThread.Post(() => SetProductive(program, productive));
@@ -634,7 +631,7 @@ public sealed partial class DayReviewViewModel
     /// <summary>Links an app or site to a project (all history); the day is reloaded to show it.</summary>
     private void SetProjectSoon(ProgramKey program, ProjectOption project) => Dispatcher.UIThread.Post(() =>
     {
-        _history.SetProject(program, project.Id);
+        Edit(project.Id is { } id ? $"Link {program.Name} to {NameOf(id)}" : $"Unlink {program.Name}", () => _history.SetProject(program, project.Id));
         Reload(Current >= 0 && Current < Captures.Count ? Captures[Current].Id : null);
     });
 
