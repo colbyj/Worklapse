@@ -450,6 +450,13 @@ public partial class DayReviewView : UserControl
         _viewModel.Pick(row.From, row.To, Extends(e));
     }
 
+    /// <summary>A click on a stretch's row (not its project or buttons) shows it: selected, at the capture least sure of.</summary>
+    private void OnStretchPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Control { DataContext: SuggestionRow row } control && e.GetCurrentPoint(control).Properties.IsLeftButtonPressed)
+            _viewModel.CheckStretch(row.Suggestion);
+    }
+
     private void OnMarkedPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Control { DataContext: MarkedRange marked } control && e.GetCurrentPoint(control).Properties.IsLeftButtonPressed)

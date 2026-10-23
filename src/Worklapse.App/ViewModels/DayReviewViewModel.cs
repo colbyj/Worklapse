@@ -531,7 +531,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         ShowSelectionPanel(false);
         Current = -1;
         StopHoldingSuggestions();
-        _unsureIndex = null;
+        _checking = null;
         RebuildDerived();
         UpdateMonitorChoices();
 

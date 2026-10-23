@@ -565,7 +565,7 @@
                       </DataTemplate>
                       <!-- A stretch: its project can be changed before accepting; the one being checked shows its words. -->
                       <DataTemplate DataType="vm:SuggestionRow">
-                        <Border Classes="row stretch" Classes.current="{Binding IsCurrent}" Tag="row"
+                        <Border Classes="row stretch" Classes.current="{Binding IsCurrent}" Tag="row" PointerPressed="OnStretchPressed"
                                 PointerEntered="OnReachEnter" PointerExited="OnReachExit" ToolTip.Tip="{Binding Tip}">
                           <StackPanel>
                             <Grid ColumnDefinitions="*,126,40,56,64">

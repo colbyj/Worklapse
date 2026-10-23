@@ -142,8 +142,11 @@ public sealed partial class DayReviewViewModel
     private int _suggestionVersion;
     private StoredDay _suggestions = StoredDay.None;
 
-    /// <summary>The unsure stretch being checked, by its place among the open unsure ones; null before the first step.</summary>
-    private int? _unsureIndex;
+    /// <summary>
+    /// The stretch being checked (stepped to, or its row clicked) and where it starts: once it's decided, stepping goes on
+    /// from there.
+    /// </summary>
+    private (long Id, DateTimeOffset Start)? _checking;
 
     /// <summary>
     /// After an edit (an accept, a range set by hand), suggestions worked out again wait for <see cref="ShowNewSuggestions"/>
@@ -324,33 +327,42 @@ public sealed partial class DayReviewViewModel
             suggestedBreak.Inside is { } inside ? BrushOf(inside) : BetweenBrush, before, after, CountBreak, LeaveBreakOut);
     }
 
-    /// <summary>The step through the unsure stretches: "2 of 5", and which row shows its words.</summary>
+    /// <summary>The step through the unsure stretches ("2 of 5" while checking one of them), and which row shows its words.</summary>
     private void ShowUnsureStep()
     {
         var unsure = UnsureStretches();
         UnsureCount = unsure.Count;
-        if (_unsureIndex is { } index && index >= unsure.Count)
-            _unsureIndex = unsure.Count > 0 ? unsure.Count - 1 : null;
-        var current = _unsureIndex is { } i ? unsure[i] : null;
-        UnsureText = unsure.Count == 0 ? "None" : _unsureIndex is { } at ? $"{at + 1} of {unsure.Count}" : $"{unsure.Count}";
+        var at = _checking is { } checking ? unsure.FindIndex(s => s.Id == checking.Id) : -1;
+        UnsureText = unsure.Count == 0 ? "None" : at >= 0 ? $"{at + 1} of {unsure.Count}" : $"{unsure.Count}";
         foreach (var row in SuggestionRows.OfType<SuggestionRow>())
-            row.IsCurrent = current is not null && row.Suggestion.Id == current.Id;
+            row.IsCurrent = _checking is { } current && row.Suggestion.Id == current.Id;
     }
 
+    /// <summary>The unsure stretch before the one being checked (the last, when none is).</summary>
     [RelayCommand(CanExecute = nameof(HasUnsure))]
-    private void PreviousUnsure() => StepUnsure(_unsureIndex is { } index ? Math.Max(0, index - 1) : UnsureCount - 1);
-
-    [RelayCommand(CanExecute = nameof(HasUnsure))]
-    private void NextUnsure() => StepUnsure(_unsureIndex is { } index ? Math.Min(UnsureCount - 1, index + 1) : 0);
-
-    /// <summary>Selects an unsure stretch and shows the capture the classifier was least sure of, with its words on the tab.</summary>
-    private void StepUnsure(int index)
+    private void PreviousUnsure()
     {
         var unsure = UnsureStretches();
-        if (index < 0 || index >= unsure.Count)
-            return;
-        _unsureIndex = index;
-        var stretch = unsure[index];
+        if ((_checking is { } checking ? unsure.LastOrDefault(s => s.Start < checking.Start) : unsure.LastOrDefault()) is { } stretch)
+            CheckStretch(stretch);
+    }
+
+    /// <summary>The unsure stretch after the one being checked (the first, when none is).</summary>
+    [RelayCommand(CanExecute = nameof(HasUnsure))]
+    private void NextUnsure()
+    {
+        var unsure = UnsureStretches();
+        if ((_checking is { } checking ? unsure.FirstOrDefault(s => s.Start > checking.Start) : unsure.FirstOrDefault()) is { } stretch)
+            CheckStretch(stretch);
+    }
+
+    /// <summary>
+    /// Checks a stretch: selects it and shows the capture the classifier was least sure of, with its words on the
+    /// Suggestions tab.
+    /// </summary>
+    public void CheckStretch(StoredSuggestion stretch)
+    {
+        _checking = (stretch.Id, stretch.Start);
         PanelTab = SuggestionsTab;
         SelectRange(stretch.Start, stretch.End);
         GoTo(stretch.LeastSure);
