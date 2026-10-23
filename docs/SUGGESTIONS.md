@@ -365,6 +365,8 @@ and its outline and reach read as if it took that time. The developer chose per-
   sure capture, and shows its words on the Suggestions tab.
 - Clicking a stretch's row (not its project or buttons) checks it the same way, sure or not; stepping goes on from there
   (2026-10-23, the developer: two clicks in the same place instead of scrubbing the timeline).
+- A stretch or break whose time all has a project now (set by hand since, to any project) leaves the list, the counts
+  and the timeline's menu at once, without waiting for the day to be worked out again; one set in part shows what's left.
 - Unsure is now below 95% (was 70%). Naive Bayes is overconfident; offered stretches by certainty, all labelled days with
   words: 99–100% 570 stretches 82% right, 95–99% 108 83%, 90–95% 67 64%, 80–90% 64 70%, 70–80% 19 67%. Below 95% about a
   fifth of the stretches, wrong a third of the time against under a fifth above it. Scores unchanged (guess 87%, filled 85%).

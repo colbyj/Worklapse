@@ -274,10 +274,16 @@ public sealed partial class DayReviewViewModel
     /// <summary>The open stretches the classifier is unsure of, in time order: what Unsure steps through.</summary>
     private List<StoredSuggestion> UnsureStretches() => _suggestions.Stretches.Where(s => s.IsOpen && s.IsUnsure).ToList();
 
-    /// <summary>Lists the open stretches, by project, and the open breaks, and draws them on the projects lane.</summary>
-    private void ShowSuggestions(StoredDay suggestions)
+    /// <summary>
+    /// Lists the open stretches, by project, and the open breaks, and draws them on the projects lane. One whose time all
+    /// has a project now (set by hand since, to that project or another) is left out: there's nothing left to decide, and
+    /// working the day out again drops it.
+    /// </summary>
+    private void ShowSuggestions(StoredDay stored)
     {
-        _suggestions = suggestions;
+        var suggestions = _suggestions = new StoredDay(
+            stored.Stretches.Where(s => !s.IsOpen || Free(s.Start, s.End) > TimeSpan.Zero).ToList(),
+            stored.Breaks.Where(b => !b.IsOpen || Free(b.Start, b.End) > TimeSpan.Zero).ToList());
         SuggestionRows.Clear();
         var open = suggestions.Stretches.Where(s => s.IsOpen).ToList();
         var adds = TimeSpan.Zero;
@@ -386,8 +392,11 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>The time a stretch gives its project: its time without what has a project already.</summary>
-    private TimeSpan Adds(StoredSuggestion suggestion) =>
-        SuggestionStore.Subtract([(suggestion.Start, suggestion.End)], _projectTime.Blocks.Select(b => (b.Start, b.End)))
+    private TimeSpan Adds(StoredSuggestion suggestion) => Free(suggestion.Start, suggestion.End);
+
+    /// <summary>How much of start..end has no project.</summary>
+    private TimeSpan Free(DateTimeOffset start, DateTimeOffset end) =>
+        SuggestionStore.Subtract([(start, end)], _projectTime.Blocks.Select(b => (b.Start, b.End)))
             .Aggregate(TimeSpan.Zero, (sum, r) => sum + (r.End - r.Start));
 
     /// <summary>The evidence words for the panel: from the title, app and site; and those read off the screen.</summary>
