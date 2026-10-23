@@ -2,7 +2,7 @@
 
 Worklapse suggests projects for time that has none, from what was on screen, and the developer accepts or changes each
 suggestion on Day review. This file is the plan agreed so far (2026-10-20), with the proof-of-concept results it rests on and
-the choices still open. Mockups: the design canvas's **Round 7** page.
+the choices still open. Mockups: the design canvas's **Round 7** page; stretches and breaks (2026-10-22): **Round 8**.
 
 ## What the proof of concept showed
 
@@ -32,20 +32,22 @@ figure understates it; June 17 is the only like-for-like day.
 
 - **What gets suggestions.** Only active time with no project from a hand-set range, an app/site link or a title rule.
   Suggestions never change time that already has one.
-- **Suggestions are billing blocks.** One suggestion is a stretch the developer would bill to one project, made of the unassigned
-  pieces inside it. Accepting writes an ordinary hand-set range (`project_spans`), so the Timesheet and Overview need no change.
-- **Breaks inside a block.** Shorter than the glance limit (default 2 min): part of the block. Longer than the split limit
-  (default 30 min): end the block. In between: listed under the suggestion with a Count box for the developer to decide,
-  **not counted** by default. Breaks include idle time (often waiting for a build) and time in other apps. Both limits are
-  settings.
+- **Suggestions are stretches of one project's time** (Round 8, 2026-10-22; were billing blocks). The classifier gives each
+  frame a project; a stretch is one project's guessed time, joined only across glances away and time already set to that
+  project, so projects worked on in turn never sit inside each other's suggestions. Accepting writes an ordinary hand-set
+  range (`project_spans`), so the Timesheet and Overview need no change.
+- **Breaks** are the time away between project time (set or suggested), from the glance limit (default 2 min) up to the
+  split limit (default 30 min): inside one project's time, or between two. **Not counted** by default. Counting one (toward
+  the project around it, or either of two) or leaving it out takes effect at once and is remembered; Accept All leaves out
+  the ones not decided. Breaks include idle time (often waiting for a build), time in other apps and time not recorded.
 - **Unproductive time is not project time**, even inside a hand-set range. For training and scoring, a capture whose Productive
-  mark is off (the site's when it has one, else the app's) counts as no project. Inside a suggested block it is a break.
-- **Short switches to another project.** Inside a block, the developer sometimes labels a short stretch of another project's work
-  as that project and sometimes leaves it in the block. So: training leaves out a short stretch that clearly belongs to another
-  project (its links, its title rules, or a confident guess) instead of learning it as the surrounding project; scoring doesn't
-  count those stretches against the classifier; and a suggested block lists them as **switches**, **split out** as their own
-  project by default (a switch can be known for sure), with a Keep box to leave one in the block.
-- **Rejecting is remembered**, so the same block isn't suggested again.
+  mark is off (the site's when it has one, else the app's) counts as no project. Between project time it is a break.
+- **Short switches to another project.** Inside a hand-set range, the developer sometimes labels a short stretch of another
+  project's work as that project and sometimes leaves it in. So training leaves out a short stretch that clearly belongs to
+  another project (its links or title rules) instead of learning it as the surrounding project, and scoring doesn't count
+  those stretches against the classifier. Suggestions offer such a stretch as its own project's (a switch can be known for
+  sure); changing its project keeps it in the surrounding one.
+- **Rejecting is remembered**, so the same stretch isn't suggested again; so is leaving a break out.
 - **Learn off** for an app or site: its windows neither teach nor sway suggestions; its time is guessed from what's around it.
 - **Opting out.** Per app or site: *Read screen* (OCR its windows or not) and *Learn* (its windows teach and sway suggestions or
   not). Per project: *Suggest it* (off: never suggested, and its time teaches nothing) and *Read the screen during its time*.
@@ -57,13 +59,13 @@ figure understates it; June 17 is the only like-for-like day.
   Suggestions, Time Log and Marked are always the whole day; the day note lives on the Time Log tab. The selection gets a strip at the bottom of the panel (typeable ends, length, clear) above Set Project /
   Clear Project / Mark for Deletion, on any tab. The frame slice is headed **Current frame** with the playhead's red mark.
   The selection-only Projects tab goes (each project's time in the selection is no longer shown; accepted).
-- **Timeline.** Set projects filled, suggestions outlined in the project's colour with a faint tint, undecided breaks dashed
-  with a "?"; a switch outlined in its own project's colour. Pointing at a suggestion, break or switch lights up its time,
-  like the panel's other controls.
+- **Timeline.** Set projects filled, suggested stretches outlined in the project's colour with a faint tint (hatched when
+  unsure), undecided breaks dashed with a "?" (in the project's colour inside one project's time, grey between two).
+  Pointing at a stretch, a project's group or a break lights up its time, like the panel's other controls.
 
 - **Overview** shows each day's count of open suggestions, so days needing review stand out.
-- **Right-click on the timeline**: Accept and Reject in the menu of an outlined suggestion (and Count / Keep on a break or
-  switch), next to the timeline's other right-click actions. The developer works the timeline by right-click a lot.
+- **Right-click on the timeline**: Accept, Accept as ▸, Change Suggestion to ▸ and Reject on an outlined stretch; Count This
+  Break toward (either side) and Don't Count This Break on a break; next to the timeline's other right-click actions.
 
 - **No suggestions on time a link or title rule already gave a project**, for now (e.g. June 17, 14:47: the `Frankensystem`
   title rule took a terminal the developer set to Homelab by hand). Links and rules are deliberate, and wrong ones are rare and
@@ -345,6 +347,27 @@ reloads of the same day; opening another day, or Refresh, ends it. What waits is
 (`SuggestionEngine.WorkOutAsync`, then `Store` on Refresh), so rejecting, Count/Keep and changing a project meanwhile act
 on the suggestions shown, and Refresh keeps those decisions as working a day out again always does. Rejecting and
 changing a project don't work the day out again: the classifier learns only from time with a project.
+
+**Stretches and breaks, 2026-10-22/23** (Round 8; schema 15). On interleaved days a block reached across another project's
+time (a Presayo block 12:42–1:07 around six minutes the Frankensystem title rule had, joined by a two-minute Presayo guess),
+and its outline and reach read as if it took that time. The developer chose per-frame guesses (Round 8 B) plus certainty (C):
+- `SuggestionBuilder.ForDay` returns `DaySuggestions`: stretches (`Suggestion`, with `LeastSure`, the capture it was least
+  sure of) and breaks (`SuggestedBreak`, with the project before and after). A stretch adds at least a minute and is at
+  least `MinimumCertainty` sure. A guess not offered (too short, too unsure) counts as time away for the breaks around it;
+  time set to none by hand ends a break.
+- Schema 15: open blocks deleted (worked out again), `suggestion_parts` dropped, `suggestions.least_sure_ms`, and
+  `suggestion_breaks` (before/after project, `counted_to`, state open / counted / left out). Decided blocks from before stay,
+  so a rejected one still hides a stretch overlapping half of it.
+- Suggestions tab: one row per project with open stretches (count, time, Accept / Reject all of them), its stretches below
+  (project changeable, time, what it adds, certainty, ✓ / ✕), then Breaks (Count, or Count ▾ toward either project between
+  two; ✕ leaves it out). Footer: Accept Sure and Accept All. The tab's count, and the Overview's, count stretches and breaks.
+- Tool bar: *Unsure ◂ n of m ▸* steps through the open unsure stretches: selects the stretch, puts the playhead on its least
+  sure capture, and shows its words on the Suggestions tab.
+- Unsure is now below 95% (was 70%). Naive Bayes is overconfident; offered stretches by certainty, all labelled days with
+  words: 99–100% 570 stretches 82% right, 95–99% 108 83%, 90–95% 67 64%, 80–90% 64 70%, 70–80% 19 67%. Below 95% about a
+  fifth of the stretches, wrong a third of the time against under a fifth above it. Scores unchanged (guess 87%, filled 85%).
+- On a copy of 22 October: 38 stretches, 19 breaks; the Presayo stretch is 12:42–12:54 and the YouTube break after it sits
+  between Presayo and Frankensystem.
 
 Left for phase 5 (Linux): Tesseract behind `IScreenTextReader`, with its own cost and quality test on Kubuntu.
 

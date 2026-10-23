@@ -299,10 +299,19 @@ public partial class DayReviewView : UserControl
             var (choices, more) = _viewModel.ClassificationChoices(forSelection && _viewModel.HasSelection);
             var items = new List<Control>();
             // A suggestion right-clicked on the projects lane: decide it there, as on the Suggestions tab.
-            if (forSelection && Timeline.ContextPoint is { ProjectLane: true } point && _viewModel.SuggestionAt(point.Seconds) is { } found)
+            if (forSelection && Timeline.ContextPoint is { ProjectLane: true } point)
             {
-                items.AddRange(SuggestionMenuItems(found.Suggestion, found.Part, found.Piece));
-                _viewModel.ShowReach(ReachSource.Menu, (found.Suggestion.Start, found.Suggestion.End));
+                var (stretch, suggestedBreak) = _viewModel.SuggestionAt(point.Seconds);
+                if (stretch is not null)
+                {
+                    items.AddRange(StretchMenuItems(stretch));
+                    _viewModel.ShowReach(ReachSource.Menu, (stretch.Start, stretch.End));
+                }
+                else if (suggestedBreak is not null)
+                {
+                    items.AddRange(BreakMenuItems(suggestedBreak));
+                    _viewModel.ShowReach(ReachSource.Menu, (suggestedBreak.Start, suggestedBreak.End));
+                }
             }
             if (forSelection && _viewModel.HasSelection)
             {
@@ -336,49 +345,34 @@ public partial class DayReviewView : UserControl
         return menu;
     }
 
-    /// <summary>
-    /// A suggestion's entries on the timeline's menu: accept it (whole, or just the piece clicked on when it's drawn in
-    /// several), accept the piece as another project, give the suggestion another project, reject it, and decide the
-    /// break or switch clicked on.
-    /// </summary>
-    private List<Control> SuggestionMenuItems(StoredSuggestion suggestion, StoredPart? part, SuggestionPiece? piece)
+    /// <summary>A suggested stretch's entries on the timeline's menu: accept it (as suggested or as another project), give it another project, or reject it.</summary>
+    private List<Control> StretchMenuItems(StoredSuggestion stretch) =>
+    [
+        MenuEntry($"Accept Suggestion: {_viewModel.ProjectName(stretch.ProjectId)}, {DayReviewViewModel.RangeText(stretch.Start, stretch.End)}",
+            () => _viewModel.AcceptSuggestion(stretch)),
+        new MenuItem { Header = "Accept as", ItemsSource = ProjectMenuItems(id => _viewModel.AcceptSuggestionAs(stretch, id)) },
+        new MenuItem { Header = "Change Suggestion to", ItemsSource = ProjectMenuItems(id => _viewModel.ChangeSuggestionProject(stretch, id)) },
+        MenuEntry("Reject Suggestion", () => _viewModel.RejectSuggestion(stretch)),
+        new Separator(),
+    ];
+
+    /// <summary>A break's entries on the timeline's menu: count it toward the project on either side, or leave it out.</summary>
+    private List<Control> BreakMenuItems(StoredBreak suggestedBreak)
     {
-        var project = _viewModel.ProjectName(suggestion.ProjectId);
         var items = new List<Control>();
-        var several = _viewModel.PieceCount(suggestion) > 1;
-        if (several)
-        {
-            items.Add(MenuEntry($"Accept Whole Suggestion: {project}, {DayReviewViewModel.RangeText(suggestion.Start, suggestion.End)}",
-                () => _viewModel.AcceptSuggestion(suggestion)));
-            if (piece is { CanAccept: true } one)
-                items.Add(MenuEntry($"Accept This Piece Only: {_viewModel.ProjectName(one.ProjectId)}, {DayReviewViewModel.RangeText(one.Start, one.End)}",
-                    () => _viewModel.AcceptPiece(one)));
-        }
-        else
-            items.Add(MenuEntry($"Accept Suggestion: {project}", () => _viewModel.AcceptSuggestion(suggestion)));
-        // Any piece, a break too: its time set to the project picked, the rest of the suggestion left open.
-        if (piece is { } clicked)
-            items.Add(new MenuItem
-            {
-                Header = several ? "Accept This Piece as" : "Accept as",
-                ItemsSource = ProjectMenuItems(id => _viewModel.AcceptPiece(clicked with { ProjectId = id })),
-            });
-        items.Add(new MenuItem
-        {
-            Header = "Change Suggestion to",
-            ItemsSource = ProjectMenuItems(id => _viewModel.ChangeSuggestionProject(suggestion, id)),
-        });
-        items.Add(MenuEntry("Reject Suggestion", () => _viewModel.RejectSuggestion(suggestion)));
-        if (part is { } p)
-        {
-            var header = p.Kind == SuggestionPartKind.Switch && p.ProjectId is { } other
-                ? p.Decided ? $"Split Out as {_viewModel.ProjectName(other)}" : $"Keep in {project}"
-                : p.Decided ? "Don't Count This Break" : $"Count This Break toward {project}";
-            items.Add(MenuEntry(header, () => _viewModel.DecidePart(suggestion, p, !p.Decided)));
-        }
+        foreach (var project in new[] { suggestedBreak.Before, suggestedBreak.After }.Distinct())
+            items.Add(MenuEntry($"Count This Break toward {_viewModel.ProjectName(project)}", () => _viewModel.CountBreak(suggestedBreak, project)));
+        items.Add(MenuEntry("Don't Count This Break", () => _viewModel.LeaveBreakOut(suggestedBreak)));
         items.Add(new Separator());
         return items;
     }
+
+    /// <summary>After a step through the unsure suggestions, scrolls the Suggestions tab to the one stepped to.</summary>
+    private void OnUnsureStepped(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() =>
+    {
+        if (_viewModel.SuggestionRows.OfType<SuggestionRow>().FirstOrDefault(r => r.IsCurrent) is { } row)
+            SuggestionList.ContainerFromItem(row)?.BringIntoView();
+    }, DispatcherPriority.Loaded);
 
     private void UpdateTimeline()
     {

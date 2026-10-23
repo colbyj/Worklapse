@@ -144,7 +144,7 @@ public class HistoryTests
         {
             // Back to schema 4, with captures and a productive app recorded under it.
             db.Execute("""
-                DROP TABLE suggestion_parts; DROP TABLE suggestions; DROP TABLE screen_words;
+                DROP TABLE suggestion_breaks; DROP TABLE suggestions; DROP TABLE screen_words;
                 ALTER TABLE apps DROP COLUMN read_screen; ALTER TABLE apps DROP COLUMN learn;
                 DROP TABLE timesnapper_imports; DROP TABLE title_rules; DROP TABLE timesheet; DROP TABLE day_notes; DROP TABLE project_notes; DROP TABLE project_spans;
                 ALTER TABLE apps DROP COLUMN project_id; ALTER TABLE sites DROP COLUMN project_id; DROP TABLE projects; DROP TABLE categories;
@@ -163,7 +163,7 @@ public class HistoryTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using (var version = db.Command("PRAGMA user_version;"))
-                Assert.Equal(14L, version.ExecuteScalar());
+                Assert.Equal(15L, version.ExecuteScalar());
             var history = new HistoryStore(db);
             var captures = history.LoadDay(DateOnly.FromDateTime(Nine.LocalDateTime)).Captures;
             Assert.Equal([true, false], captures.Select(c => c.Productive));

@@ -137,13 +137,13 @@ public sealed record WorklapseSettings
     /// </summary>
     public bool ReadScreenText { get; init; } = true;
 
-    /// <summary>Time away inside a suggested block shorter than this is part of it, no question asked.</summary>
+    /// <summary>Time away inside a suggested stretch shorter than this is part of it, no question asked.</summary>
     public int GlanceMinutes { get; init; } = 2;
 
-    /// <summary>Time away longer than this ends a suggested block.</summary>
+    /// <summary>Time away longer than this isn't offered as a break.</summary>
     public int SplitMinutes { get; init; } = 30;
 
-    /// <summary>How sure the classifier must be of a block, in percent, for it to be offered.</summary>
+    /// <summary>How sure the classifier must be of a stretch, in percent, for it to be offered.</summary>
     public int MinimumCertainty { get; init; } = 51;
 
     /// <summary>Threads reading the screens of past days (Read Past Days), each a core's worth of CPU.</summary>

@@ -12,27 +12,43 @@ using Worklapse.Core.Suggestions;
 
 namespace Worklapse.App.ViewModels;
 
-/// <summary>
-/// A suggested block on the Suggestions tab: its project (which can be changed before accepting), its time, what it adds,
-/// and the words it rests on. Its breaks and switches follow it as <see cref="SuggestionPartRow"/>s.
-/// </summary>
-public sealed class SuggestionHeadRow : ObservableObject
+/// <summary>A project's open stretches on the Suggestions tab, with Accept and Reject for all of them.</summary>
+public sealed class SuggestionGroupRow(string name, IBrush brush, IBrush tint, string countText, string lengthText, bool isFirst,
+    IReadOnlyList<StoredSuggestion> stretches, Action<IReadOnlyList<StoredSuggestion>> accept, Action<IReadOnlyList<StoredSuggestion>> reject)
 {
-    private readonly Action<SuggestionHeadRow, ProjectOption> _chooseProject;
-    private ProjectOption _project;
+    public string Name { get; } = name;
+    public IBrush Brush { get; } = brush;
+    public IBrush Tint { get; } = tint;
+    public string CountText { get; } = countText;
+    public string LengthText { get; } = lengthText;
+    public bool IsFirst { get; } = isFirst;
+    public IReadOnlyList<StoredSuggestion> Stretches { get; } = stretches;
+    public IRelayCommand Accept { get; } = new RelayCommand(() => accept(stretches));
+    public IRelayCommand Reject { get; } = new RelayCommand(() => reject(stretches));
+}
 
-    public SuggestionHeadRow(StoredSuggestion suggestion, ProjectOption project, string rangeText, string lengthText, string addsText,
-        string evidenceText, string screenText, bool isFirst, Action<SuggestionHeadRow, ProjectOption> chooseProject,
-        Action<StoredSuggestion> accept, Action<StoredSuggestion> reject)
+/// <summary>
+/// A suggested stretch on the Suggestions tab: its project (which can be changed before accepting), its time, how sure the
+/// classifier is, and the words it rests on (shown under it while it's the one being checked, otherwise as its tip).
+/// </summary>
+public sealed class SuggestionRow : ObservableObject
+{
+    // How wide the certainty bar is when the classifier is sure.
+    private const double CertaintyBarWidth = 16;
+
+    private readonly Action<SuggestionRow, ProjectOption> _chooseProject;
+    private ProjectOption _project;
+    private bool _isCurrent;
+
+    public SuggestionRow(StoredSuggestion suggestion, ProjectOption project, string rangeText, string lengthText, string evidenceText,
+        string screenText, Action<SuggestionRow, ProjectOption> chooseProject, Action<StoredSuggestion> accept, Action<StoredSuggestion> reject)
     {
         Suggestion = suggestion;
         _project = project;
         RangeText = rangeText;
         LengthText = lengthText;
-        AddsText = addsText;
         EvidenceText = evidenceText;
         ScreenText = screenText;
-        IsFirst = isFirst;
         _chooseProject = chooseProject;
         Accept = new RelayCommand(() => accept(suggestion));
         Reject = new RelayCommand(() => reject(suggestion));
@@ -41,22 +57,43 @@ public sealed class SuggestionHeadRow : ObservableObject
     public StoredSuggestion Suggestion { get; }
     public string RangeText { get; }
     public string LengthText { get; }
-    public string AddsText { get; }
     public bool IsUnsure => Suggestion.IsUnsure;
+
+    /// <summary>The classifier's certainty; none once the developer chose the project.</summary>
+    public string CertaintyText => Suggestion.State == SuggestionState.Chosen ? "" : $"{Suggestion.Confidence:P0}";
+    public bool ShowsCertainty => CertaintyText.Length > 0;
+    public double CertaintyWidth => Math.Round(Suggestion.Confidence * CertaintyBarWidth);
     public string EvidenceText { get; }
-    public bool HasEvidenceText => EvidenceText.Length > 0;
     public string ScreenText { get; }
+    public bool HasEvidenceText => EvidenceText.Length > 0;
     public bool HasScreenText => ScreenText.Length > 0;
-    public bool IsFirst { get; }
+    public string? Tip => HasEvidenceText || HasScreenText ? string.Join(Environment.NewLine, new[] { EvidenceText, ScreenText }.Where(t => t.Length > 0)) : null;
     public IRelayCommand Accept { get; }
     public IRelayCommand Reject { get; }
+
+    /// <summary>The unsure stretch being checked: its words show under it.</summary>
+    public bool IsCurrent
+    {
+        get => _isCurrent;
+        set
+        {
+            if (SetProperty(ref _isCurrent, value))
+            {
+                OnPropertyChanged(nameof(ShowsEvidence));
+                OnPropertyChanged(nameof(ShowsScreen));
+            }
+        }
+    }
+
+    public bool ShowsEvidence => IsCurrent && HasEvidenceText;
+    public bool ShowsScreen => IsCurrent && HasScreenText;
 
     public ProjectOption Project
     {
         get => _project;
         set
         {
-            // A list that loses its selection hands back null, and None isn't a project to give the block.
+            // A list that loses its selection hands back null, and None isn't a project to give the stretch.
             if (value is null || value.IsNone || value == _project)
                 return;
             _project = value;
@@ -66,60 +103,32 @@ public sealed class SuggestionHeadRow : ObservableObject
     }
 }
 
-/// <summary>A break (counted toward the block or not) or a switch (split out as its project, or kept in) of a suggestion.</summary>
-public sealed class SuggestionPartRow : ObservableObject
-{
-    private readonly Action<SuggestionPartRow, bool> _decide;
-    private bool _decided;
-
-    public SuggestionPartRow(StoredSuggestion suggestion, StoredPart part, string whatText, string rangeText, string lengthText,
-        IBrush brush, string tip, Action<SuggestionPartRow, bool> decide)
-    {
-        Suggestion = suggestion;
-        Part = part;
-        WhatText = whatText;
-        RangeText = rangeText;
-        LengthText = lengthText;
-        Brush = brush;
-        Tip = tip;
-        _decided = part.Decided;
-        _decide = decide;
-    }
-
-    public StoredSuggestion Suggestion { get; }
-    public StoredPart Part { get; }
-    public string WhatText { get; }
-    public string RangeText { get; }
-    public string LengthText { get; }
-
-    /// <summary>The block's project's colour for a break; for a switch, its own project's.</summary>
-    public IBrush Brush { get; }
-    public bool IsSwitch => Part.Kind == SuggestionPartKind.Switch;
-    public bool IsBreak => !IsSwitch;
-    public string DecideText => IsSwitch ? "Keep" : "Count";
-    public string Tip { get; }
-
-    /// <summary>A break: counted toward the block. A switch: kept in the block instead of split out.</summary>
-    public bool Decided
-    {
-        get => _decided;
-        set
-        {
-            if (!SetProperty(ref _decided, value))
-                return;
-            _decide(this, value);
-        }
-    }
-}
+/// <summary>The heading of the breaks on the Suggestions tab.</summary>
+public sealed record SuggestionBreaksHeader(string CountText);
 
 /// <summary>
-/// A piece of an open suggestion on the projects lane, in the project it would go to: a stretch between its breaks and
-/// switches, or one of those. Drawn around the time inside it that has a project already.
+/// A break on the Suggestions tab: what was there, its time, and the project time on each side. Counting it (toward the
+/// project around it, or either of two) or leaving it out takes effect at once.
 /// </summary>
-public sealed record SuggestionPiece(StoredSuggestion Suggestion, DateTimeOffset Start, DateTimeOffset End, long ProjectId, LaneStyle Style)
+public sealed class BreakRow(StoredBreak suggestedBreak, string whatText, string rangeText, string lengthText, string betweenText,
+    IBrush brush, string beforeName, string afterName, Action<StoredBreak, long> count, Action<StoredBreak> leaveOut)
 {
-    /// <summary>An undecided break goes to no project, so it can't be accepted on its own.</summary>
-    public bool CanAccept => Style != LaneStyle.Break;
+    public StoredBreak Break { get; } = suggestedBreak;
+    public string WhatText { get; } = whatText;
+    public string RangeText { get; } = rangeText;
+    public string LengthText { get; } = lengthText;
+    public string BetweenText { get; } = betweenText;
+
+    /// <summary>The project's colour for a break inside one project's time; neutral between two.</summary>
+    public IBrush Brush { get; } = brush;
+    public bool IsInside => Break.Inside is not null;
+    public bool IsBetween => !IsInside;
+    public string CountTip { get; } = $"Count it toward {beforeName}";
+    public string CountBeforeText { get; } = $"Count toward {beforeName}";
+    public string CountAfterText { get; } = $"Count toward {afterName}";
+    public IRelayCommand CountBefore { get; } = new RelayCommand(() => count(suggestedBreak, suggestedBreak.Before));
+    public IRelayCommand CountAfter { get; } = new RelayCommand(() => count(suggestedBreak, suggestedBreak.After));
+    public IRelayCommand LeaveOut { get; } = new RelayCommand(() => leaveOut(suggestedBreak));
 }
 
 public sealed partial class DayReviewViewModel
@@ -127,9 +136,14 @@ public sealed partial class DayReviewViewModel
     // Words a suggestion shows as its evidence, at most, of each kind.
     private const int EvidenceShown = 6;
 
+    /// <summary>A break between two projects' time is drawn in this, belonging to neither.</summary>
+    private static readonly IBrush BetweenBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));
+
     private int _suggestionVersion;
-    private List<StoredSuggestion> _suggestions = [];
-    private List<SuggestionPiece> _suggestionPieces = [];
+    private StoredDay _suggestions = StoredDay.None;
+
+    /// <summary>The unsure stretch being checked, by its place among the open unsure ones; null before the first step.</summary>
+    private int? _unsureIndex;
 
     /// <summary>
     /// After an edit (an accept, a range set by hand), suggestions worked out again wait for <see cref="ShowNewSuggestions"/>
@@ -139,16 +153,19 @@ public sealed partial class DayReviewViewModel
     private bool _holdSuggestions;
     private WorkedOutDay? _newSuggestions;
 
-    /// <summary>The Suggestions tab: each open suggestion, then its breaks and switches.</summary>
+    /// <summary>The Suggestions tab: each project with open stretches, then its stretches; then the breaks.</summary>
     public ObservableCollection<object> SuggestionRows { get; } = [];
 
     [ObservableProperty] private int _openSuggestionCount;
     [ObservableProperty] private string _suggestionSummary = "";
     [ObservableProperty] private bool _isWorkingOutSuggestions;
     [ObservableProperty] private bool _hasNewSuggestions;
+    [ObservableProperty] private int _unsureCount;
+    [ObservableProperty] private string _unsureText = "";
 
     public bool HasOpenSuggestions => OpenSuggestionCount > 0;
     public bool HasNoOpenSuggestions => OpenSuggestionCount == 0;
+    public bool HasUnsure => UnsureCount > 0;
     public bool SuggestionsOff => !_settings.Current.SuggestProjects;
 
     /// <summary>"No suggestions for this day": not while they're being worked out, nor when they're off.</summary>
@@ -161,12 +178,20 @@ public sealed partial class DayReviewViewModel
         OnPropertyChanged(nameof(HasOpenSuggestions));
         OnPropertyChanged(nameof(HasNoOpenSuggestions));
         AcceptAllSuggestionsCommand.NotifyCanExecuteChanged();
+        AcceptSureSuggestionsCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnUnsureCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasUnsure));
+        PreviousUnsureCommand.NotifyCanExecuteChanged();
+        NextUnsureCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
     /// Shows the day's suggestions as stored, then works them out again in the background (the classifier may train on
     /// the history first) and shows those when they're ready, unless the day or its projects changed meanwhile. While
-    /// held (<see cref="_holdSuggestions"/>), ones that change the blocks wait to be asked for instead.
+    /// held (<see cref="_holdSuggestions"/>), ones that change the suggestions wait to be asked for instead.
     /// </summary>
     private void RefreshSuggestions()
     {
@@ -179,7 +204,7 @@ public sealed partial class DayReviewViewModel
             // A run still under way when they were turned off ends unseen (its version is old).
             IsWorkingOutSuggestions = false;
             StopHoldingSuggestions();
-            ShowSuggestions([]);
+            ShowSuggestions(StoredDay.None);
             return;
         }
         var (dayStart, dayEnd) = _history.DayRange(Day.Day);
@@ -243,45 +268,93 @@ public sealed partial class DayReviewViewModel
         ShowStoredSuggestions();
     }
 
-    /// <summary>Lists the open suggestions and draws them on the projects lane.</summary>
-    private void ShowSuggestions(List<StoredSuggestion> suggestions)
+    /// <summary>The open stretches the classifier is unsure of, in time order: what Unsure steps through.</summary>
+    private List<StoredSuggestion> UnsureStretches() => _suggestions.Stretches.Where(s => s.IsOpen && s.IsUnsure).ToList();
+
+    /// <summary>Lists the open stretches, by project, and the open breaks, and draws them on the projects lane.</summary>
+    private void ShowSuggestions(StoredDay suggestions)
     {
         _suggestions = suggestions;
         SuggestionRows.Clear();
-        var open = suggestions.Where(s => s.IsOpen).ToList();
+        var open = suggestions.Stretches.Where(s => s.IsOpen).ToList();
         var adds = TimeSpan.Zero;
-        foreach (var suggestion in open)
+        // Projects with the most time to add first; each project's stretches in time order.
+        foreach (var group in open.GroupBy(s => s.ProjectId).Select(g => (Project: g.Key, Stretches: g.ToList(), Adds: g.Sum(s => Adds(s).Ticks)))
+                     .OrderByDescending(g => g.Adds))
         {
-            var add = Adds(suggestion);
-            adds += add;
-            // The words pointed to the project computed; once another is chosen they'd only mislead.
-            var (evidence, screen) = suggestion.State == SuggestionState.Chosen ? ("", "") : EvidenceTexts(suggestion.Evidence);
-            SuggestionRows.Add(new SuggestionHeadRow(suggestion, OptionOf(suggestion.ProjectId),
-                RangeText(suggestion.Start, suggestion.End), ProjectTimes.Hm(suggestion.End - suggestion.Start),
-                add > TimeSpan.Zero ? $"Adds {ProjectTimes.Hm(add)} without a project"
-                    : suggestion.Parts.Count == 1 ? "One break to decide" : $"{suggestion.Parts.Count} breaks or switches to decide",
-                evidence, screen, SuggestionRows.Count == 0, ChooseSuggestionProject, AcceptSuggestion, RejectSuggestion));
-            foreach (var part in suggestion.Parts)
-                SuggestionRows.Add(PartRow(suggestion, part));
+            var groupAdds = TimeSpan.FromTicks(group.Adds);
+            adds += groupAdds;
+            SuggestionRows.Add(new SuggestionGroupRow(NameOf(group.Project), BrushOf(group.Project), TintOf(group.Project),
+                group.Stretches.Count == 1 ? "1 stretch" : $"{group.Stretches.Count} stretches", ProjectTimes.Hm(groupAdds),
+                SuggestionRows.Count == 0, group.Stretches, AcceptSuggestions, RejectSuggestions));
+            foreach (var stretch in group.Stretches)
+            {
+                // The words pointed to the project computed; once another is chosen they'd only mislead.
+                var (evidence, screen) = stretch.State == SuggestionState.Chosen ? ("", "") : EvidenceTexts(stretch.Evidence);
+                SuggestionRows.Add(new SuggestionRow(stretch, OptionOf(stretch.ProjectId), RangeText(stretch.Start, stretch.End),
+                    ProjectTimes.Hm(Adds(stretch)), evidence, screen, ChooseSuggestionProject, AcceptSuggestion, RejectSuggestion));
+            }
         }
-        OpenSuggestionCount = open.Count;
-        SuggestionSummary = open.Count == 0 ? ""
-            : $"{open.Count} {(open.Count == 1 ? "suggestion" : "suggestions")} · adds {ProjectTimes.Hm(adds)}";
+
+        var breaks = suggestions.Breaks.Where(b => b.IsOpen).ToList();
+        if (breaks.Count > 0)
+            SuggestionRows.Add(new SuggestionBreaksHeader(breaks.Count == 1 ? "1 to decide" : $"{breaks.Count} to decide"));
+        foreach (var suggestedBreak in breaks)
+            SuggestionRows.Add(BreakRowOf(suggestedBreak));
+
+        OpenSuggestionCount = open.Count + breaks.Count;
+        SuggestionSummary = OpenSuggestionCount == 0 ? ""
+            : string.Join(" · ", new[]
+            {
+                open.Count == 0 ? "" : $"{open.Count} {(open.Count == 1 ? "stretch" : "stretches")} · adds {ProjectTimes.Hm(adds)}",
+                breaks.Count == 0 ? "" : $"{breaks.Count} {(breaks.Count == 1 ? "break" : "breaks")}",
+            }.Where(t => t.Length > 0));
+        ShowUnsureStep();
         BuildProjectLane();
         TimelineChanged?.Invoke();
     }
 
-    private SuggestionPartRow PartRow(StoredSuggestion suggestion, StoredPart part)
+    private BreakRow BreakRowOf(StoredBreak suggestedBreak)
     {
-        var range = RangeText(part.Start, part.End);
-        var length = ProjectTimes.Hm(part.End - part.Start);
-        var block = NameOf(suggestion.ProjectId);
-        if (part.Kind == SuggestionPartKind.Switch && part.ProjectId is { } other)
-            return new SuggestionPartRow(suggestion, part, $"Switch: {NameOf(other)} · {WhatWasThere(part.Start, part.End)}", range, length,
-                BrushOf(other), $"Kept, it goes to {block}; otherwise it's split out as {NameOf(other)}", DecidePart);
-        var what = WhatWasThere(part.Start, part.End);
-        return new SuggestionPartRow(suggestion, part, what is "Idle" or "Not recorded" ? what : $"Away: {what}",
-            range, length, BrushOf(suggestion.ProjectId), $"Counted, it goes to {block} with the block", DecidePart);
+        var what = WhatWasThere(suggestedBreak.Start, suggestedBreak.End);
+        var (before, after) = (NameOf(suggestedBreak.Before), NameOf(suggestedBreak.After));
+        return new BreakRow(suggestedBreak, what is "Idle" or "Not recorded" ? what : $"Away: {what}",
+            RangeText(suggestedBreak.Start, suggestedBreak.End), ProjectTimes.Hm(suggestedBreak.End - suggestedBreak.Start),
+            suggestedBreak.Inside is not null ? $"Inside {before}" : $"Between {before} and {after}",
+            suggestedBreak.Inside is { } inside ? BrushOf(inside) : BetweenBrush, before, after, CountBreak, LeaveBreakOut);
+    }
+
+    /// <summary>The step through the unsure stretches: "2 of 5", and which row shows its words.</summary>
+    private void ShowUnsureStep()
+    {
+        var unsure = UnsureStretches();
+        UnsureCount = unsure.Count;
+        if (_unsureIndex is { } index && index >= unsure.Count)
+            _unsureIndex = unsure.Count > 0 ? unsure.Count - 1 : null;
+        var current = _unsureIndex is { } i ? unsure[i] : null;
+        UnsureText = unsure.Count == 0 ? "None" : _unsureIndex is { } at ? $"{at + 1} of {unsure.Count}" : $"{unsure.Count}";
+        foreach (var row in SuggestionRows.OfType<SuggestionRow>())
+            row.IsCurrent = current is not null && row.Suggestion.Id == current.Id;
+    }
+
+    [RelayCommand(CanExecute = nameof(HasUnsure))]
+    private void PreviousUnsure() => StepUnsure(_unsureIndex is { } index ? Math.Max(0, index - 1) : UnsureCount - 1);
+
+    [RelayCommand(CanExecute = nameof(HasUnsure))]
+    private void NextUnsure() => StepUnsure(_unsureIndex is { } index ? Math.Min(UnsureCount - 1, index + 1) : 0);
+
+    /// <summary>Selects an unsure stretch and shows the capture the classifier was least sure of, with its words on the tab.</summary>
+    private void StepUnsure(int index)
+    {
+        var unsure = UnsureStretches();
+        if (index < 0 || index >= unsure.Count)
+            return;
+        _unsureIndex = index;
+        var stretch = unsure[index];
+        PanelTab = SuggestionsTab;
+        SelectRange(stretch.Start, stretch.End);
+        GoTo(stretch.LeastSure);
+        ShowUnsureStep();
     }
 
     /// <summary>What filled a stretch: idle, not recorded, or the app or site used most.</summary>
@@ -299,16 +372,10 @@ public sealed partial class DayReviewViewModel
         return programs.FirstOrDefault().Program.Name ?? "Other";
     }
 
-    /// <summary>
-    /// The time a suggestion gives its project: its stretch without what already has a project and without its breaks and
-    /// switches as they're decided now.
-    /// </summary>
-    private TimeSpan Adds(StoredSuggestion suggestion)
-    {
-        var free = SuggestionStore.Subtract([(suggestion.Start, suggestion.End)], _projectTime.Blocks.Select(b => (b.Start, b.End)));
-        var left = SuggestionStore.Subtract(free, suggestion.Parts.Where(p => !p.Decided).Select(p => (p.Start, p.End)));
-        return left.Aggregate(TimeSpan.Zero, (sum, r) => sum + (r.End - r.Start));
-    }
+    /// <summary>The time a stretch gives its project: its time without what has a project already.</summary>
+    private TimeSpan Adds(StoredSuggestion suggestion) =>
+        SuggestionStore.Subtract([(suggestion.Start, suggestion.End)], _projectTime.Blocks.Select(b => (b.Start, b.End)))
+            .Aggregate(TimeSpan.Zero, (sum, r) => sum + (r.End - r.Start));
 
     /// <summary>The evidence words for the panel: from the title, app and site; and those read off the screen.</summary>
     private static (string Evidence, string Screen) EvidenceTexts(IReadOnlyList<string> words)
@@ -329,127 +396,120 @@ public sealed partial class DayReviewViewModel
     }
 
     /// <summary>
-    /// The projects lane: time marked with a project filled; open suggestions outlined over the time without one, their
-    /// undecided breaks dashed, switches split out in their own project's colour.
+    /// The projects lane: time marked with a project filled; open stretches outlined over the time without one (hatched
+    /// when the classifier is unsure), open breaks dashed.
     /// </summary>
     private void BuildProjectLane()
     {
         var lane = _projectTime.Blocks
             .Select(b => new ProjectLaneBlock(SecondsOf(b.Start), SecondsOf(b.End), BrushOf(b.ProjectId), NameOf(b.ProjectId)))
             .ToList();
-        var pieces = new List<SuggestionPiece>();
         var taken = _projectTime.Blocks.Select(b => (b.Start, b.End)).ToList();
-        foreach (var suggestion in _suggestions.Where(s => s.IsOpen))
-        {
-            // Under its pieces, so they read as one block across its breaks and the time between that has a project.
-            lane.Add(new ProjectLaneBlock(SecondsOf(suggestion.Start), SecondsOf(suggestion.End), BrushOf(suggestion.ProjectId), "", LaneStyle.Extent));
-            // Its pieces: the stretches between its breaks and switches, and those; each drawn around the time that
-            // has a project already.
-            foreach (var (start, end) in SuggestionStore.Subtract([(suggestion.Start, suggestion.End)], suggestion.Parts.Select(p => (p.Start, p.End))))
-                pieces.Add(new SuggestionPiece(suggestion, start, end, suggestion.ProjectId, LaneStyle.Suggested));
-            foreach (var part in suggestion.Parts)
-            {
-                var (project, style) = part switch
-                {
-                    { Kind: SuggestionPartKind.Switch, Decided: false, ProjectId: { } other } => (other, LaneStyle.Suggested),
-                    // A break, or a switch whose project was deleted since: left out on Accept unless counted.
-                    { Decided: false } => (suggestion.ProjectId, LaneStyle.Break),
-                    _ => (suggestion.ProjectId, LaneStyle.Suggested),
-                };
-                pieces.Add(new SuggestionPiece(suggestion, part.Start, part.End, project, style));
-            }
-        }
-        // A piece whose time all has a project already shows nothing, so it isn't one.
-        pieces.RemoveAll(piece => SuggestionStore.Subtract([(piece.Start, piece.End)], taken) is { Count: 0 });
-        foreach (var piece in pieces)
-            foreach (var (start, end) in SuggestionStore.Subtract([(piece.Start, piece.End)], taken))
-                lane.Add(new ProjectLaneBlock(SecondsOf(start), SecondsOf(end), BrushOf(piece.ProjectId), NameOf(piece.ProjectId), piece.Style));
-        _suggestionPieces = pieces;
+        foreach (var stretch in _suggestions.Stretches.Where(s => s.IsOpen))
+            foreach (var (start, end) in SuggestionStore.Subtract([(stretch.Start, stretch.End)], taken))
+                lane.Add(new ProjectLaneBlock(SecondsOf(start), SecondsOf(end), BrushOf(stretch.ProjectId), NameOf(stretch.ProjectId),
+                    stretch.IsUnsure ? LaneStyle.Unsure : LaneStyle.Suggested));
+        foreach (var suggestedBreak in _suggestions.Breaks.Where(b => b.IsOpen))
+            foreach (var (start, end) in SuggestionStore.Subtract([(suggestedBreak.Start, suggestedBreak.End)], taken))
+                lane.Add(new ProjectLaneBlock(SecondsOf(start), SecondsOf(end),
+                    suggestedBreak.Inside is { } inside ? BrushOf(inside) : BetweenBrush, "", LaneStyle.Break));
         ProjectLane = lane;
     }
 
     /// <summary>A project's name, for menus.</summary>
     public string ProjectName(long projectId) => NameOf(projectId);
 
-    /// <summary>
-    /// The open suggestion at a moment, its part there (if any), and the piece drawn there (none between pieces), for the
-    /// timeline's right-click menu.
-    /// </summary>
-    public (StoredSuggestion Suggestion, StoredPart? Part, SuggestionPiece? Piece)? SuggestionAt(double seconds)
+    /// <summary>The open stretch or break at a moment, for the timeline's right-click menu.</summary>
+    public (StoredSuggestion? Stretch, StoredBreak? Break) SuggestionAt(double seconds)
     {
         var at = TimeAt(seconds);
-        foreach (var suggestion in _suggestions.Where(s => s.IsOpen && s.Start <= at && at < s.End))
-            return (suggestion, suggestion.Parts.FirstOrDefault(p => p.Start <= at && at < p.End),
-                _suggestionPieces.FirstOrDefault(p => p.Suggestion == suggestion && p.Start <= at && at < p.End));
-        return null;
+        return (_suggestions.Stretches.FirstOrDefault(s => s.IsOpen && s.Start <= at && at < s.End),
+            _suggestions.Breaks.FirstOrDefault(b => b.IsOpen && b.Start <= at && at < b.End));
     }
 
-    /// <summary>How many pieces a suggestion is drawn as, breaks included.</summary>
-    public int PieceCount(StoredSuggestion suggestion) => _suggestionPieces.Count(p => p.Suggestion == suggestion);
+    public void AcceptSuggestion(StoredSuggestion suggestion) => AcceptSuggestions([suggestion]);
 
-    public void AcceptSuggestion(StoredSuggestion suggestion)
+    /// <summary>Accepts a stretch as another project than suggested.</summary>
+    public void AcceptSuggestionAs(StoredSuggestion suggestion, long projectId)
+    {
+        new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
+        AcceptSuggestions([suggestion]);
+    }
+
+    /// <summary>
+    /// Accepts stretches as they're stored now: the panel's rows may differ by a click made since they were read. One worked
+    /// out again meanwhile into something else isn't accepted; what's stored is shown instead, to be decided afresh.
+    /// </summary>
+    private void AcceptSuggestions(IReadOnlyList<StoredSuggestion> stretches)
     {
         var store = new SuggestionStore(_history.Database);
-        // As decided now: the panel's rows and the stored ones may differ by a click made since they were read. When it
-        // was worked out again meanwhile into something else, that's shown instead, to be decided afresh.
-        if (store.Get(suggestion.Start, suggestion.End).FirstOrDefault(s => s.Id == suggestion.Id && s.IsOpen) is not { } current)
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
+        var stored = store.Get(dayStart, dayEnd).Stretches.Where(s => s.IsOpen).ToDictionary(s => s.Id);
+        // The day as stored now, as the suggestions were worked out from: on today, newer than the captures shown.
+        var captures = _history.LoadDay(Day.Day).Captures;
+        var accepted = false;
+        foreach (var stretch in stretches)
         {
-            ShowStoredSuggestions();
-            return;
+            if (!stored.TryGetValue(stretch.Id, out var current))
+                continue;
+            // Each one accepted changes what the next leaves alone.
+            store.Accept(current, captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
+            accepted = true;
         }
-        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
-        // The day as stored now, as the suggestion was worked out from: on today, newer than the captures shown.
-        store.Accept(current, _history.LoadDay(Day.Day).Captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
-        RebuildProjects();
+        if (accepted)
+            RebuildProjects();
+        else
+            ShowStoredSuggestions();
     }
 
-    /// <summary>Accepts one piece of a suggestion as the project it's drawn in, leaving the rest of the suggestion open.</summary>
-    public void AcceptPiece(SuggestionPiece piece)
-    {
-        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
-        new SuggestionStore(_history.Database).AcceptPiece(piece.Start, piece.End, piece.ProjectId,
-            _history.LoadDay(Day.Day).Captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
-        RebuildProjects();
-    }
-
-    /// <summary>Gives an open suggestion another project, as the Suggestions tab's project list does.</summary>
+    /// <summary>Gives an open stretch another project, as the Suggestions tab's project list does.</summary>
     public void ChangeSuggestionProject(StoredSuggestion suggestion, long projectId)
     {
         new SuggestionStore(_history.Database).SetProject(suggestion.Id, projectId);
         ShowStoredSuggestions();
     }
 
-    public void RejectSuggestion(StoredSuggestion suggestion)
+    public void RejectSuggestion(StoredSuggestion suggestion) => RejectSuggestions([suggestion]);
+
+    private void RejectSuggestions(IReadOnlyList<StoredSuggestion> stretches)
     {
-        new SuggestionStore(_history.Database).Reject(suggestion.Id);
+        var store = new SuggestionStore(_history.Database);
+        foreach (var stretch in stretches)
+            store.Reject(stretch.Id);
         ShowStoredSuggestions();
     }
 
-    /// <summary>Decides a break (counted) or a switch (kept in the block) of an open suggestion.</summary>
-    public void DecidePart(StoredSuggestion suggestion, StoredPart part, bool decided)
+    /// <summary>Counts a break toward a project: its time is set to it at once.</summary>
+    public void CountBreak(StoredBreak suggestedBreak, long projectId)
     {
-        new SuggestionStore(_history.Database).SetPart(suggestion.Id, part.Start, decided);
+        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
+        new SuggestionStore(_history.Database).Count(suggestedBreak, projectId, _history.LoadDay(Day.Day).Captures,
+            Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
+        RebuildProjects();
+    }
+
+    /// <summary>Leaves a break out: it stays without a project, and isn't offered again.</summary>
+    public void LeaveBreakOut(StoredBreak suggestedBreak)
+    {
+        new SuggestionStore(_history.Database).LeaveOut(suggestedBreak.Id);
         ShowStoredSuggestions();
     }
 
+    /// <summary>Accepts the stretches the classifier is sure of, leaving the unsure ones and the breaks to decide.</summary>
+    [RelayCommand(CanExecute = nameof(HasOpenSuggestions))]
+    private void AcceptSureSuggestions() => AcceptSuggestions(_suggestions.Stretches.Where(s => s.IsOpen && !s.IsUnsure).ToList());
+
+    /// <summary>Accepts every open stretch and leaves out the breaks not counted: the day is decided.</summary>
     [RelayCommand(CanExecute = nameof(HasOpenSuggestions))]
     private void AcceptAllSuggestions()
     {
         var store = new SuggestionStore(_history.Database);
-        var (dayStart, dayEnd) = _history.DayRange(Day.Day);
-        var captures = _history.LoadDay(Day.Day).Captures;
-        foreach (var suggestion in store.Get(dayStart, dayEnd).Where(s => s.IsOpen))
-        {
-            // Each accepted block changes what the next one leaves alone.
-            store.Accept(suggestion, captures, Projects.GetSpans(dayStart, dayEnd), _maxCaptureLength);
-        }
-        RebuildProjects();
+        foreach (var suggestedBreak in _suggestions.Breaks.Where(b => b.IsOpen))
+            store.LeaveOut(suggestedBreak.Id);
+        AcceptSuggestions(_suggestions.Stretches.Where(s => s.IsOpen).ToList());
     }
 
-    private void DecidePart(SuggestionPartRow row, bool decided) =>
-        Dispatcher.UIThread.Post(() => DecidePart(row.Suggestion, row.Part, decided));
-
-    private void ChooseSuggestionProject(SuggestionHeadRow row, ProjectOption project) => Dispatcher.UIThread.Post(() =>
+    private void ChooseSuggestionProject(SuggestionRow row, ProjectOption project) => Dispatcher.UIThread.Post(() =>
     {
         if (project.Id is not { } id)
             return;

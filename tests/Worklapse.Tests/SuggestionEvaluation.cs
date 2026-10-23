@@ -53,7 +53,7 @@ public class SuggestionEvaluation
         var report = new StringBuilder();
         report.AppendLine($"{"day",-10} {"min",5} {"rules",6} {"guess",6} {"filled",7}   (filled: links and rules kept, the rest guessed, scored where nothing was linked)");
         var totals = new Score[3];
-        var offered = new (int Blocks, Score Adds)[CertaintyBands.Length];
+        var offered = new (int Stretches, Score Adds)[CertaintyBands.Length];
         foreach (var (day, dayHistory, spans) in days)
         {
             var classifier = ProjectClassifier.Train(days.Where(d => d.Day != day).SelectMany(d => examples[d.Day]).Concat(starters));
@@ -76,29 +76,28 @@ public class SuggestionEvaluation
                 totals[s] = totals[s].Add(scores[s]);
             report.AppendLine($"{day:yyyy-MM-dd} {scores[0].Seconds / 60,5:F0} {scores[0].Accuracy,6:P0} {scores[1].Accuracy,6:P0} {scores[2].Accuracy,7:P0}");
 
-            // The blocks as offered (the day's ranges not set yet), by their certainty: how much of what each adds is right.
-            foreach (var suggestion in SuggestionBuilder.ForDay(captures, [], classifier, SuggestionLimits.Default, max, SuggestionOptOuts.None, screenWords))
+            // The stretches as offered (the day's ranges not set yet), by their certainty: how much of what each adds is right.
+            foreach (var suggestion in SuggestionBuilder.ForDay(captures, [], classifier, SuggestionLimits.Default, max, SuggestionOptOuts.None, screenWords).Stretches)
             {
                 var band = Array.FindLastIndex(CertaintyBands, b => suggestion.Confidence >= b);
                 var adds = Score.Of(truth, captures.Select(_ => (long?)suggestion.ProjectId).ToArray(), seconds,
-                    i => captures[i].LinkedProjectId is null && captures[i].Time >= suggestion.Start && captures[i].Time < suggestion.End
-                        && !suggestion.Parts.Any(p => captures[i].Time >= p.Start && captures[i].Time < p.End));
-                offered[band] = (offered[band].Blocks + 1, offered[band].Adds.Add(adds));
+                    i => captures[i].LinkedProjectId is null && captures[i].Time >= suggestion.Start && captures[i].Time < suggestion.End);
+                offered[band] = (offered[band].Stretches + 1, offered[band].Adds.Add(adds));
             }
         }
         report.AppendLine($"{"all days",-10} {totals[0].Seconds / 60,5:F0} {totals[0].Accuracy,6:P1} {totals[1].Accuracy,6:P1} {totals[2].Accuracy,7:P1}");
         report.AppendLine();
-        report.AppendLine($"{"certainty",-10} {"blocks",6} {"min",6} {"right",6}   (offered blocks; min: what they add where the truth is known)");
+        report.AppendLine($"{"certainty",-10} {"offered",7} {"min",6} {"right",6}   (offered stretches; min: what they add where the truth is known)");
         for (var b = 0; b < CertaintyBands.Length; b++)
         {
             var upper = b + 1 < CertaintyBands.Length ? $"{CertaintyBands[b + 1]:P0}" : "100%";
-            report.AppendLine($"{$"{CertaintyBands[b]:P0}–{upper}",-10} {offered[b].Blocks,6} {offered[b].Adds.Seconds / 60,6:F0} {offered[b].Adds.Accuracy,6:P0}");
+            report.AppendLine($"{$"{CertaintyBands[b]:P0}–{upper}",-10} {offered[b].Stretches,7} {offered[b].Adds.Seconds / 60,6:F0} {offered[b].Adds.Accuracy,6:P0}");
         }
         TestContext.Current.TestOutputHelper?.WriteLine(report.ToString());
     }
 
-    /// <summary>Where the certainty bands of offered blocks start.</summary>
-    private static readonly double[] CertaintyBands = [0, 0.3, 0.4, 0.51, 0.6, 0.7, 0.8, 0.9];
+    /// <summary>Where the certainty bands of offered stretches start.</summary>
+    private static readonly double[] CertaintyBands = [0, 0.3, 0.4, 0.51, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99];
 
     /// <summary>
     /// What the developer says each active capture is: its range by hand (none if the range has none), else on a day

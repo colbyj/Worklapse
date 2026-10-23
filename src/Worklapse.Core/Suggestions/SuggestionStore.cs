@@ -7,20 +7,20 @@ namespace Worklapse.Core.Suggestions;
 public enum SuggestionState
 {
     Open = 0,
+
+    /// <summary>A stretch accepted; a break counted toward a project.</summary>
     Accepted = 1,
+
+    /// <summary>A stretch rejected; a break left out.</summary>
     Rejected = 2,
 
     /// <summary>Open, with its project picked by the developer: kept when the day is worked out again, as decided ones are.</summary>
     Chosen = 3,
 }
 
-/// <summary>A break or switch inside a stored suggestion, with the developer's decision on it.</summary>
-/// <param name="Decided">A break: counted toward the block. A switch: kept in the block rather than split out.</param>
-public sealed record StoredPart(DateTimeOffset Start, DateTimeOffset End, SuggestionPartKind Kind, long? ProjectId, bool Decided);
-
-/// <summary>A suggested block as stored, with what became of it.</summary>
+/// <summary>A suggested stretch as stored, with what became of it.</summary>
 public sealed record StoredSuggestion(long Id, DateTimeOffset Start, DateTimeOffset End, long ProjectId, double Confidence,
-    IReadOnlyList<string> Evidence, SuggestionState State, IReadOnlyList<StoredPart> Parts)
+    DateTimeOffset LeastSure, IReadOnlyList<string> Evidence, SuggestionState State)
 {
     /// <summary>The classifier wasn't sure of its project; a project the developer chose is sure.</summary>
     public bool IsUnsure => State != SuggestionState.Chosen && Confidence < Suggestion.UnsureBelow;
@@ -29,69 +29,85 @@ public sealed record StoredSuggestion(long Id, DateTimeOffset Start, DateTimeOff
     public bool IsOpen => State is SuggestionState.Open or SuggestionState.Chosen;
 }
 
+/// <summary>A suggested break as stored, with what became of it.</summary>
+/// <param name="CountedTo">The project it was counted toward, once <see cref="SuggestionState.Accepted"/>.</param>
+public sealed record StoredBreak(long Id, DateTimeOffset Start, DateTimeOffset End, long Before, long After, long? CountedTo,
+    SuggestionState State)
+{
+    /// <summary>The project on both sides, when it's the same one.</summary>
+    public long? Inside => Before == After ? Before : null;
+
+    /// <summary>Still to be counted or left out.</summary>
+    public bool IsOpen => State == SuggestionState.Open;
+}
+
+/// <summary>A day's suggestions as stored, open and decided, each kind in time order.</summary>
+public sealed record StoredDay(IReadOnlyList<StoredSuggestion> Stretches, IReadOnlyList<StoredBreak> Breaks)
+{
+    public static StoredDay None { get; } = new([], []);
+
+    /// <summary>The stretches and breaks still to decide.</summary>
+    public int OpenCount => Stretches.Count(s => s.IsOpen) + Breaks.Count(b => b.IsOpen);
+}
+
 /// <summary>
-/// The suggested blocks of each day and the developer's decisions on them. Open suggestions are replaced whenever a day is
-/// worked out again (keeping the decisions on breaks and switches that are still there); accepted and rejected ones stay,
-/// so a rejected block isn't offered again and an accepted one isn't offered twice. Accepting writes ranges by hand, so
-/// everything else (the Timesheet, the Overview) sees ordinary project time. Uses the connection it's given, from one
-/// thread at a time.
+/// The suggested stretches and breaks of each day and the developer's decisions on them. Open ones are replaced whenever
+/// a day is worked out again; decided ones stay, so a rejected stretch or a break left out isn't offered again and an
+/// accepted one isn't offered twice. Accepting writes ranges by hand, so everything else (the Timesheet, the Overview)
+/// sees ordinary project time. Uses the connection it's given, from one thread at a time.
 /// </summary>
 public sealed class SuggestionStore(WorklapseDatabase db)
 {
     /// <summary>
-    /// A new suggestion counts as one already decided when it has the same project and they overlap by at least this much
-    /// of the new one (of the shorter, a small rejected block would hide a much larger one around it); a chosen block, of
-    /// the shorter.
+    /// A new suggestion counts as one already decided when they overlap by at least this much of the new one (of the
+    /// shorter, a small rejected stretch would hide a much larger one around it); a stretch also needs the same project,
+    /// unless the decided one's project was chosen, which is compared by the shorter.
     /// </summary>
-    public const double SameBlockOverlap = 0.5;
+    public const double SameOverlap = 0.5;
 
     /// <summary>
-    /// The suggestions starting from start up to (not including) end, in time order: open ones and those decided. A day's
-    /// are those starting in it, as <see cref="Replace"/> keeps them.
+    /// The stretches and breaks starting from start up to (not including) end, in time order: open ones and those decided.
+    /// A day's are those starting in it, as <see cref="Replace"/> keeps them.
     /// </summary>
-    public List<StoredSuggestion> Get(DateTimeOffset start, DateTimeOffset end)
+    public StoredDay Get(DateTimeOffset start, DateTimeOffset end)
     {
-        var parts = new Dictionary<long, List<StoredPart>>();
+        var stretches = new List<StoredSuggestion>();
         using (var command = db.Command("""
-            SELECT p.suggestion_id, p.start_ms, p.end_ms, p.kind, p.project_id, p.decided
-            FROM suggestion_parts p JOIN suggestions s ON s.id = p.suggestion_id
-            WHERE s.start_ms >= $start AND s.start_ms < $end
-            ORDER BY p.suggestion_id, p.start_ms;
+            SELECT id, start_ms, end_ms, project_id, confidence, least_sure_ms, evidence, state FROM suggestions
+            WHERE start_ms >= $start AND start_ms < $end ORDER BY start_ms, id;
             """))
         {
             Bind(command, start, end);
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                if (!parts.TryGetValue(reader.GetInt64(0), out var list))
-                    parts[reader.GetInt64(0)] = list = [];
-                list.Add(new StoredPart(Time(reader.GetInt64(1)), Time(reader.GetInt64(2)), (SuggestionPartKind)reader.GetInt32(3),
-                    reader.IsDBNull(4) ? null : reader.GetInt64(4), reader.GetInt64(5) != 0));
-            }
+            using var rows = command.ExecuteReader();
+            while (rows.Read())
+                stretches.Add(new StoredSuggestion(rows.GetInt64(0), Time(rows.GetInt64(1)), Time(rows.GetInt64(2)), rows.GetInt64(3),
+                    rows.GetDouble(4), Time(rows.IsDBNull(5) ? rows.GetInt64(1) : rows.GetInt64(5)),
+                    rows.GetString(6).Split(' ', StringSplitOptions.RemoveEmptyEntries), (SuggestionState)rows.GetInt32(7)));
         }
 
-        using var suggestions = db.Command("""
-            SELECT id, start_ms, end_ms, project_id, confidence, evidence, state FROM suggestions
+        var breaks = new List<StoredBreak>();
+        using (var command = db.Command("""
+            SELECT id, start_ms, end_ms, before_project, after_project, counted_to, state FROM suggestion_breaks
             WHERE start_ms >= $start AND start_ms < $end ORDER BY start_ms, id;
-            """);
-        Bind(suggestions, start, end);
-        using var rows = suggestions.ExecuteReader();
-        var result = new List<StoredSuggestion>();
-        while (rows.Read())
+            """))
         {
-            var id = rows.GetInt64(0);
-            result.Add(new StoredSuggestion(id, Time(rows.GetInt64(1)), Time(rows.GetInt64(2)), rows.GetInt64(3), rows.GetDouble(4),
-                rows.GetString(5).Split(' ', StringSplitOptions.RemoveEmptyEntries), (SuggestionState)rows.GetInt32(6),
-                parts.TryGetValue(id, out var list) ? list : []));
+            Bind(command, start, end);
+            using var rows = command.ExecuteReader();
+            while (rows.Read())
+                breaks.Add(new StoredBreak(rows.GetInt64(0), Time(rows.GetInt64(1)), Time(rows.GetInt64(2)), rows.GetInt64(3),
+                    rows.GetInt64(4), rows.IsDBNull(5) ? null : rows.GetInt64(5), (SuggestionState)rows.GetInt32(6)));
         }
-        return result;
+        return new StoredDay(stretches, breaks);
     }
 
-    /// <summary>How many open suggestions start on each local day of <paramref name="days"/>, for the Overview.</summary>
+    /// <summary>How many open stretches and breaks start on each local day of <paramref name="days"/>, for the Overview.</summary>
     public Dictionary<DateOnly, int> CountOpen(IEnumerable<(DateOnly Day, DateTimeOffset Start, DateTimeOffset End)> days)
     {
         var counts = new Dictionary<DateOnly, int>();
-        using var command = db.Command("SELECT count(*) FROM suggestions WHERE state IN (0, 3) AND start_ms >= $start AND start_ms < $end;");
+        using var command = db.Command("""
+            SELECT (SELECT count(*) FROM suggestions WHERE state IN (0, 3) AND start_ms >= $start AND start_ms < $end)
+                 + (SELECT count(*) FROM suggestion_breaks WHERE state = 0 AND start_ms >= $start AND start_ms < $end);
+            """);
         var start = command.Parameters.Add("$start", Microsoft.Data.Sqlite.SqliteType.Integer);
         var end = command.Parameters.Add("$end", Microsoft.Data.Sqlite.SqliteType.Integer);
         foreach (var (day, from, to) in days)
@@ -104,114 +120,105 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     }
 
     /// <summary>
-    /// Makes <paramref name="computed"/> the open suggestions starting from start up to end: the open ones there before go
-    /// (not those whose project was chosen), except that one computed again unchanged (the same time and project) keeps its
-    /// id, so a click on it made meanwhile still finds it, and a break or switch overlapping one decided before keeps that
-    /// decision; a computed block matching one decided or chosen already (the same project, overlapping by
-    /// <see cref="SameBlockOverlap"/>) is left out.
+    /// Makes <paramref name="computed"/> the open stretches and breaks starting from start up to end: the open ones there
+    /// before go (not stretches whose project was chosen), except that one computed again unchanged keeps its id, so a
+    /// click on it made meanwhile still finds it; a computed one matching one decided already (<see cref="SameOverlap"/>)
+    /// is left out.
     /// </summary>
-    public void Replace(DateTimeOffset start, DateTimeOffset end, IReadOnlyList<Suggestion> computed)
+    public void Replace(DateTimeOffset start, DateTimeOffset end, DaySuggestions computed)
     {
         using var transaction = db.BeginTransaction();
         var before = Get(start, end);
-        var open = before.Where(s => s.State == SuggestionState.Open).ToList();
-        var decisions = open.SelectMany(s => s.Parts).Where(p => p.Decided).ToList();
+
+        var openStretches = before.Stretches.Where(s => s.State == SuggestionState.Open).ToList();
         var kept = new HashSet<long>();
-
-        foreach (var suggestion in Offered(before, computed))
+        foreach (var stretch in OfferedStretches(before, computed))
         {
-            long id;
-            if (open.FirstOrDefault(o => !kept.Contains(o.Id) && o.Start == suggestion.Start && o.End == suggestion.End
-                    && o.ProjectId == suggestion.ProjectId) is { } same)
+            if (openStretches.FirstOrDefault(o => !kept.Contains(o.Id) && o.Start == stretch.Start && o.End == stretch.End
+                    && o.ProjectId == stretch.ProjectId) is { } same)
             {
-                id = same.Id;
-                kept.Add(id);
-                using var update = db.Command("UPDATE suggestions SET confidence = $confidence, evidence = $evidence WHERE id = $id;");
-                update.Parameters.AddWithValue("$id", id);
-                update.Parameters.AddWithValue("$confidence", suggestion.Confidence);
-                update.Parameters.AddWithValue("$evidence", string.Join(' ', suggestion.Evidence));
+                kept.Add(same.Id);
+                using var update = db.Command("""
+                    UPDATE suggestions SET confidence = $confidence, least_sure_ms = $leastSure, evidence = $evidence WHERE id = $id;
+                    """);
+                update.Parameters.AddWithValue("$id", same.Id);
+                update.Parameters.AddWithValue("$confidence", stretch.Confidence);
+                update.Parameters.AddWithValue("$leastSure", stretch.LeastSure.ToUnixTimeMilliseconds());
+                update.Parameters.AddWithValue("$evidence", string.Join(' ', stretch.Evidence));
                 update.ExecuteNonQuery();
-                using var deleteParts = db.Command("DELETE FROM suggestion_parts WHERE suggestion_id = $id;");
-                deleteParts.Parameters.AddWithValue("$id", id);
-                deleteParts.ExecuteNonQuery();
+                continue;
             }
-            else
-            {
-                using var insert = db.Command("""
-                    INSERT INTO suggestions (start_ms, end_ms, project_id, confidence, evidence, state)
-                    VALUES ($start, $end, $project, $confidence, $evidence, 0) RETURNING id;
-                    """);
-                Bind(insert, suggestion.Start, suggestion.End);
-                insert.Parameters.AddWithValue("$project", suggestion.ProjectId);
-                insert.Parameters.AddWithValue("$confidence", suggestion.Confidence);
-                insert.Parameters.AddWithValue("$evidence", string.Join(' ', suggestion.Evidence));
-                id = (long)insert.ExecuteScalar()!;
-            }
-            foreach (var part in suggestion.Parts)
-            {
-                using var insert = db.Command("""
-                    INSERT INTO suggestion_parts (suggestion_id, start_ms, end_ms, kind, project_id, decided)
-                    VALUES ($id, $start, $end, $kind, $project, $decided);
-                    """);
-                insert.Parameters.AddWithValue("$id", id);
-                Bind(insert, part.Start, part.End);
-                insert.Parameters.AddWithValue("$kind", (int)part.Kind);
-                insert.Parameters.AddWithValue("$project", (object?)part.ProjectId ?? DBNull.Value);
-                // Matched by overlap, not exact ends: a capture arriving, or an edge moving a few seconds, keeps the decision.
-                var wasDecided = decisions.Any(d => d.Kind == part.Kind && d.ProjectId == part.ProjectId && d.Start < part.End && part.Start < d.End);
-                insert.Parameters.AddWithValue("$decided", wasDecided ? 1 : 0);
-                insert.ExecuteNonQuery();
-            }
+            using var insert = db.Command("""
+                INSERT INTO suggestions (start_ms, end_ms, project_id, confidence, least_sure_ms, evidence, state)
+                VALUES ($start, $end, $project, $confidence, $leastSure, $evidence, 0);
+                """);
+            Bind(insert, stretch.Start, stretch.End);
+            insert.Parameters.AddWithValue("$project", stretch.ProjectId);
+            insert.Parameters.AddWithValue("$confidence", stretch.Confidence);
+            insert.Parameters.AddWithValue("$leastSure", stretch.LeastSure.ToUnixTimeMilliseconds());
+            insert.Parameters.AddWithValue("$evidence", string.Join(' ', stretch.Evidence));
+            insert.ExecuteNonQuery();
         }
+        Delete("suggestions", openStretches.Where(o => !kept.Contains(o.Id)).Select(o => o.Id));
 
-        foreach (var gone in open.Where(o => !kept.Contains(o.Id)))
+        var openBreaks = before.Breaks.Where(b => b.IsOpen).ToList();
+        kept.Clear();
+        foreach (var computedBreak in OfferedBreaks(before, computed))
         {
-            using var delete = db.Command("DELETE FROM suggestions WHERE id = $id;");
-            delete.Parameters.AddWithValue("$id", gone.Id);
-            delete.ExecuteNonQuery();
+            if (openBreaks.FirstOrDefault(o => !kept.Contains(o.Id) && o.Start == computedBreak.Start && o.End == computedBreak.End
+                    && o.Before == computedBreak.Before && o.After == computedBreak.After) is { } same)
+            {
+                kept.Add(same.Id);
+                continue;
+            }
+            using var insert = db.Command("""
+                INSERT INTO suggestion_breaks (start_ms, end_ms, before_project, after_project, state)
+                VALUES ($start, $end, $before, $after, 0);
+                """);
+            Bind(insert, computedBreak.Start, computedBreak.End);
+            insert.Parameters.AddWithValue("$before", computedBreak.Before);
+            insert.Parameters.AddWithValue("$after", computedBreak.After);
+            insert.ExecuteNonQuery();
         }
+        Delete("suggestion_breaks", openBreaks.Where(o => !kept.Contains(o.Id)).Select(o => o.Id));
         transaction.Commit();
     }
 
     /// <summary>
-    /// Whether <see cref="Replace"/> would change the open blocks starting from start up to end: offer another, take one
-    /// away, or move one or its breaks and switches; not when only their certainty and evidence would change.
+    /// Whether <see cref="Replace"/> would change the open stretches or breaks starting from start up to end: offer another,
+    /// take one away, or move one; not when only a stretch's certainty and evidence would change.
     /// </summary>
-    public bool Changes(DateTimeOffset start, DateTimeOffset end, IReadOnlyList<Suggestion> computed)
+    public bool Changes(DateTimeOffset start, DateTimeOffset end, DaySuggestions computed)
     {
         var before = Get(start, end);
-        var open = before.Where(s => s.State == SuggestionState.Open).ToList();
-        foreach (var suggestion in Offered(before, computed))
-        {
-            var parts = suggestion.Parts.Select(p => (p.Start, p.End, p.Kind, p.ProjectId)).OrderBy(p => p.Start);
-            var same = open.FindIndex(o => o.Start == suggestion.Start && o.End == suggestion.End && o.ProjectId == suggestion.ProjectId
-                && o.Parts.Select(p => (p.Start, p.End, p.Kind, p.ProjectId)).SequenceEqual(parts));
-            if (same < 0)
+        var stretches = before.Stretches.Where(s => s.State == SuggestionState.Open).Select(s => (s.Start, s.End, s.ProjectId)).ToList();
+        foreach (var stretch in OfferedStretches(before, computed))
+            if (!stretches.Remove((stretch.Start, stretch.End, stretch.ProjectId)))
                 return true;
-            open.RemoveAt(same);
-        }
-        return open.Count > 0;
+        var breaks = before.Breaks.Where(b => b.IsOpen).Select(b => (b.Start, b.End, b.Before, b.After)).ToList();
+        foreach (var computedBreak in OfferedBreaks(before, computed))
+            if (!breaks.Remove((computedBreak.Start, computedBreak.End, computedBreak.Before, computedBreak.After)))
+                return true;
+        return stretches.Count > 0 || breaks.Count > 0;
     }
 
-    /// <summary>The computed blocks offered: those not matching one decided or chosen already (<see cref="SameBlock"/>).</summary>
-    private static IEnumerable<Suggestion> Offered(List<StoredSuggestion> before, IReadOnlyList<Suggestion> computed)
+    /// <summary>The computed stretches offered: those not matching one decided or chosen already.</summary>
+    private static IEnumerable<Suggestion> OfferedStretches(StoredDay before, DaySuggestions computed)
     {
-        var decided = before.Where(s => s.State != SuggestionState.Open).ToList(); // accepted, rejected or chosen
-        return computed.Where(suggestion => !decided.Any(d => SameBlock(d, suggestion)));
+        var decided = before.Stretches.Where(s => s.State != SuggestionState.Open).ToList(); // accepted, rejected or chosen
+        return computed.Stretches.Where(stretch => !decided.Any(d => SameStretch(d, stretch)));
     }
 
-    /// <summary>Records the decision on a break (counted) or a switch (kept in the block) of an open suggestion.</summary>
-    public void SetPart(long suggestionId, DateTimeOffset partStart, bool decided)
+    /// <summary>The computed breaks offered: those not overlapping one decided already by half of their own length.</summary>
+    private static IEnumerable<SuggestedBreak> OfferedBreaks(StoredDay before, DaySuggestions computed)
     {
-        using var command = db.Command("UPDATE suggestion_parts SET decided = $decided WHERE suggestion_id = $id AND start_ms = $start;");
-        command.Parameters.AddWithValue("$id", suggestionId);
-        command.Parameters.AddWithValue("$start", partStart.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$decided", decided ? 1 : 0);
-        command.ExecuteNonQuery();
+        var decided = before.Breaks.Where(b => !b.IsOpen).ToList();
+        return computed.Breaks.Where(b => !decided.Any(d => Overlap(d.Start, d.End, b.Start, b.End) is var overlap
+            && overlap > TimeSpan.Zero && overlap >= (b.End - b.Start) * SameOverlap));
     }
 
     /// <summary>
-    /// Changes an open suggestion's project before it's accepted. That's a decision: the suggestion is kept as it is
+    /// Changes an open stretch's project before it's accepted. That's a decision: the stretch is kept as it is
     /// (<see cref="SuggestionState.Chosen"/>) when the day is worked out again.
     /// </summary>
     public void SetProject(long suggestionId, long projectId)
@@ -222,53 +229,50 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         command.ExecuteNonQuery();
     }
 
-    /// <summary>Rejects a suggestion: it stays, so the same block isn't suggested again.</summary>
-    public void Reject(long suggestionId) => SetState(suggestionId, SuggestionState.Rejected);
+    /// <summary>Rejects a stretch: it stays, so the same stretch isn't suggested again.</summary>
+    public void Reject(long suggestionId) => SetState("suggestions", suggestionId, SuggestionState.Rejected);
 
     /// <summary>
-    /// Accepts a suggestion: its block becomes ranges set by hand. Time that already has a project of its own (by hand, a
-    /// link or a title rule), or was set to no project by hand, is left as it is; breaks not counted are left out; switches
-    /// not kept are set to their own project.
+    /// Accepts a stretch: its time becomes ranges set by hand. Time that already has another project (by hand, a link or a
+    /// title rule), or was set to no project by hand, is left as it is.
     /// </summary>
-    /// <param name="captures">The captures of the suggestion's day, as <see cref="HistoryStore.LoadDay"/> reads them.</param>
+    /// <param name="captures">The captures of the stretch's day, as <see cref="HistoryStore.LoadDay"/> reads them.</param>
     /// <param name="spans">The ranges set by hand over that day, in time order.</param>
     public void Accept(StoredSuggestion suggestion, IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans,
         TimeSpan maxCaptureLength)
     {
-        var projects = new ProjectStore(db);
         using var transaction = db.BeginTransaction();
-
-        // Where the block's time already belongs elsewhere (another project, or none by hand): kept out of every range written.
-        var keep = Elsewhere(captures, spans, maxCaptureLength, suggestion.ProjectId);
-        // A break not counted stays out of the block; so does a switch not kept in it, which goes to its own project.
-        var left = Subtract(Subtract([(suggestion.Start, suggestion.End)], keep),
-            suggestion.Parts.Where(p => !p.Decided).Select(p => (p.Start, p.End)));
-        foreach (var (start, end) in left)
-            projects.SetSpanInTransaction(start, end, suggestion.ProjectId);
-
-        foreach (var part in suggestion.Parts.Where(p => p is { Kind: SuggestionPartKind.Switch, Decided: false, ProjectId: not null }))
-            foreach (var (start, end) in Subtract([(part.Start, part.End)], keep))
-                projects.SetSpanInTransaction(start, end, part.ProjectId);
-
-        SetState(suggestion.Id, SuggestionState.Accepted);
+        SetSpans(suggestion.Start, suggestion.End, suggestion.ProjectId, captures, spans, maxCaptureLength);
+        SetState("suggestions", suggestion.Id, SuggestionState.Accepted);
         transaction.Commit();
     }
 
+    /// <summary>Counts a break toward <paramref name="projectId"/>: its time becomes a range set by hand, as for a stretch.</summary>
+    public void Count(StoredBreak suggestedBreak, long projectId, IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans,
+        TimeSpan maxCaptureLength)
+    {
+        using var transaction = db.BeginTransaction();
+        SetSpans(suggestedBreak.Start, suggestedBreak.End, projectId, captures, spans, maxCaptureLength);
+        using var command = db.Command("UPDATE suggestion_breaks SET counted_to = $project, state = 1 WHERE id = $id;");
+        command.Parameters.AddWithValue("$id", suggestedBreak.Id);
+        command.Parameters.AddWithValue("$project", projectId);
+        command.ExecuteNonQuery();
+        transaction.Commit();
+    }
+
+    /// <summary>Leaves a break out of the projects around it: it stays, so it isn't offered again.</summary>
+    public void LeaveOut(long breakId) => SetState("suggestion_breaks", breakId, SuggestionState.Rejected);
+
     /// <summary>
-    /// Accepts one piece of a suggestion (a stretch drawn on its own) as <paramref name="projectId"/>, leaving the rest of it
-    /// open: start..end becomes ranges set by hand, without the time that already has a project of its own or was set to
-    /// none by hand.
+    /// Sets start..end to <paramref name="projectId"/> by hand, without the time that has another project of its own or was
+    /// set to none by hand. Inside the caller's transaction.
     /// </summary>
-    /// <param name="captures">The captures of the piece's day, as <see cref="HistoryStore.LoadDay"/> reads them.</param>
-    /// <param name="spans">The ranges set by hand over that day, in time order.</param>
-    public void AcceptPiece(DateTimeOffset start, DateTimeOffset end, long projectId, IReadOnlyList<CaptureRecord> captures,
+    private void SetSpans(DateTimeOffset start, DateTimeOffset end, long projectId, IReadOnlyList<CaptureRecord> captures,
         IReadOnlyList<ProjectSpan> spans, TimeSpan maxCaptureLength)
     {
         var projects = new ProjectStore(db);
-        using var transaction = db.BeginTransaction();
         foreach (var (from, to) in Subtract([(start, end)], Elsewhere(captures, spans, maxCaptureLength, projectId)))
             projects.SetSpanInTransaction(from, to, projectId);
-        transaction.Commit();
     }
 
     /// <summary>The day's time that belongs to another project than <paramref name="projectId"/>, or to none by hand.</summary>
@@ -322,27 +326,44 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     }
 
     /// <summary>
-    /// Whether a computed block is one already decided: the same project and overlapping enough. A block whose project the
-    /// developer chose stands for its time whatever project is computed for it now.
+    /// Whether a computed stretch is one already decided: the same project and overlapping enough. A stretch whose project
+    /// the developer chose stands for its time whatever project is computed for it now.
     /// </summary>
-    private static bool SameBlock(StoredSuggestion decided, Suggestion computed)
+    private static bool SameStretch(StoredSuggestion decided, Suggestion computed)
     {
         if (decided.ProjectId != computed.ProjectId && decided.State != SuggestionState.Chosen)
             return false;
-        var overlap = (decided.End < computed.End ? decided.End : computed.End) - (decided.Start > computed.Start ? decided.Start : computed.Start);
+        var overlap = Overlap(decided.Start, decided.End, computed.Start, computed.End);
         var (a, b) = (decided.End - decided.Start, computed.End - computed.Start);
-        // Of the new block: one mostly inside a decided block is that block again, but one reaching well past a small
-        // decided block is new time. A chosen block is still open, so nothing may be offered over it.
+        // Of the new stretch: one mostly inside a decided stretch is that stretch again, but one reaching well past a small
+        // decided stretch is new time. A chosen stretch is still open, so nothing may be offered over it.
         var basis = decided.State == SuggestionState.Chosen && a < b ? a : b;
-        return overlap > TimeSpan.Zero && overlap >= basis * SameBlockOverlap;
+        return overlap > TimeSpan.Zero && overlap >= basis * SameOverlap;
     }
 
-    private void SetState(long suggestionId, SuggestionState state)
+    /// <summary>How long two ranges overlap; zero or less when they don't.</summary>
+    private static TimeSpan Overlap(DateTimeOffset aStart, DateTimeOffset aEnd, DateTimeOffset bStart, DateTimeOffset bEnd) =>
+        (aEnd < bEnd ? aEnd : bEnd) - (aStart > bStart ? aStart : bStart);
+
+    /// <param name="table">suggestions or suggestion_breaks.</param>
+    private void SetState(string table, long id, SuggestionState state)
     {
-        using var command = db.Command("UPDATE suggestions SET state = $state WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", suggestionId);
+        using var command = db.Command($"UPDATE {table} SET state = $state WHERE id = $id;");
+        command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$state", (int)state);
         command.ExecuteNonQuery();
+    }
+
+    /// <param name="table">suggestions or suggestion_breaks.</param>
+    private void Delete(string table, IEnumerable<long> ids)
+    {
+        using var command = db.Command($"DELETE FROM {table} WHERE id = $id;");
+        var id = command.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Integer);
+        foreach (var each in ids)
+        {
+            id.Value = each;
+            command.ExecuteNonQuery();
+        }
     }
 
     private static void Bind(Microsoft.Data.Sqlite.SqliteCommand command, DateTimeOffset start, DateTimeOffset end)

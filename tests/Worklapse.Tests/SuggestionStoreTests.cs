@@ -6,7 +6,7 @@ using Worklapse.Core.Suggestions;
 
 namespace Worklapse.Tests;
 
-/// <summary>Keeping suggested blocks and the decisions on them, and accepting them as ranges set by hand.</summary>
+/// <summary>Keeping suggested stretches and breaks and the decisions on them, and accepting them as ranges set by hand.</summary>
 public class SuggestionStoreTests
 {
     private static readonly TimeSpan Max = TimeSpan.FromSeconds(15);
@@ -15,15 +15,24 @@ public class SuggestionStoreTests
 
     private static DateTimeOffset At(int seconds) => Nine.AddSeconds(seconds);
 
-    private static Suggestion Block(int from, int to, long project, params SuggestionPart[] parts) =>
-        new(At(from), At(to), project, 0.9, TimeSpan.FromSeconds(to - from), parts, ["title:presets"]);
+    private static Suggestion Stretch(int from, int to, long project) =>
+        new(At(from), At(to), project, 0.9, TimeSpan.FromSeconds(to - from), At(from), ["title:presets"]);
 
-    private static SuggestionPart Break(int from, int to) => new(At(from), At(to), SuggestionPartKind.Break, null);
+    private static SuggestedBreak Break(int from, int to, long before, long after) => new(At(from), At(to), before, after);
 
-    private static SuggestionPart Switch(int from, int to, long project) => new(At(from), At(to), SuggestionPartKind.Switch, project);
+    private static DaySuggestions Computed(params object[] items) =>
+        new(items.OfType<Suggestion>().ToList(), items.OfType<SuggestedBreak>().ToList());
+
+    private static List<(int, int, long?)> Spans(ProjectStore projects, HistoryStore history)
+    {
+        var (dayStart, dayEnd) = history.DayRange(Day);
+        return projects.GetSpans(dayStart, dayEnd).Select(s => ((int)(s.Start - Nine).TotalSeconds, (int)(s.End - Nine).TotalSeconds, s.ProjectId)).ToList();
+    }
+
+    private static int OpenToday(SuggestionStore store) => store.CountOpen([(Day, Nine.AddHours(-9), Nine.AddHours(15))])[Day];
 
     [Fact]
-    public void WorkingADayOutAgainKeepsDecisionsAndDoesntOfferRejectedBlocksAgain()
+    public void WorkingADayOutAgainDoesntOfferWhatWasDecidedAgain()
     {
         using var folder = new TempFolder();
         using var db = WorklapseDatabase.Open(folder.Path);
@@ -31,83 +40,99 @@ public class SuggestionStoreTests
         var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
         var store = new SuggestionStore(db);
 
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)), Block(1000, 1600, frankensystem)]);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 600, presayo), Break(600, 1000, presayo, frankensystem), Stretch(1000, 1600, frankensystem)));
         var first = store.Get(Nine, Nine.AddDays(1));
-        store.SetPart(first[0].Id, At(200), decided: true);
-        store.Reject(first[1].Id);
+        Assert.Equal(3, first.OpenCount);
+        store.Reject(first.Stretches[1].Id);
+        store.LeaveOut(Assert.Single(first.Breaks).Id);
 
-        // Worked out again: much the same blocks, the first a little longer.
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 700, presayo, Break(200, 300)), Block(1000, 1500, frankensystem)]);
+        // Worked out again: much the same, the first stretch a little longer.
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 700, presayo), Break(700, 1000, presayo, frankensystem), Stretch(1000, 1500, frankensystem)));
         var second = store.Get(Nine, Nine.AddDays(1));
 
-        Assert.Equal(2, second.Count);
-        var open = Assert.Single(second, s => s.State == SuggestionState.Open);
-        Assert.Equal((At(700), true), (open.End, Assert.Single(open.Parts).Decided)); // the break is still counted
-        Assert.Equal(SuggestionState.Rejected, Assert.Single(second, s => s.State == SuggestionState.Rejected).State);
-        Assert.Equal(new Dictionary<DateOnly, int> { [Day] = 1 }, store.CountOpen([(Day, Nine.AddHours(-9), Nine.AddHours(15))]));
+        Assert.Equal([(At(0), At(700), SuggestionState.Open), (At(1000), At(1600), SuggestionState.Rejected)],
+            second.Stretches.Select(s => (s.Start, s.End, s.State)));
+        Assert.Equal(SuggestionState.Rejected, Assert.Single(second.Breaks).State);
+        Assert.Equal(1, OpenToday(store));
     }
 
     [Fact]
-    public void AnUnchangedSuggestionKeepsItsIdAndAPartWhoseEdgesMovedKeepsItsDecision()
-    {
-        using var folder = new TempFolder();
-        using var db = WorklapseDatabase.Open(folder.Path);
-        var presayo = new ProjectStore(db).AddProject("Presayo", null);
-        var store = new SuggestionStore(db);
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300))]);
-        var first = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
-        store.SetPart(first.Id, At(200), decided: true);
-
-        // Worked out again with nothing changed (as when the window is activated): a click on the one shown still finds it.
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300))]);
-        var same = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
-        Assert.Equal((first.Id, true), (same.Id, Assert.Single(same.Parts).Decided));
-
-        // A capture later the break starts 10 s sooner: still the break counted.
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 610, presayo, Break(190, 300))]);
-        Assert.True(Assert.Single(Assert.Single(store.Get(Nine, Nine.AddDays(1))).Parts).Decided);
-    }
-
-    [Fact]
-    public void WorkingOutAgainChangesTheBlocksOnlyWhenOneIsAddedTakenAwayOrMoved()
+    public void AnUnchangedSuggestionKeepsItsId()
     {
         using var folder = new TempFolder();
         using var db = WorklapseDatabase.Open(folder.Path);
         var projects = new ProjectStore(db);
         var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
         var store = new SuggestionStore(db);
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)), Block(1000, 1600, frankensystem)]);
-        store.Reject(store.Get(Nine, Nine.AddDays(1))[1].Id);
+        var computed = Computed(Stretch(0, 600, presayo), Break(600, 900, presayo, frankensystem));
+        store.Replace(Nine, Nine.AddDays(1), computed);
+        var first = store.Get(Nine, Nine.AddDays(1));
 
-        // Only the certainty and evidence differ, and the rejected block is computed again: nothing to show.
-        Assert.False(store.Changes(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)) with { Confidence = 0.5, Evidence = [] },
-            Block(1000, 1600, frankensystem)]));
-        Assert.True(store.Changes(Nine, Nine.AddDays(1), [Block(0, 650, presayo, Break(200, 300))]));
-        Assert.True(store.Changes(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(250, 300))]));
-        Assert.True(store.Changes(Nine, Nine.AddDays(1), [Block(0, 600, presayo, Break(200, 300)), Block(2000, 2600, presayo)]));
-        Assert.True(store.Changes(Nine, Nine.AddDays(1), []));
+        // Worked out again with nothing changed (as when the window is activated): a click on one shown still finds it.
+        store.Replace(Nine, Nine.AddDays(1), computed);
+        var same = store.Get(Nine, Nine.AddDays(1));
+        Assert.Equal((first.Stretches[0].Id, first.Breaks[0].Id), (same.Stretches[0].Id, same.Breaks[0].Id));
     }
 
     [Fact]
-    public void ASmallRejectedBlockHidesItselfButNotALargerOneAroundIt()
+    public void WorkingOutAgainChangesTheSuggestionsOnlyWhenOneIsAddedTakenAwayOrMoved()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var projects = new ProjectStore(db);
+        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 600, presayo), Break(600, 1000, presayo, frankensystem), Stretch(1000, 1600, frankensystem)));
+        store.Reject(store.Get(Nine, Nine.AddDays(1)).Stretches[1].Id);
+
+        // Only the certainty and evidence differ, and the rejected stretch is computed again: nothing to show.
+        Assert.False(store.Changes(Nine, Nine.AddDays(1), Computed(Stretch(0, 600, presayo) with { Confidence = 0.5, Evidence = [] },
+            Break(600, 1000, presayo, frankensystem), Stretch(1000, 1600, frankensystem))));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), Computed(Stretch(0, 650, presayo), Break(600, 1000, presayo, frankensystem))));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), Computed(Stretch(0, 600, presayo), Break(650, 1000, presayo, frankensystem))));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), Computed(Stretch(0, 600, presayo))));
+        Assert.True(store.Changes(Nine, Nine.AddDays(1), DaySuggestions.None));
+    }
+
+    [Fact]
+    public void ASmallRejectedStretchHidesItselfButNotALargerOneAroundIt()
     {
         using var folder = new TempFolder();
         using var db = WorklapseDatabase.Open(folder.Path);
         var presayo = new ProjectStore(db).AddProject("Presayo", null);
         var store = new SuggestionStore(db);
-        store.Replace(Nine, Nine.AddDays(1), [Block(1000, 1600, presayo)]);
-        store.Reject(Assert.Single(store.Get(Nine, Nine.AddDays(1))).Id);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(1000, 1600, presayo)));
+        store.Reject(Assert.Single(store.Get(Nine, Nine.AddDays(1)).Stretches).Id);
 
-        store.Replace(Nine, Nine.AddDays(1), [Block(1050, 1550, presayo)]);
-        Assert.Equal(0, store.CountOpen([(Day, Nine.AddHours(-9), Nine.AddHours(15))])[Day]);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(1050, 1550, presayo)));
+        Assert.Equal(0, OpenToday(store));
 
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 7200, presayo)]);
-        var open = Assert.Single(store.Get(Nine, Nine.AddDays(1)), s => s.IsOpen);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 7200, presayo)));
+        var open = Assert.Single(store.Get(Nine, Nine.AddDays(1)).Stretches, s => s.IsOpen);
         Assert.Equal((At(0), At(7200)), (open.Start, open.End));
     }
 
     [Fact]
-    public void AcceptingAPieceWritesOnlyThatPieceAndLeavesTheSuggestionOpen()
+    public void AProjectChosenForAStretchSurvivesWorkingTheDayOutAgain()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var projects = new ProjectStore(db);
+        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
+        var store = new SuggestionStore(db);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 600, presayo)));
+        store.SetProject(Assert.Single(store.Get(Nine, Nine.AddDays(1)).Stretches).Id, frankensystem);
+
+        // The classifier still says Presayo, about the same stretch: the developer's choice stands, and isn't offered twice.
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 620, frankensystem), Stretch(10, 600, presayo)));
+
+        var kept = Assert.Single(store.Get(Nine, Nine.AddDays(1)).Stretches);
+        Assert.Equal((frankensystem, SuggestionState.Chosen, true), (kept.ProjectId, kept.State, kept.IsOpen));
+        Assert.Equal(1, OpenToday(store));
+    }
+
+    [Fact]
+    public void AcceptingAStretchWritesItAroundTimeThatHasAnotherProject()
     {
         using var folder = new TempFolder();
         using var db = WorklapseDatabase.Open(folder.Path);
@@ -116,76 +141,44 @@ public class SuggestionStoreTests
         var recording = new RecordingStore(db);
         var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
         var outlook = recording.GetOrAddApp("olk.exe", null);
-        new HistoryStore(db).SetProject(new ProgramKey(ProgramKind.App, "olk.exe"), admin);
-        for (var s = 0; s < 1200; s += 10)
-            recording.InsertCapture(At(s), CaptureKind.Active, s is >= 650 and < 700 ? outlook : terminal, "t", null);
-        var store = new SuggestionStore(db);
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 1200, presayo, Break(300, 500))]);
-
         var history = new HistoryStore(db);
-        var (dayStart, dayEnd) = history.DayRange(Day);
-        store.AcceptPiece(At(500), At(1200), presayo, history.LoadDay(Day).Captures, projects.GetSpans(dayStart, dayEnd), Max);
-
-        Assert.Equal([(500, 650), (700, 1200)], // around Outlook, which keeps its link
-            projects.GetSpans(dayStart, dayEnd).Select(s => ((int)(s.Start - Nine).TotalSeconds, (int)(s.End - Nine).TotalSeconds)));
-        Assert.True(Assert.Single(store.Get(Nine, Nine.AddDays(1))).IsOpen);
-    }
-
-    [Fact]
-    public void AProjectChosenForASuggestionSurvivesWorkingTheDayOutAgain()
-    {
-        using var folder = new TempFolder();
-        using var db = WorklapseDatabase.Open(folder.Path);
-        var projects = new ProjectStore(db);
-        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
-        var store = new SuggestionStore(db);
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 600, presayo)]);
-        store.SetProject(Assert.Single(store.Get(Nine, Nine.AddDays(1))).Id, frankensystem);
-
-        // The classifier still says Presayo, about the same block: the developer's choice stands, and isn't offered twice.
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 620, frankensystem), Block(10, 600, presayo)]);
-
-        var kept = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
-        Assert.Equal((frankensystem, SuggestionState.Chosen, true), (kept.ProjectId, kept.State, kept.IsOpen));
-        Assert.Equal(1, store.CountOpen([(Day, Nine.AddHours(-9), Nine.AddHours(15))])[Day]);
-    }
-
-    [Fact]
-    public void AcceptingWritesTheBlockAroundTimeThatHasAProjectAndSplitsOutSwitches()
-    {
-        using var folder = new TempFolder();
-        using var db = WorklapseDatabase.Open(folder.Path);
-        var projects = new ProjectStore(db);
-        var (presayo, frankensystem, admin) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null), projects.AddProject("Admin", null));
-        var recording = new RecordingStore(db);
-        var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
-        var outlook = recording.GetOrAddApp("olk.exe", null);
-        new HistoryStore(db).SetProject(new ProgramKey(ProgramKind.App, "olk.exe"), admin);
+        history.SetProject(new ProgramKey(ProgramKind.App, "olk.exe"), admin);
         for (var s = 0; s < 1200; s += 10)
             recording.InsertCapture(At(s), CaptureKind.Active, s is >= 300 and < 400 ? outlook : terminal, "t", null); // Outlook: Admin by its link
         projects.SetSpan(At(1000), At(1100), null); // set to no project by hand
 
         var store = new SuggestionStore(db);
-        store.Replace(Nine, Nine.AddDays(1), [Block(0, 1200, presayo, Break(500, 600), Break(700, 800), Switch(850, 950, frankensystem), Switch(1150, 1190, frankensystem))]);
-        var suggestion = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
-        store.SetPart(suggestion.Id, At(700), decided: true);  // this break counts
-        store.SetPart(suggestion.Id, At(1150), decided: true); // this switch stays in the block
-        suggestion = Assert.Single(store.Get(Nine, Nine.AddDays(1)));
-
-        var history = new HistoryStore(db);
+        store.Replace(Nine, Nine.AddDays(1), Computed(Stretch(0, 1200, presayo)));
         var (dayStart, dayEnd) = history.DayRange(Day);
-        store.Accept(suggestion, history.LoadDay(Day).Captures, projects.GetSpans(dayStart, dayEnd), Max);
+        store.Accept(Assert.Single(store.Get(Nine, Nine.AddDays(1)).Stretches), history.LoadDay(Day).Captures, projects.GetSpans(dayStart, dayEnd), Max);
 
-        Assert.Equal([
-            (0, 300, (long?)presayo),      // up to Outlook, which keeps its link
-            (400, 500, presayo),           // then up to the break not counted
-            (600, 850, presayo),           // the counted break included
-            (850, 950, frankensystem),     // the switch split out
-            (950, 1000, presayo),
-            (1000, 1100, null),            // as set by hand
-            (1100, 1200, presayo),         // the kept switch included
-        ], projects.GetSpans(dayStart, dayEnd).Select(s => ((int)(s.Start - Nine).TotalSeconds, (int)(s.End - Nine).TotalSeconds, s.ProjectId)));
-        Assert.Equal(SuggestionState.Accepted, Assert.Single(store.Get(Nine, Nine.AddDays(1))).State);
+        Assert.Equal([(0, 300, (long?)presayo), (400, 1000, presayo), (1000, 1100, null), (1100, 1200, presayo)], Spans(projects, history));
+        Assert.Equal(SuggestionState.Accepted, Assert.Single(store.Get(Nine, Nine.AddDays(1)).Stretches).State);
+    }
+
+    [Fact]
+    public void CountingABreakWritesItAndLeavingOneOutIsRemembered()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var projects = new ProjectStore(db);
+        var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
+        var history = new HistoryStore(db);
+        var store = new SuggestionStore(db);
+        var computed = Computed(Break(300, 600, presayo, frankensystem), Break(900, 1200, frankensystem, frankensystem));
+        store.Replace(Nine, Nine.AddDays(1), computed);
+        var breaks = store.Get(Nine, Nine.AddDays(1)).Breaks;
+        Assert.Equal([null, (long?)frankensystem], breaks.Select(b => b.Inside));
+
+        var (dayStart, dayEnd) = history.DayRange(Day);
+        store.Count(breaks[0], frankensystem, history.LoadDay(Day).Captures, projects.GetSpans(dayStart, dayEnd), Max);
+        store.LeaveOut(breaks[1].Id);
+        store.Replace(Nine, Nine.AddDays(1), computed);
+
+        Assert.Equal([(300, 600, (long?)frankensystem)], Spans(projects, history));
+        Assert.Equal([(SuggestionState.Accepted, (long?)frankensystem), (SuggestionState.Rejected, null)],
+            store.Get(Nine, Nine.AddDays(1)).Breaks.Select(b => (b.State, b.CountedTo)));
+        Assert.Equal(0, OpenToday(store));
     }
 
     [Fact]
@@ -217,7 +210,7 @@ public class SuggestionStoreTests
         var settings = new WorklapseSettings();
         var engine = new SuggestionEngine();
 
-        var suggestion = Assert.Single(engine.Refresh(history, Day, settings));
+        var suggestion = Assert.Single(engine.Refresh(history, Day, settings).Stretches);
         Assert.Equal((presayo, SuggestionState.Open, Nine), (suggestion.ProjectId, suggestion.State, suggestion.Start));
         Assert.Contains("title:presets", suggestion.Evidence);
 
@@ -227,7 +220,7 @@ public class SuggestionStoreTests
         projects.SetSpan(yesterday.AddSeconds(100), yesterday.AddSeconds(200), null);
         Assert.NotSame(classifier, engine.Classifier(history, SuggestionOptOuts.None, settings.MaxCaptureLength));
 
-        Assert.Empty(engine.Refresh(history, Day, settings with { SuggestProjects = false }));
+        Assert.Equal(0, engine.Refresh(history, Day, settings with { SuggestProjects = false }).Stretches.Count);
     }
 
     [Fact]
@@ -250,15 +243,15 @@ public class SuggestionStoreTests
         projects.SetSpan(yesterday, yesterday.AddSeconds(600), presayo);
         var settings = new WorklapseSettings();
         var engine = new SuggestionEngine();
-        Assert.Single(engine.Refresh(history, Day, settings));
+        Assert.Single(engine.Refresh(history, Day, settings).Stretches);
 
         // Marked so that working it out again would show: left as it is while nothing changed.
         db.Execute("UPDATE suggestions SET evidence = 'title:marked';");
-        Assert.Equal(["title:marked"], Assert.Single(engine.Refresh(history, Day, settings)).Evidence);
+        Assert.Equal(["title:marked"], Assert.Single(engine.Refresh(history, Day, settings).Stretches).Evidence);
 
         // A new capture on the day: worked out again.
         recording.InsertCapture(Nine.AddSeconds(600), CaptureKind.Active, terminal, "Label presets: thermal printers", null);
-        Assert.Contains("title:presets", Assert.Single(engine.Refresh(history, Day, settings)).Evidence);
+        Assert.Contains("title:presets", Assert.Single(engine.Refresh(history, Day, settings).Stretches).Evidence);
     }
 
     [Fact]
@@ -285,13 +278,13 @@ public class SuggestionStoreTests
         var (start, end) = history.DayRange(Day);
 
         var worked = await engine.WorkOutAsync(db.DataFolder, history.DayStart, Day, settings, () => true);
-        Assert.Equal(presayo, Assert.Single(worked!.Suggestions).ProjectId);
-        Assert.Empty(store.Get(start, end));
+        Assert.Equal(presayo, Assert.Single(worked!.Suggestions.Stretches).ProjectId);
+        Assert.Empty(store.Get(start, end).Stretches);
         Assert.True(store.Changes(start, end, worked.Suggestions));
 
         // Stored: shown as they are, and not worked out again while nothing changes.
         engine.Store(history, worked);
-        Assert.Single(store.Get(start, end));
+        Assert.Single(store.Get(start, end).Stretches);
         Assert.Null(await engine.WorkOutAsync(db.DataFolder, history.DayStart, Day, settings, () => true));
         Assert.Null(await engine.WorkOutAsync(db.DataFolder, history.DayStart, Day, settings with { SuggestProjects = false }, () => true));
     }
@@ -318,20 +311,20 @@ public class SuggestionStoreTests
         projects.SetSpan(later, later.AddSeconds(600), arduino);
         var settings = new WorklapseSettings { MinimumCertainty = 0 };
         var engine = new SuggestionEngine();
-        Assert.Equal(arduino, Assert.Single(engine.Refresh(history, Day, settings)).ProjectId);
+        Assert.Equal(arduino, Assert.Single(engine.Refresh(history, Day, settings).Stretches).ProjectId);
 
         // Arduino starts later: that day's time isn't suggested as Arduino any more (the others share its probability).
         projects.SetDates(arduino, Day.AddDays(3), null);
         Assert.Equal((Day.AddDays(3), (DateOnly?)null), (projects.GetProjects().Single(p => p.Id == arduino).StartsOn,
             projects.GetProjects().Single(p => p.Id == arduino).EndsOn));
-        Assert.DoesNotContain(engine.Refresh(history, Day, settings), s => s.ProjectId == arduino && s.IsOpen);
+        Assert.DoesNotContain(engine.Refresh(history, Day, settings).Stretches, s => s.ProjectId == arduino && s.IsOpen);
 
         projects.SetDates(arduino, null, null);
-        Assert.Equal(arduino, Assert.Single(engine.Refresh(history, Day, settings), s => s.IsOpen).ProjectId);
+        Assert.Equal(arduino, Assert.Single(engine.Refresh(history, Day, settings).Stretches, s => s.IsOpen).ProjectId);
     }
 
     [Fact]
-    public void ABlockLessCertainThanTheLimitIsntOffered()
+    public void AStretchLessCertainThanTheLimitIsntOffered()
     {
         using var folder = new TempFolder();
         using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
@@ -354,7 +347,7 @@ public class SuggestionStoreTests
         var classifier = engine.Classifier(history, SuggestionOptOuts.None, Max);
         var captures = history.LoadDay(Day).Captures;
         List<Suggestion> At(double certainty) => SuggestionBuilder.ForDay(captures, [], classifier,
-            SuggestionLimits.Default with { MinimumCertainty = certainty }, Max, SuggestionOptOuts.None);
+            SuggestionLimits.Default with { MinimumCertainty = certainty }, Max, SuggestionOptOuts.None).Stretches.ToList();
 
         var certain = Assert.Single(At(0)).Confidence;
         Assert.InRange(certain, 0.3, 0.9);

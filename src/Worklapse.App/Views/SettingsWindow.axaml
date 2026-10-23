@@ -672,22 +672,22 @@
 
           <Border Classes="group" IsEnabled="{Binding SuggestProjects}">
             <StackPanel>
-              <TextBlock Classes="groupHeader" Text="Breaks inside a block" />
+              <TextBlock Classes="groupHeader" Text="Breaks between project time" />
               <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
-                <TextBlock Classes="label" Text="Part of the block under:" />
+                <TextBlock Classes="label" Text="Part of the stretch under:" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                   <NumericUpDown Value="{Binding GlanceMinutes}" Minimum="0" Maximum="30" Increment="1" FormatString="0" Width="72"
-                                 AutomationProperties.Name="Part of the block under, minutes" />
+                                 AutomationProperties.Name="Part of the stretch under, minutes" />
                   <TextBlock Text="minutes" VerticalAlignment="Center" />
                 </StackPanel>
-                <TextBlock Grid.Row="1" Classes="label" Text="Ends the block over:" />
+                <TextBlock Grid.Row="1" Classes="label" Text="Not asked about over:" />
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
                   <NumericUpDown Value="{Binding SplitMinutes}" Minimum="1" Maximum="240" Increment="5" FormatString="0" Width="72"
-                                 AutomationProperties.Name="Ends the block over, minutes" />
+                                 AutomationProperties.Name="Not asked about over, minutes" />
                   <TextBlock Text="minutes" VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock Grid.Row="2" Grid.Column="1" Classes="hint" TextWrapping="Wrap"
-                           Text="Breaks in between are yours to count or not · idle is a break" />
+                           Text="Breaks in between are yours to count or leave out · idle is a break" />
               </Grid>
             </StackPanel>
           </Border>

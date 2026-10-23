@@ -245,6 +245,8 @@ public sealed partial class DayReviewViewModel
     /// <summary>The panel's tab: 0 Segments, 1 Applications, 2 Suggestions, 3 Time Log, 4 Marked.</summary>
     [ObservableProperty] private int _panelTab;
 
+    private const int SuggestionsTab = 2;
+
     public ObservableCollection<DayAppRow> AppRows { get; } = [];
 
     /// <summary>The day's recorded segments, first capture to last, for the Recorded Segments tab.</summary>
@@ -646,6 +648,10 @@ public sealed partial class DayReviewViewModel
     private IBrush BrushOf(long? projectId) => projectId is { } id && _projectsById.TryGetValue(id, out var p)
         ? ProjectColors.Brush(ProjectStore.ColorOf(p, _categoriesById))
         : AppBrushes.NotRecorded;
+
+    /// <summary>A project's colour, faint, as a suggested stretch is filled.</summary>
+    private IBrush TintOf(long projectId) =>
+        BrushOf(projectId) is ISolidColorBrush solid ? new SolidColorBrush(solid.Color, TimelineControl.SuggestedTint) : Brushes.Transparent;
 
     /// <summary>"9:08 – 9:10 AM": with a 12-hour clock, AM or PM once when both ends share it.</summary>
     internal static string RangeText(DateTimeOffset from, DateTimeOffset to)

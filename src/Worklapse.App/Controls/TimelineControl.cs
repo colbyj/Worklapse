@@ -27,14 +27,11 @@ public enum LaneStyle
     /// <summary>Time a suggestion would give the project: outlined in its colour, faintly tinted.</summary>
     Suggested,
 
-    /// <summary>A break inside a suggestion, not decided yet: a dashed outline with a question mark.</summary>
-    Break,
+    /// <summary>A suggestion the classifier is unsure of: outlined in its colour and hatched.</summary>
+    Unsure,
 
-    /// <summary>
-    /// A suggestion's whole time, drawn before its pieces: a thin bar along the bottom joining them, so they read as one
-    /// block that Accept takes whole.
-    /// </summary>
-    Extent,
+    /// <summary>A break between project time, not decided yet: a dashed outline with a question mark.</summary>
+    Break,
 }
 
 /// <summary>A block of time marked with a project, in its colour. Times as in <see cref="TimelineSpan"/>.</summary>
@@ -86,9 +83,10 @@ public sealed class TimelineControl : ThemedControl
     private static readonly Cursor EdgeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly IBrush LabelBrush = AppBrushes.TimelineLabel;
     private static readonly IBrush OnProjectBrush = Brushes.White;
-    private const double SuggestedTint = 0.14;      // how strongly a suggestion's colour fills it
+    public const double SuggestedTint = 0.14;       // how strongly a suggestion's colour fills it
     private const double SuggestedOutline = 1.5;
-    private const double ExtentHeight = 2;         // the bar joining a suggestion's pieces
+    private const double HatchSpacing = 5;          // between an unsure suggestion's hatch lines
+    private const double HatchOpacity = 0.45;
     private static readonly Typeface LabelFace = new(FontFamily.Default);
 
     private Point? _pressAt;
@@ -233,16 +231,15 @@ public sealed class TimelineControl : ThemedControl
             var rect = new Rect(x0, lane.Top + 2, x1 - x0, ProjectHeight - 3);
             string label;
             IBrush labelBrush;
-            if (block.Style == LaneStyle.Extent)
-            {
-                context.FillRectangle(block.Brush, new Rect(rect.Left, rect.Bottom - ExtentHeight, rect.Width, ExtentHeight));
-                continue;
-            }
             switch (block.Style)
             {
                 case LaneStyle.Suggested:
-                    using (context.PushOpacity(SuggestedTint))
-                        context.FillRectangle(block.Brush, rect, 2);
+                case LaneStyle.Unsure:
+                    if (block.Style == LaneStyle.Unsure)
+                        DrawHatch(context, rect, block.Brush);
+                    else
+                        using (context.PushOpacity(SuggestedTint))
+                            context.FillRectangle(block.Brush, rect, 2);
                     var outline = rect.Deflate(SuggestedOutline / 2);
                     context.DrawRectangle(null, new Pen(block.Brush, SuggestedOutline), outline.Width > 0 ? outline : rect, 2, 2);
                     (label, labelBrush) = (block.Label, block.Brush);
@@ -336,6 +333,16 @@ public sealed class TimelineControl : ThemedControl
             var name = Text(text, LabelBrush);
             context.DrawText(name, new Point(0, beside.Top + (beside.Height - name.Height) / 2));
         }
+    }
+
+    /// <summary>Diagonal lines in a block's colour, as an unsure suggestion is filled.</summary>
+    private static void DrawHatch(DrawingContext context, Rect rect, IBrush brush)
+    {
+        using var clip = context.PushClip(rect);
+        using var faint = context.PushOpacity(HatchOpacity);
+        var pen = new Pen(brush, 1);
+        for (var x = rect.Left - rect.Height; x < rect.Right; x += HatchSpacing)
+            context.DrawLine(pen, new Point(x, rect.Bottom), new Point(x + rect.Height, rect.Top));
     }
 
     private static FormattedText Text(string text, IBrush brush) =>

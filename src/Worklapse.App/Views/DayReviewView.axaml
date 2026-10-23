@@ -119,6 +119,26 @@
     <Style Selector="Border.row.suggestion.first">
       <Setter Property="BorderThickness" Value="0" />
     </Style>
+    <Style Selector="Border.row.stretch">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.row.stretch.current">
+      <Setter Property="Background" Value="{DynamicResource UiAccentTintBrush}" />
+    </Style>
+    <Style Selector="TextBlock.unsure">
+      <Setter Property="Foreground" Value="{DynamicResource UiNegativeBrush}" />
+    </Style>
+    <Style Selector="Border.certainty">
+      <Setter Property="Background" Value="{DynamicResource UiSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="Border.certainty.unsure">
+      <Setter Property="Background" Value="{DynamicResource UiNegativeBrush}" />
+    </Style>
+    <Style Selector="Button.rowIcon">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="5,2" />
+    </Style>
     <Style Selector="CheckBox.cell">
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="MinWidth" Value="0" />
@@ -199,6 +219,19 @@
           </Button>
           <TextBlock Text="Speed:" Classes="toolLabel" />
           <ComboBox ItemsSource="{Binding Speeds}" SelectedItem="{Binding Speed}" MinWidth="104" VerticalAlignment="Center" />
+
+          <!-- The unsure stretches, one at a time: each selected, at the capture the classifier was least sure of. -->
+          <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding HasUnsure}">
+            <Border Classes="separator" />
+            <TextBlock Text="Unsure" Classes="toolLabel" ToolTip.Tip="Suggestions the classifier is unsure of" />
+            <Button Classes="tool" Command="{Binding PreviousUnsureCommand}" Click="OnUnsureStepped" ToolTip.Tip="Previous unsure suggestion" AutomationProperties.Name="Previous unsure suggestion">
+              <ic:SymbolIcon Symbol="ChevronLeft" />
+            </Button>
+            <TextBlock Text="{Binding UnsureText}" Classes="toolLabel" MinWidth="44" TextAlignment="Center" />
+            <Button Classes="tool" Command="{Binding NextUnsureCommand}" Click="OnUnsureStepped" ToolTip.Tip="Next unsure suggestion" AutomationProperties.Name="Next unsure suggestion">
+              <ic:SymbolIcon Symbol="ChevronRight" />
+            </Button>
+          </StackPanel>
 
           <Border Classes="separator" />
 
@@ -484,15 +517,21 @@
                     <TextBlock Text="Suggestions changed" VerticalAlignment="Center" />
                   </DockPanel>
                 </Border>
-                <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,104,40,124">
+                <Grid DockPanel.Dock="Top" Classes="gridHeader" ColumnDefinitions="*,126,40,56,64">
                   <TextBlock Text="Suggested project" />
-                  <TextBlock Grid.Column="1" Text="Block" />
-                  <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
+                  <TextBlock Grid.Column="1" Text="Time" />
+                  <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="The time it gives the project" />
+                  <TextBlock Grid.Column="3" Text="Sure" ToolTip.Tip="How sure the guess is" />
                 </Grid>
                 <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,4">
                   <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="Accept All" Command="{Binding AcceptAllSuggestionsCommand}" />
-                    <TextBlock Text="{Binding SuggestionSummary}" VerticalAlignment="Center" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                      <Button Content="Accept Sure" Command="{Binding AcceptSureSuggestionsCommand}"
+                              ToolTip.Tip="Accept the stretches it's sure of; the unsure ones and the breaks stay" />
+                      <Button Content="Accept All" Command="{Binding AcceptAllSuggestionsCommand}"
+                              ToolTip.Tip="Accept every stretch; breaks not counted are left out" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding SuggestionSummary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                   </DockPanel>
                 </Border>
                 <StackPanel DockPanel.Dock="Top" Margin="8,8" Spacing="4" IsVisible="{Binding HasNoOpenSuggestions}">
@@ -501,49 +540,106 @@
                   <TextBlock Classes="hint" Text="Suggestions are off in Settings." IsVisible="{Binding SuggestionsOff}" />
                 </StackPanel>
                 <ScrollViewer>
-                  <ItemsControl ItemsSource="{Binding SuggestionRows}">
+                  <ItemsControl x:Name="SuggestionList" ItemsSource="{Binding SuggestionRows}">
                     <ItemsControl.DataTemplates>
-                      <DataTemplate DataType="vm:SuggestionHeadRow">
+                      <!-- A project with open stretches: Accept and Reject take them all. -->
+                      <DataTemplate DataType="vm:SuggestionGroupRow">
                         <Border Classes="row suggestion" Classes.first="{Binding IsFirst}" Background="Transparent" Tag="row"
-                                PointerEntered="OnReachEnter" PointerExited="OnReachExit" Padding="0,3,0,2">
+                                PointerEntered="OnReachEnter" PointerExited="OnReachExit" Padding="0,3">
+                          <Grid ColumnDefinitions="*,40,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="7" Margin="8,0">
+                              <Border Width="10" Height="10" CornerRadius="2" BorderThickness="1.5" BorderBrush="{Binding Brush}"
+                                      Background="{Binding Tint}" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding Name}" Classes="strong" />
+                              <TextBlock Text="{Binding CountText}" Classes="secondary" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding LengthText}" Classes="strong" HorizontalAlignment="Right" Margin="4,0" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="4,0,6,0">
+                              <Button Content="Accept" Command="{Binding Accept}" MinWidth="0" MinHeight="0" Padding="10,1"
+                                      ToolTip.Tip="{Binding Name, StringFormat='Accept every {0} stretch'}" />
+                              <Button Content="Reject" Command="{Binding Reject}" MinWidth="0" MinHeight="0" Padding="10,1"
+                                      ToolTip.Tip="{Binding Name, StringFormat='Reject every {0} stretch'}" />
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                      <!-- A stretch: its project can be changed before accepting; the one being checked shows its words. -->
+                      <DataTemplate DataType="vm:SuggestionRow">
+                        <Border Classes="row stretch" Classes.current="{Binding IsCurrent}" Tag="row"
+                                PointerEntered="OnReachEnter" PointerExited="OnReachExit" ToolTip.Tip="{Binding Tip}">
                           <StackPanel>
-                            <Grid ColumnDefinitions="*,104,40,124">
-                              <ComboBox Classes="cell" Margin="2,1,4,1" ItemTemplate="{StaticResource ProjectOptionTemplate}"
+                            <Grid ColumnDefinitions="*,126,40,56,64">
+                              <ComboBox Classes="cell" Margin="20,1,4,1" ItemTemplate="{StaticResource ProjectOptionTemplate}"
                                         ItemsSource="{Binding $parent[UserControl].((vm:DayReviewViewModel)DataContext).AssignableProjects}"
                                         SelectedItem="{Binding Project}" ToolTip.Tip="Change the project before accepting"
                                         AutomationProperties.Name="Suggested project" />
-                              <TextBlock Grid.Column="1" Text="{Binding RangeText}" Classes="secondary" VerticalAlignment="Center" Margin="6,0" />
-                              <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0" />
-                              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" Margin="4,1">
-                                <Button Content="Accept" Command="{Binding Accept}" MinWidth="0" MinHeight="0" Padding="10,1" />
-                                <Button Content="Reject" Command="{Binding Reject}" MinWidth="0" MinHeight="0" Padding="10,1" />
+                              <TextBlock Grid.Column="1" Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
+                              <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
+                              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="6,0" IsVisible="{Binding ShowsCertainty}">
+                                <Panel Width="16" Height="4" VerticalAlignment="Center">
+                                  <Border Background="{DynamicResource UiSeparatorBrush}" CornerRadius="2" />
+                                  <Border Classes="certainty" Classes.unsure="{Binding IsUnsure}" Width="{Binding CertaintyWidth}"
+                                          HorizontalAlignment="Left" CornerRadius="2" />
+                                </Panel>
+                                <TextBlock Text="{Binding CertaintyText}" Classes.unsure="{Binding IsUnsure}" />
+                              </StackPanel>
+                              <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="3" HorizontalAlignment="Right" Margin="0,1,6,1">
+                                <Button Classes="rowIcon" Command="{Binding Accept}" ToolTip.Tip="Accept" AutomationProperties.Name="Accept">
+                                  <ic:SymbolIcon Symbol="Checkmark" FontSize="12" />
+                                </Button>
+                                <Button Classes="rowIcon" Command="{Binding Reject}" ToolTip.Tip="Reject" AutomationProperties.Name="Reject">
+                                  <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+                                </Button>
                               </StackPanel>
                             </Grid>
-                            <StackPanel Orientation="Horizontal" Margin="24,2,8,0">
-                              <TextBlock Text="{Binding AddsText}" TextTrimming="CharacterEllipsis" />
-                              <TextBlock Text=" · unsure" FontStyle="Italic" Classes="secondary" IsVisible="{Binding IsUnsure}"
-                                         ToolTip.Tip="The words point to this project less clearly" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding EvidenceText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EvidenceText}"
-                                       IsVisible="{Binding HasEvidenceText}" />
-                            <TextBlock Text="{Binding ScreenText}" Classes="hint" Margin="24,0,8,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ScreenText}"
-                                       IsVisible="{Binding HasScreenText}" />
+                            <TextBlock Text="{Binding EvidenceText}" Classes="hint" Margin="44,0,8,0" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding ShowsEvidence}" />
+                            <TextBlock Text="{Binding ScreenText}" Classes="hint" Margin="44,0,8,2" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding ShowsScreen}" />
                           </StackPanel>
                         </Border>
                       </DataTemplate>
-                      <DataTemplate DataType="vm:SuggestionPartRow">
-                        <Border Classes="row" Background="Transparent" Tag="row" PointerEntered="OnReachEnter" PointerExited="OnReachExit">
-                          <Grid ColumnDefinitions="Auto,*,104,40,124">
-                            <Panel Width="12" Height="9" Margin="24,0,6,0" VerticalAlignment="Center">
-                              <Rectangle RadiusX="2" RadiusY="2" Stroke="{Binding Brush}" StrokeThickness="1" StrokeDashArray="2,2" IsVisible="{Binding IsBreak}" />
-                              <Rectangle RadiusX="2" RadiusY="2" Stroke="{Binding Brush}" StrokeThickness="1.5" IsVisible="{Binding IsSwitch}" />
-                            </Panel>
-                            <TextBlock Grid.Column="1" Text="{Binding WhatText}" FontStyle="Italic" VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding WhatText}" />
-                            <TextBlock Grid.Column="2" Text="{Binding RangeText}" Classes="secondary" VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="3" Text="{Binding LengthText}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0" />
-                            <CheckBox Grid.Column="4" Content="{Binding DecideText}" IsChecked="{Binding Decided}" HorizontalAlignment="Right"
-                                      Margin="0,0,8,0" MinHeight="0" ToolTip.Tip="{Binding Tip}" />
+                      <DataTemplate DataType="vm:SuggestionBreaksHeader">
+                        <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,1" Padding="8,5,8,4">
+                          <StackPanel Orientation="Horizontal" Spacing="7">
+                            <TextBlock Text="Breaks" Classes="strong" />
+                            <TextBlock Text="{Binding CountText}" Classes="secondary" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                      <!-- A break: counted toward a project, or left out, at once. -->
+                      <DataTemplate DataType="vm:BreakRow">
+                        <Border Classes="row" Background="Transparent" Tag="row" PointerEntered="OnReachEnter" PointerExited="OnReachExit"
+                                Padding="0,1,0,2">
+                          <Grid ColumnDefinitions="*,126,40,Auto" RowDefinitions="Auto,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="22,0,6,0">
+                              <Rectangle Width="12" Height="9" RadiusX="2" RadiusY="2" Stroke="{Binding Brush}" StrokeThickness="1"
+                                         StrokeDashArray="2,2" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding WhatText}" FontStyle="Italic" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding WhatText}" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding RangeText}" Classes="secondary" Margin="6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3" Margin="4,1,6,1">
+                              <Button Content="Count" Command="{Binding CountBefore}" IsVisible="{Binding IsInside}" MinWidth="0" MinHeight="0"
+                                      Padding="10,1" ToolTip.Tip="{Binding CountTip}" />
+                              <Button IsVisible="{Binding IsBetween}" MinWidth="0" MinHeight="0" Padding="10,1"
+                                      ToolTip.Tip="Count it toward the project before or after" AutomationProperties.Name="Count toward">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                  <TextBlock Text="Count" />
+                                  <ic:SymbolIcon Symbol="ChevronDown" FontSize="10" />
+                                </StackPanel>
+                                <Button.Flyout>
+                                  <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuItem Header="{Binding CountBeforeText}" Command="{Binding CountBefore}" />
+                                    <MenuItem Header="{Binding CountAfterText}" Command="{Binding CountAfter}" />
+                                  </MenuFlyout>
+                                </Button.Flyout>
+                              </Button>
+                              <Button Classes="rowIcon" Command="{Binding LeaveOut}" ToolTip.Tip="Don't count it" AutomationProperties.Name="Don't count this break">
+                                <ic:SymbolIcon Symbol="Dismiss" FontSize="12" />
+                              </Button>
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Text="{Binding BetweenText}" Classes="hint" Margin="40,0,8,0" />
                           </Grid>
                         </Border>
                       </DataTemplate>

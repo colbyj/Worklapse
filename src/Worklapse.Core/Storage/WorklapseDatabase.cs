@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 14;
+    private const int SchemaVersion = 15;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -424,6 +424,32 @@ public sealed class WorklapseDatabase : IDisposable
                 ALTER TABLE projects ADD COLUMN ends_on   TEXT;   -- its last day
                 """);
             Execute("PRAGMA user_version = 14;");
+            transaction.Commit();
+        }
+
+        if (version < 15)
+        {
+            // Suggestions become stretches of one project's time, and the breaks between project time are offered on their
+            // own. Open blocks are worked out again as stretches; decided ones stay, so a rejected one isn't offered again.
+            using var transaction = BeginTransaction();
+            Execute("""
+                DELETE FROM suggestions WHERE state IN (0, 3);
+                DROP TABLE suggestion_parts;
+                ALTER TABLE suggestions ADD COLUMN least_sure_ms INTEGER;   -- the capture the classifier was least sure of
+
+                -- Time away between project time, and whether it was counted toward a project.
+                CREATE TABLE suggestion_breaks (
+                    id              INTEGER PRIMARY KEY,
+                    start_ms        INTEGER NOT NULL,               -- UTC, like captures.ts_ms
+                    end_ms          INTEGER NOT NULL,
+                    before_project  INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,   -- the project time on each side
+                    after_project   INTEGER NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                    counted_to      INTEGER REFERENCES projects (id) ON DELETE CASCADE,
+                    state           INTEGER NOT NULL                -- 0 = open, 1 = counted (toward counted_to), 2 = left out
+                );
+                CREATE INDEX ix_suggestion_breaks_start ON suggestion_breaks (start_ms);
+                """);
+            Execute("PRAGMA user_version = 15;");
             transaction.Commit();
         }
     }

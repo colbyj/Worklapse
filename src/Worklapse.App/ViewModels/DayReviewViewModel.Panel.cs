@@ -373,8 +373,9 @@ public sealed partial class DayReviewViewModel
         (DayAppRow { Program: { } program }, "project") => MarkReach.Link(Captures, _handSpans, program, _maxCaptureLength),
         (SegmentRow segment, _) => [(segment.From, segment.To)],
         (TimeLogRow log, _) => BlocksOf(log.ProjectId, null),
-        (SuggestionHeadRow head, _) => [(head.Suggestion.Start, head.Suggestion.End)],
-        (SuggestionPartRow partRow, _) => [(partRow.Part.Start, partRow.Part.End)],
+        (SuggestionGroupRow group, _) => group.Stretches.Select(s => (s.Start, s.End)).ToList(),
+        (SuggestionRow stretch, _) => [(stretch.Suggestion.Start, stretch.Suggestion.End)],
+        (BreakRow breakRow, _) => [(breakRow.Break.Start, breakRow.Break.End)],
         (MarkedRange marked, _) => [(marked.Start, marked.End)],
         _ => null,
     };

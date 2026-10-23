@@ -197,7 +197,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             .ToList();
         foreach (var day in days)
         {
-            List<StoredSuggestion>? worked;
+            StoredDay? worked;
             try
             {
                 worked = await suggestionEngine.RefreshAsync(settings.DataFolder, data.DayStart, day, settings,
@@ -210,7 +210,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             }
             if (worked is null || shown != _shown || IsDisposed)
                 return;
-            ShowSuggestionCount(data, day, worked.Count(s => s.IsOpen));
+            ShowSuggestionCount(data, day, worked.OpenCount);
         }
     }
 

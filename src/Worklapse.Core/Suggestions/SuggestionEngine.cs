@@ -7,7 +7,7 @@ namespace Worklapse.Core.Suggestions;
 
 /// <summary>A day's suggestions worked out again and not stored yet (<see cref="SuggestionEngine.Store"/>).</summary>
 /// <param name="Stamp">What they were worked out from, so storing them saves working the day out again.</param>
-public sealed record WorkedOutDay(DateOnly Day, DateTimeOffset Start, DateTimeOffset End, IReadOnlyList<Suggestion> Suggestions,
+public sealed record WorkedOutDay(DateOnly Day, DateTimeOffset Start, DateTimeOffset End, DaySuggestions Suggestions,
     string Stamp);
 
 /// <summary>
@@ -37,7 +37,7 @@ public sealed class SuggestionEngine
     /// Works <paramref name="day"/>'s suggestions out again (when anything they rest on changed) and returns them all,
     /// open and decided; none when suggestions are turned off.
     /// </summary>
-    public List<StoredSuggestion> Refresh(HistoryStore history, DateOnly day, WorklapseSettings settings)
+    public StoredDay Refresh(HistoryStore history, DateOnly day, WorklapseSettings settings)
     {
         _turn.Wait();
         try
@@ -54,7 +54,7 @@ public sealed class SuggestionEngine
     /// As <see cref="Refresh"/>, on a background thread with a connection of its own, after the calls already waiting;
     /// null when, by its turn, <paramref name="stillWanted"/> says the result isn't needed any more.
     /// </summary>
-    public Task<List<StoredSuggestion>?> RefreshAsync(string dataFolder, TimeOnly dayStart, DateOnly day,
+    public Task<StoredDay?> RefreshAsync(string dataFolder, TimeOnly dayStart, DateOnly day,
         WorklapseSettings settings, Func<bool> stillWanted) =>
         InTurnAsync(dataFolder, dayStart, stillWanted, history => RefreshInTurn(history, day, settings));
 
@@ -109,10 +109,10 @@ public sealed class SuggestionEngine
         }
     }
 
-    private List<StoredSuggestion> RefreshInTurn(HistoryStore history, DateOnly day, WorklapseSettings settings)
+    private StoredDay RefreshInTurn(HistoryStore history, DateOnly day, WorklapseSettings settings)
     {
         if (!settings.SuggestProjects)
-            return [];
+            return StoredDay.None;
         if (WorkOutInTurn(history, day, settings) is { } worked)
             Store(history, worked);
         var (start, end) = history.DayRange(day);

@@ -154,55 +154,86 @@ public class SuggestionTests
     }
 
     [Fact]
-    public void ABlockJoinsAProjectsTimeAndListsWhatToDecide()
+    public void EachProjectsGuessedTimeIsAStretchAndTheTimeAwayBetweenIsABreak()
     {
         List<CaptureRecord> captures = [
             .. Run(0, 300, "rider64.exe", "Presayo – x.sql", link: Presayo),             // already Presayo, by its rule
             .. Run(300, 600, "WindowsTerminal.exe", "Group label presets by printer type"),
             .. Run(600, 900, "firefox.exe", "Facebook", productive: false),             // 5 min away: a break
             .. Run(900, 1200, "WindowsTerminal.exe", "Group label presets by printer type"),
-            .. Run(1200, 1500, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"), // a switch
+            .. Run(1200, 1500, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),
             .. Run(1500, 1800, "WindowsTerminal.exe", "Group label presets by printer type"),
-            .. Run(1800, 1860, "WindowsTerminal.exe", "", kind: CaptureKind.Idle),    // 1 min away: part of the block
+            .. Run(1800, 1860, "WindowsTerminal.exe", "", kind: CaptureKind.Idle),    // 1 min away: part of the stretch
             .. Run(1860, 2100, "WindowsTerminal.exe", "Group label presets by printer type"),
-            // 40 minutes not recorded: past the split limit, so a new block.
+            // 40 minutes not recorded: past the split limit, so no break.
             .. Run(4500, 4800, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),
         ];
 
-        var suggestions = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
+        var day = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
 
-        Assert.Equal(2, suggestions.Count);
-        var presayo = suggestions[0];
-        Assert.Equal((Presayo, 0, 2105), (presayo.ProjectId, Seconds(presayo.Start), Seconds(presayo.End)));
-        Assert.Equal(TimeSpan.FromSeconds(300 + 300 + 300 + 60 + 245), presayo.Adds); // not the rule's 5 minutes
-        Assert.Equal([
-            (SuggestionPartKind.Break, 600, 900, (long?)null),
-            (SuggestionPartKind.Switch, 1200, 1500, Frankensystem),
-        ], presayo.Parts.Select(p => (p.Kind, Seconds(p.Start), Seconds(p.End), p.ProjectId)));
-        Assert.Contains("title:presets", presayo.Evidence);
-        Assert.False(presayo.IsUnsure);
+        Assert.Equal([(Presayo, 300, 600), (Presayo, 900, 1200), (Frankensystem, 1200, 1500), (Presayo, 1500, 2105), (Frankensystem, 4500, 4805)],
+            day.Stretches.Select(s => (s.ProjectId, Seconds(s.Start), Seconds(s.End))));
+        var glance = day.Stretches[3];
+        Assert.Equal(TimeSpan.FromSeconds(300 + 60 + 245), glance.Adds);
+        Assert.Contains("title:presets", glance.Evidence);
+        Assert.False(glance.IsUnsure);
+        Assert.InRange(glance.LeastSure, glance.Start, glance.End);
 
-        var frankensystem = suggestions[1];
-        Assert.Equal((Frankensystem, 4500, 4805), (frankensystem.ProjectId, Seconds(frankensystem.Start), Seconds(frankensystem.End)));
-        Assert.Empty(frankensystem.Parts);
+        var away = Assert.Single(day.Breaks);
+        Assert.Equal((600, 900, (long?)Presayo), (Seconds(away.Start), Seconds(away.End), away.Inside));
     }
 
     [Fact]
-    public void ProjectsWorkedOnInTurnAreBlocksOfTheirOwn()
+    public void AnotherProjectsTimeIsNeverInsideAStretch()
     {
-        // Presayo, then 15 minutes of Frankensystem (past the switch limit), then Presayo again: three blocks, not one
-        // Presayo block swallowing Frankensystem as a switch.
+        // As on 22 October: Presayo guessed, YouTube, Frankensystem by its rule, a short Presayo guess, Frankensystem guessed.
+        List<CaptureRecord> captures = [
+            .. Run(0, 600, "WindowsTerminal.exe", "Group label presets by printer type"),
+            .. Run(600, 900, "firefox.exe", "YouTube", productive: false),
+            .. Run(900, 1260, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance", link: Frankensystem),
+            .. Run(1260, 1380, "WindowsTerminal.exe", "Group label presets by printer type"),
+            .. Run(1380, 1800, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),
+        ];
+
+        var day = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
+
+        Assert.Equal([(Presayo, 0, 600), (Presayo, 1260, 1380), (Frankensystem, 1380, 1805)],
+            day.Stretches.Select(s => (s.ProjectId, Seconds(s.Start), Seconds(s.End))));
+        var away = Assert.Single(day.Breaks);
+        Assert.Equal((600, 900, Presayo, Frankensystem, (long?)null),
+            (Seconds(away.Start), Seconds(away.End), away.Before, away.After, away.Inside));
+    }
+
+    [Fact]
+    public void ABreakBetweenTimeThatHasAProjectIsOfferedOnItsOwn()
+    {
+        List<CaptureRecord> captures = [
+            .. Run(0, 300, "WindowsTerminal.exe", "bride-of-frankensystem", link: Frankensystem),
+            .. Run(300, 600, "WindowsTerminal.exe", "", kind: CaptureKind.Idle),      // waiting for a build?
+            .. Run(600, 900, "WindowsTerminal.exe", "bride-of-frankensystem", link: Frankensystem),
+        ];
+
+        var day = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
+
+        Assert.Empty(day.Stretches);
+        var away = Assert.Single(day.Breaks);
+        Assert.Equal((300, 600, (long?)Frankensystem), (Seconds(away.Start), Seconds(away.End), away.Inside));
+    }
+
+    [Fact]
+    public void ProjectsWorkedOnInTurnAreStretchesOfTheirOwn()
+    {
         List<CaptureRecord> captures = [
             .. Run(0, 600, "WindowsTerminal.exe", "Group label presets by printer type"),
             .. Run(600, 1500, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),
             .. Run(1500, 2100, "WindowsTerminal.exe", "Group label presets by printer type"),
         ];
 
-        var suggestions = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
+        var day = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
 
         Assert.Equal([(Presayo, 0, 600), (Frankensystem, 600, 1500), (Presayo, 1500, 2105)],
-            suggestions.Select(s => (s.ProjectId, Seconds(s.Start), Seconds(s.End))));
-        Assert.All(suggestions, s => Assert.Empty(s.Parts));
+            day.Stretches.Select(s => (s.ProjectId, Seconds(s.Start), Seconds(s.End))));
+        Assert.Empty(day.Breaks);
     }
 
     [Fact]
@@ -214,11 +245,10 @@ public class SuggestionTests
             .. Run(600, 900, "WindowsTerminal.exe", "Group label presets by printer type"),
         ];
 
-        var suggestion = Assert.Single(SuggestionBuilder.ForDay(captures, [Span(300, 600, null)], Classifier(), SuggestionLimits.Default,
-            Max, SuggestionOptOuts.None));
+        var day = SuggestionBuilder.ForDay(captures, [Span(300, 600, null)], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
 
-        Assert.Equal(TimeSpan.FromSeconds(300 + 305), suggestion.Adds);
-        Assert.Empty(suggestion.Parts); // the range by hand is neither a break nor part of the block's time to add
+        Assert.Equal([(0, 300, 300.0), (600, 905, 305.0)], day.Stretches.Select(s => (Seconds(s.Start), Seconds(s.End), s.Adds.TotalSeconds)));
+        Assert.Empty(day.Breaks); // the range by hand is no time away
     }
 
     [Fact]
@@ -226,7 +256,10 @@ public class SuggestionTests
     {
         var captures = Run(0, 600, "rider64.exe", "Presayo – x.sql", link: Presayo).ToList();
 
-        Assert.Empty(SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None));
+        var day = SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, SuggestionOptOuts.None);
+
+        Assert.Empty(day.Stretches);
+        Assert.Empty(day.Breaks);
     }
 
     [Fact]
@@ -235,7 +268,7 @@ public class SuggestionTests
         var captures = Run(0, 600, "WindowsTerminal.exe", "Group label presets by printer type").ToList();
         var optOuts = new SuggestionOptOuts(new HashSet<long> { Presayo }, new HashSet<string>(), new HashSet<string>());
 
-        Assert.DoesNotContain(SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, optOuts),
+        Assert.DoesNotContain(SuggestionBuilder.ForDay(captures, [], Classifier(), SuggestionLimits.Default, Max, optOuts).Stretches,
             s => s.ProjectId == Presayo);
     }
 }
