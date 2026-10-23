@@ -281,9 +281,10 @@ public sealed partial class DayReviewViewModel
         SuggestionRows.Clear();
         var open = suggestions.Stretches.Where(s => s.IsOpen).ToList();
         var adds = TimeSpan.Zero;
-        // Projects with the most time to add first; each project's stretches in time order.
+        // Projects by name, so they keep their places while their stretches are decided (by time to add, accepting
+        // some could swap two projects under the pointer); each project's stretches in time order.
         foreach (var group in open.GroupBy(s => s.ProjectId).Select(g => (Project: g.Key, Stretches: g.ToList(), Adds: g.Sum(s => Adds(s).Ticks)))
-                     .OrderByDescending(g => g.Adds))
+                     .OrderBy(g => NameOf(g.Project), StringComparer.CurrentCultureIgnoreCase))
         {
             var groupAdds = TimeSpan.FromTicks(group.Adds);
             adds += groupAdds;
