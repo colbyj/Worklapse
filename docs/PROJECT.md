@@ -427,6 +427,8 @@ then downloads the latest release (for the delta), publishes with FolderProfile,
 profile as Presayo; no secrets), and uploads it as GitHub release `v<Version>` on the current commit. `-Unsigned` and
 `-NoUpload` skip those steps. The version is `<Version>` in `Worklapse.App.csproj`, raised by hand before a release.
 
+- The release is tagged on HEAD, which must be pushed: the script checks GitHub has it (otherwise vpk's upload fails
+  with a bare "Validation Failed").
 - **packId `WorklapseApp`, not `Worklapse`:** Velopack installs to `%LocalAppData%\<packId>` and deletes that folder
   on uninstall, and `%LocalAppData%\Worklapse` is the default data folder. Changing the packId later orphans installs.
 - vpk's default `--exclude` drops every `.pdb`; the script overrides it so Worklapse's own stay for crash reports.

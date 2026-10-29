@@ -57,6 +57,15 @@ $token = $env:WORKLAPSE_GITHUB_TOKEN
 if (-not $NoUpload) {
     if (-not $token) { throw 'Set WORKLAPSE_GITHUB_TOKEN to a GitHub token that can write the repository''s contents.' }
     if (git -C $root status --porcelain) { throw 'There are uncommitted changes; the release would be tagged on a commit that lacks them.' }
+    # The release is tagged on this commit, which GitHub must have (otherwise the upload fails with "Validation Failed").
+    $commit = (git -C $root rev-parse HEAD).Trim()
+    try {
+        Invoke-RestMethod "https://api.github.com/repos/colbyj/Worklapse/commits/$commit" -Headers @{ 'User-Agent' = 'Worklapse-release'; 'Authorization' = "Bearer $token" } | Out-Null
+    } catch {
+        $status = $_.Exception.Response.StatusCode.value__
+        if ($status -ne 404 -and $status -ne 422) { throw }
+        throw "GitHub doesn't have commit $($commit.Substring(0, 7)) yet: push it first."
+    }
 }
 
 # Clients take only a release newer than theirs, so one that isn't would upload and reach nobody.
@@ -118,7 +127,6 @@ if ($NoUpload) {
 
 # --- Upload --------------------------------------------------------------------------------------------------------
 
-$commit = (git -C $root rev-parse HEAD).Trim()
 Invoke-Checked vpk @('upload', 'github', '--repoUrl', $Repository, '--token', $token, '--outputDir', $releaseFolder,
     '--tag', "v$version", '--releaseName', "Worklapse $version", '--targetCommitish', $commit, '--publish')
 Write-Host "Released: $Repository/releases/tag/v$version"
