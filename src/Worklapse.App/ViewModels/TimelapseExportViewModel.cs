@@ -21,8 +21,8 @@ public sealed record TimelapseSize(int Width, int Height, string Label)
 }
 
 /// <summary>
-/// Export Timelapse: what to put in the video (the whole day, a project's time on it, or the selection) and how it
-/// looks, then the export's progress. The picture is Day review's (its monitor and Focus on Active App); the choices are
+/// Export Timelapse: what to put in the video (the whole day or the selection, all of it or one project's time in it)
+/// and how it looks, then the export's progress. The picture is Day review's (its monitor and Focus on Active App); the choices are
 /// remembered in the settings.
 /// </summary>
 public sealed partial class TimelapseExportViewModel : ObservableObject
@@ -46,29 +46,35 @@ public sealed partial class TimelapseExportViewModel : ObservableObject
         _clock = current.TimelapseClock;
         _includeIdle = current.TimelapseIncludeIdle;
 
-        Projects = source.Projects;
-        _selectedProject = Projects.FirstOrDefault();
         SelectionText = source.Selection is { } selection ? DayReviewViewModel.RangeText(selection.Start, selection.End) : "";
         // A selection made before asking is most likely what to export.
         _isSelection = source.Selection is not null;
         _isWholeDay = !_isSelection;
         Title = $"Export Timelapse — {source.Day.Day.ToString("D", CultureInfo.CurrentCulture)}";
-        Plan();
+        UpdateProjects();
     }
 
     public string Title { get; }
     public IReadOnlyList<TimelapseSpeed> Speeds { get; }
     public IReadOnlyList<TimelapseSize> Sizes { get; }
-    public IReadOnlyList<TimelapseProject> Projects { get; }
-    public bool HasProjects => Projects.Count > 0;
     public bool HasSelection => _source.Selection is not null;
     public string SelectionText { get; }
     public string ViewText => _source.ViewText;
 
     [ObservableProperty] private bool _isWholeDay;
-    [ObservableProperty] private bool _isProject;
     [ObservableProperty] private bool _isSelection;
+
+    /// <summary>Only the time of <see cref="SelectedProject"/> within the day or the selection.</summary>
+    [ObservableProperty] private bool _onlyProject;
+
+    /// <summary>The projects with time in the day or the selection, their blocks cut to it.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasProjects))]
+    private IReadOnlyList<TimelapseProject> _projects = [];
+
     [ObservableProperty] private TimelapseProject? _selectedProject;
+    [ObservableProperty] private string _noProjectsText = "";
+
+    public bool HasProjects => Projects.Count > 0;
     [ObservableProperty] private TimelapseSpeed _speed;
     [ObservableProperty] private TimelapseSize _size;
     [ObservableProperty] private bool _clock;
@@ -99,7 +105,7 @@ public sealed partial class TimelapseExportViewModel : ObservableObject
         get
         {
             var name = $"Worklapse {_source.Day.Day:yyyy-MM-dd}";
-            if (IsProject && SelectedProject is { } project)
+            if (OnlyProject && SelectedProject is { } project)
                 name += " " + string.Concat(project.Project.Name.Split(Path.GetInvalidFileNameChars()));
             return name + ".mp4";
         }
@@ -107,29 +113,56 @@ public sealed partial class TimelapseExportViewModel : ObservableObject
 
     public bool CanExport => State == ExportState.Choosing && _frames.Count > 0;
 
-    partial void OnIsWholeDayChanged(bool value) => Plan();
-    partial void OnIsProjectChanged(bool value) => Plan();
-    partial void OnIsSelectionChanged(bool value) => Plan();
+    partial void OnIsWholeDayChanged(bool value) => UpdateProjects();
+    partial void OnIsSelectionChanged(bool value) => UpdateProjects();
+    partial void OnOnlyProjectChanged(bool value) => Plan();
     partial void OnSelectedProjectChanged(TimelapseProject? value) => Plan();
     partial void OnSpeedChanged(TimelapseSpeed value) => Plan();
     partial void OnSizeChanged(TimelapseSize value) => Plan();
     partial void OnIncludeIdleChanged(bool value) => Plan();
 
+    /// <summary>The day or the selection, as chosen.</summary>
+    private (DateTimeOffset Start, DateTimeOffset End) Range =>
+        IsSelection && _source.Selection is { } selection ? selection : _source.DayRange;
+
+    /// <summary>
+    /// Lists the projects with time in the range, each block cut to it, keeping the project chosen if it has time
+    /// there; then plans.
+    /// </summary>
+    private void UpdateProjects()
+    {
+        // The radio buttons clear one another one at a time; wait until one is set.
+        if (!(IsWholeDay || IsSelection))
+            return;
+        var (start, end) = Range;
+        var chosen = SelectedProject?.Project;
+        Projects = _source.Projects
+            .Select(p => p with
+            {
+                Blocks = p.Blocks.Where(b => b.Start < end && b.End > start)
+                    .Select(b => (b.Start > start ? b.Start : start, b.End < end ? b.End : end))
+                    .ToList(),
+            })
+            .Where(p => p.Blocks.Count > 0)
+            .ToList();
+        NoProjectsText = IsSelection ? "No project time in the selection" : "No project time this day";
+        SelectedProject = Projects.FirstOrDefault(p => p.Project == chosen) ?? Projects.FirstOrDefault();
+        if (!HasProjects)
+            OnlyProject = false;
+        Plan();
+    }
+
     /// <summary>The export's frames planned for the choices, without the speed and size.</summary>
     private TimelapseOptions Options()
     {
-        IReadOnlyList<(DateTimeOffset, DateTimeOffset)> ranges =
-            IsSelection && _source.Selection is { } selection ? [selection]
-            : IsProject ? SelectedProject?.Blocks ?? []
-            : [_source.DayRange];
+        IReadOnlyList<(DateTimeOffset, DateTimeOffset)> ranges = OnlyProject ? SelectedProject?.Blocks ?? [] : [Range];
         return new TimelapseOptions(ranges, _source.Monitor, _source.FocusOnApplication, IncludeIdle, Speed.FramesPerSecond,
             (Size.Width, Size.Height), Clock);
     }
 
     private void Plan()
     {
-        // The radio buttons clear one another one at a time; plan once one is set.
-        if (!(IsWholeDay || IsProject || IsSelection))
+        if (!(IsWholeDay || IsSelection))
             return;
         var options = Options();
         _frames = TimelapsePlan.Frames(_source.Day, options);

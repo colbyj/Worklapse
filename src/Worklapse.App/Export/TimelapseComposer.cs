@@ -11,7 +11,7 @@ namespace Worklapse.App.Export;
 /// <summary>
 /// Draws the frames of a timelapse: a capture's pictures laid out and fitted into the video as Day review shows them,
 /// with bars where the shape differs, and the time of day if asked. Each frame comes out as limited-range I420 for the
-/// encoder. Not thread-safe; one per export.
+/// encoder, or as an image file (Export Frame). Not thread-safe; one per export.
 /// </summary>
 public sealed class TimelapseComposer : IDisposable
 {
@@ -44,13 +44,45 @@ public sealed class TimelapseComposer : IDisposable
     /// <summary>Draws <paramref name="frame"/> from its decoded pictures (by monitor id) into <paramref name="i420"/>.</summary>
     public void Compose(TimelapseFrame frame, IReadOnlyDictionary<long, DecodedFrame> pictures, Span<byte> i420)
     {
+        Draw(frame, pictures);
+        I420.FromBgraRows(_frame.GetPixelSpan(), _frame.RowBytes, _width, _height, 0, _height, i420);
+        I420.ToLimitedRange(i420, _width, _height);
+    }
+
+    /// <summary>Draws <paramref name="frame"/> from its decoded pictures and writes it to <paramref name="output"/> as an image.</summary>
+    /// <param name="quality">For JPEG, 0–100; PNG ignores it.</param>
+    public void Save(TimelapseFrame frame, IReadOnlyDictionary<long, DecodedFrame> pictures, Stream output,
+        SKEncodedImageFormat format, int quality)
+    {
+        Draw(frame, pictures);
+        using var image = SKImage.FromBitmap(_frame);
+        using var data = image.Encode(format, quality) ?? throw new InvalidOperationException($"Couldn't encode the picture as {format}.");
+        data.SaveTo(output);
+    }
+
+    /// <summary>
+    /// The size that shows <paramref name="frame"/> at the pictures' own resolution: on a scaled desktop a picture has
+    /// more pixels than its monitor's place, and the sharpest picture sets the scale.
+    /// </summary>
+    public static (int Width, int Height) FullSize(TimelapseFrame frame, IReadOnlyDictionary<long, DecodedFrame> pictures)
+    {
+        var tiles = Place(frame, pictures);
+        var content = CapturePictures.Content(tiles.Select(t => t.Bounds), frame.Focus);
+        if (content.IsEmpty)
+            throw new InvalidOperationException("Nothing recorded to show.");
+        var scale = tiles.Where(t => t.Picture is not null && t.Bounds.Width > 0)
+            .Select(t => (double)t.Picture!.Width / t.Bounds.Width)
+            .DefaultIfEmpty(1)
+            .Max();
+        scale = Math.Max(1, scale);
+        return ((int)Math.Round(content.Width * scale), (int)Math.Round(content.Height * scale));
+    }
+
+    private void Draw(TimelapseFrame frame, IReadOnlyDictionary<long, DecodedFrame> pictures)
+    {
         _canvas.Clear(Bars);
 
-        // A picture imported from TimeSnapper is a window, each its own size, shown at that size.
-        var tiles = frame.Tiles.Select(t => (t.Monitor, Picture: t.Frame is null ? null : pictures.GetValueOrDefault(t.Monitor.Id),
-            Bounds: t.Monitor.IsTimeSnapper && t.Frame is not null && pictures.TryGetValue(t.Monitor.Id, out var p)
-                ? t.Monitor.Bounds with { Width = p.Width, Height = p.Height }
-                : t.Monitor.Bounds)).ToList();
+        var tiles = Place(frame, pictures);
         var content = CapturePictures.Content(tiles.Select(t => t.Bounds), frame.Focus);
         if (!content.IsEmpty)
         {
@@ -81,8 +113,6 @@ public sealed class TimelapseComposer : IDisposable
             DrawClock(frame.Time.ToLocalTime().ToString("t", CultureInfo.CurrentCulture));
 
         _canvas.Flush();
-        I420.FromBgraRows(_frame.GetPixelSpan(), _frame.RowBytes, _width, _height, 0, _height, i420);
-        I420.ToLimitedRange(i420, _width, _height);
     }
 
     public void Dispose()
@@ -140,6 +170,15 @@ public sealed class TimelapseComposer : IDisposable
         }
         return bitmap;
     }
+
+    /// <summary>Each tile's monitor, its decoded picture (null: nothing recorded) and its place on the desktop.</summary>
+    private static List<(MonitorRecord Monitor, DecodedFrame? Picture, PixelRect Bounds)> Place(TimelapseFrame frame,
+        IReadOnlyDictionary<long, DecodedFrame> pictures) =>
+        // A picture imported from TimeSnapper is a window, each its own size, shown at that size.
+        frame.Tiles.Select(t => (t.Monitor, Picture: t.Frame is null ? null : pictures.GetValueOrDefault(t.Monitor.Id),
+            Bounds: t.Monitor.IsTimeSnapper && t.Frame is not null && pictures.TryGetValue(t.Monitor.Id, out var p)
+                ? t.Monitor.Bounds with { Width = p.Width, Height = p.Height }
+                : t.Monitor.Bounds)).ToList();
 
     private static SKRect Rect(PixelRect rect) => new(rect.X, rect.Y, rect.Right, rect.Bottom);
 }

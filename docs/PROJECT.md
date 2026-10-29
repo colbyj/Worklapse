@@ -285,8 +285,8 @@ selection, summaries and the mark/restore/confirm deletion logic.
 ### How timelapse export works (built 2026-10-21)
 
 Day review's tool bar has **Export Timelapse…** (icon only when the window is too narrow for its label). The dialog
-(`TimelapseExportWindow`) picks the time (whole day, one project's blocks that day, or the selection, which is the
-default when there is one), speed (10/15/30/60 frames per second, one capture per frame), video size (720p to 4K: the
+(`TimelapseExportWindow`) picks the time (whole day, or the selection, which is the default when there is one;
+"Only project" narrows either to one project's blocks within it, listing only projects with time there), speed (10/15/30/60 frames per second, one capture per frame), video size (720p to 4K: the
 largest size, the picture keeps its shape), the time of day in the bottom right corner, and whether idle time is kept;
 the choices are remembered in settings.json (`Timelapse*`). The picture is Day review's: its monitor choice (found
 again by place after replugging; captures where it wasn't attached are left out) and Focus on Active App. Captures
@@ -313,6 +313,18 @@ marked for deletion are never exported. The developer chose all of this, and AV1
   macOS/iOS (older Apple devices can't play AV1).
 - Possible speed-up, not built: encode alternate 2-second chunks with two or three encoders at once (each chunk starts
   with a key frame anyway); needs its own decoders per encoder, or a chunk of frames held in memory.
+
+### How Export Frame works (built 2026-10-29)
+
+- Day review's tool bar has **Export Frame…** beside Export Timelapse… (both show only icons in a narrow window). It
+  saves the frame shown as PNG or JPEG (the save dialog's file type; JPEG quality 92), with Day review's monitor choice
+  and Focus on Active App, at the pictures' own resolution; zoom and pan are ignored. Marked and idle frames export as
+  shown. Monitors with nothing recorded are grey, as in Day review, without the "Not recorded" label. The developer
+  chose all of this on 2026-10-29.
+- `TimelapsePlan.FrameAt` picks what a capture shows (shared with the timelapse's plan); `FrameImageExporter` decodes
+  the pictures and draws them with `TimelapseComposer` at `FullSize` (on a scaled desktop, the sharpest picture's
+  scale), written as `<name>.tmp` and moved over the target. A frame moved meanwhile (space reclaimed, today's
+  segment encoded) is found again in the reloaded day, once. Measured on the developer's real data: about 1.5–4 s.
 
 ### How undo works in Day review (built 2026-10-23)
 

@@ -187,6 +187,19 @@ public class TimelapseTests
         Assert.Equal((1280, 720), TimelapsePlan.VideoSize([], (1280, 720)));
     }
 
+    [Fact]
+    public void FrameAtShowsAnyCaptureWithSomethingRecorded()
+    {
+        var day = Day();
+        // Export Frame shows what Day review shows, marked or idle.
+        var marked = TimelapsePlan.FrameAt(day, 2, null, false)!;
+        Assert.Equal([new FrameRef(1, 11), null], marked.Tiles.Select(t => t.Frame));
+        Assert.Equal([new FrameRef(1, 10), new FrameRef(2, 20)], TimelapsePlan.FrameAt(day, 1, null, false)!.Tiles.Select(t => t.Frame!.Value));
+        Assert.Equal([3L], TimelapsePlan.FrameAt(day, 3, Right, false)!.Tiles.Select(t => t.Monitor.Id));
+        Assert.Null(TimelapsePlan.FrameAt(day, 4, null, false)); // nothing recorded
+        Assert.Null(TimelapsePlan.FrameAt(day, 2, Right, false)); // nothing recorded on the monitor chosen
+    }
+
     private static TimelapseOptions Options() => new(AllDay, null, false, false, 30, (1920, 1080), false);
 
     private static CaptureRecord Capture(long id, int seconds, CaptureKind kind, (long Monitor, int Index)[] frames, long[] monitors,

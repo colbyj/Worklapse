@@ -4,7 +4,7 @@ using Worklapse.Core.Platform;
 namespace Worklapse.Core.Export;
 
 /// <summary>What goes into a timelapse, and how it looks.</summary>
-/// <param name="Ranges">The time to include (the whole day, a project's blocks, or the selection), in time order.</param>
+/// <param name="Ranges">The time to include (the whole day or the selection, or a project's blocks in it), in time order.</param>
 /// <param name="Monitor">The monitor to show (as chosen in Day review), or null for all of them.</param>
 /// <param name="FocusOnApplication">Show only the window that had focus, as Day review's Focus on Active App.</param>
 /// <param name="IncludeIdle">Keep idle captures (the screen as last captured); otherwise only active ones.</param>
@@ -42,25 +42,41 @@ public static class TimelapsePlan
             var capture = captures[i];
             if (capture.PendingDelete || (!capture.IsActive && !options.IncludeIdle) || !InRanges(capture.Time, options.Ranges))
                 continue;
-
-            // Only the monitors attached then: those of other times can be in the same place.
-            var attached = capture.MonitorIds.Select(id => monitorsById[id]).ToList();
-            var monitors = options.Monitor is not { } chosen ? attached
-                : attached.Where(m => m.Id == chosen.Id).ToList() is { Count: > 0 } same ? same
-                : attached.Where(m => m.Bounds == chosen.Bounds).Take(1).ToList();
-            if (monitors.Count == 0)
-                continue; // the chosen monitor wasn't attached
-
-            var tiles = CapturePictures.Tiles(captures, i, monitors);
-            if (tiles.All(t => t.Frame is null))
-                continue;
-            var focus = options.FocusOnApplication ? CapturePictures.Focus(captures, i, tiles) : null;
-            // Focused on a window, monitors with nothing recorded are left out: the window's part on them is empty.
-            if (focus is not null)
-                tiles = tiles.Where(t => t.Frame is not null).ToList();
-            frames.Add(new TimelapseFrame(capture.Id, capture.Time, tiles, focus));
+            if (FrameAt(day, monitorsById, i, options.Monitor, options.FocusOnApplication) is { } frame)
+                frames.Add(frame);
         }
         return frames;
+    }
+
+    /// <summary>
+    /// What capture <paramref name="index"/> of <paramref name="day"/> shows, as in Day review; null when it has
+    /// nothing recorded to show or <paramref name="monitor"/> wasn't attached then.
+    /// </summary>
+    public static TimelapseFrame? FrameAt(DayHistory day, int index, MonitorRecord? monitor, bool focusOnApplication) =>
+        FrameAt(day, day.Monitors.ToDictionary(m => m.Id), index, monitor, focusOnApplication);
+
+    private static TimelapseFrame? FrameAt(DayHistory day, Dictionary<long, MonitorRecord> monitorsById, int index,
+        MonitorRecord? monitor, bool focusOnApplication)
+    {
+        var captures = day.Captures;
+        var capture = captures[index];
+
+        // Only the monitors attached then: those of other times can be in the same place.
+        var attached = capture.MonitorIds.Select(id => monitorsById[id]).ToList();
+        var monitors = monitor is not { } chosen ? attached
+            : attached.Where(m => m.Id == chosen.Id).ToList() is { Count: > 0 } same ? same
+            : attached.Where(m => m.Bounds == chosen.Bounds).Take(1).ToList();
+        if (monitors.Count == 0)
+            return null; // the chosen monitor wasn't attached
+
+        var tiles = CapturePictures.Tiles(captures, index, monitors);
+        if (tiles.All(t => t.Frame is null))
+            return null;
+        var focus = focusOnApplication ? CapturePictures.Focus(captures, index, tiles) : null;
+        // Focused on a window, monitors with nothing recorded are left out: the window's part on them is empty.
+        if (focus is not null)
+            tiles = tiles.Where(t => t.Frame is not null).ToList();
+        return new TimelapseFrame(capture.Id, capture.Time, tiles, focus);
     }
 
     /// <summary>

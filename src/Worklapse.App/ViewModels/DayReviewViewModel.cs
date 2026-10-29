@@ -110,7 +110,8 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     public ObservableCollection<MarkedRange> MarkedRanges { get; } = [];
     public IReadOnlyList<string> Speeds { get; }
 
-    [ObservableProperty] private int _current = -1;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanExportFrame))]
+    private int _current = -1;
     [ObservableProperty] private int? _selectionStart;
     [ObservableProperty] private int? _selectionEnd;
     [ObservableProperty] private string _speed;

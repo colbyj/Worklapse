@@ -239,8 +239,15 @@
 
           <Border Classes="separator" />
 
+          <Button Classes="tool" Click="OnExportFrame" IsEnabled="{Binding CanExportFrame}"
+                  ToolTip.Tip="Export Frame: the frame shown as an image" AutomationProperties.Name="Export Frame">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Image" />
+              <TextBlock x:Name="ExportFrameLabel" Text="Export Frame…" />
+            </StackPanel>
+          </Button>
           <Button Classes="tool" Click="OnExportTimelapse" IsEnabled="{Binding CanExportTimelapse}"
-                  ToolTip.Tip="Export Timelapse: the day, a project's time or the selection as a video" AutomationProperties.Name="Export Timelapse">
+                  ToolTip.Tip="Export Timelapse: the day or the selection, or a project's time in it, as a video" AutomationProperties.Name="Export Timelapse">
             <StackPanel>
               <ic:SymbolIcon Symbol="Video" />
               <TextBlock x:Name="ExportLabel" Text="Export Timelapse…" />

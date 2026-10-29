@@ -6,11 +6,13 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Worklapse.App.Controls;
 using Worklapse.App.Playback;
 using Worklapse.App.ViewModels;
+using Worklapse.Core.Diagnostics;
 using Worklapse.Core.History;
 using Worklapse.Core.Storage;
 using Worklapse.Core.Suggestions;
@@ -37,7 +39,7 @@ public partial class DayReviewView : UserControl
     private FrameRef? _reloadedFor;
     private bool _closed;
     private (double X, double Width)? _resizingFrom;   // where a drag of the panel's edge started
-    private double _exportLabelWidth;                  // what showing Export Timelapse's label adds to the tool bar
+    private double _exportLabelWidth;                  // what showing the Export buttons' labels adds to the tool bar
 
     /// <summary>The gap between a tool button's icon and label (Breeze.axaml).</summary>
     private const double ToolButtonSpacing = 5;
@@ -787,15 +789,50 @@ public partial class DayReviewView : UserControl
     }
 
     /// <summary>
-    /// In a narrow window the tool bar's two halves would meet; Export Timelapse then shows only its icon (its tool tip
-    /// names it).
+    /// In a narrow window the tool bar's two halves would meet; Export Frame and Export Timelapse then show only their
+    /// icons (their tool tips name them).
     /// </summary>
     private void FitToolBar()
     {
         if (ExportLabel.IsVisible)
-            _exportLabelWidth = ExportLabel.Bounds.Width + ToolButtonSpacing;
+            _exportLabelWidth = ExportFrameLabel.Bounds.Width + ExportLabel.Bounds.Width + 2 * ToolButtonSpacing;
         var needed = NavigationTools.DesiredSize.Width + ViewTools.DesiredSize.Width + (ExportLabel.IsVisible ? 0 : _exportLabelWidth);
-        ExportLabel.IsVisible = ToolBarPanel.Bounds.Width >= needed;
+        ExportFrameLabel.IsVisible = ExportLabel.IsVisible = ToolBarPanel.Bounds.Width >= needed;
+    }
+
+    private async void OnExportFrame(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner || !_viewModel.CanExportFrame)
+            return;
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export Frame",
+            SuggestedFileName = _viewModel.FrameFileName,
+            DefaultExtension = "png",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("PNG image") { Patterns = ["*.png"] },
+                new FilePickerFileType("JPEG image") { Patterns = ["*.jpg", "*.jpeg"] },
+            ],
+            ShowOverwritePrompt = true,
+        });
+        if (file is null)
+            return;
+        string? path;
+        using (file)
+            path = file.TryGetLocalPath();
+        try
+        {
+            if (path is null)
+                throw new IOException("Choose a folder on this computer.");
+            await _viewModel.ExportFrameAsync(path);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Exporting a frame failed", ex);
+            if (!_closed)
+                await new ErrorWindow("Couldn't export the frame", ex.Message, "The image wasn't saved.").ShowDialog(owner);
+        }
     }
 
     private void OnExportTimelapse(object? sender, RoutedEventArgs e)

@@ -36,9 +36,13 @@
         <TextBlock Classes="label" Text="Time:" VerticalAlignment="Top" Margin="0,6,10,0" />
         <StackPanel Grid.Column="1">
           <RadioButton GroupName="range" Content="Whole day" IsChecked="{Binding IsWholeDay}" />
-          <DockPanel>
-            <RadioButton GroupName="range" Content="Project:" IsChecked="{Binding IsProject}" IsEnabled="{Binding HasProjects}" />
-            <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" IsEnabled="{Binding IsProject}"
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <RadioButton GroupName="range" Content="Selection" IsChecked="{Binding IsSelection}" IsEnabled="{Binding HasSelection}" />
+            <TextBlock Classes="secondary" Text="{Binding SelectionText}" VerticalAlignment="Center" />
+          </StackPanel>
+          <DockPanel Margin="0,4,0,0">
+            <CheckBox Content="Only project:" IsChecked="{Binding OnlyProject}" IsEnabled="{Binding HasProjects}" />
+            <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" IsEnabled="{Binding OnlyProject}"
                       IsVisible="{Binding HasProjects}" Margin="8,0,0,0" MinWidth="180" VerticalAlignment="Center"
                       AutomationProperties.Name="Project">
               <ComboBox.ItemTemplate>
@@ -50,13 +54,9 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
-            <TextBlock Classes="secondary" Text="No project time this day" IsVisible="{Binding !HasProjects}"
+            <TextBlock Classes="secondary" Text="{Binding NoProjectsText}" IsVisible="{Binding !HasProjects}"
                        Margin="8,0,0,0" VerticalAlignment="Center" />
           </DockPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <RadioButton GroupName="range" Content="Selection" IsChecked="{Binding IsSelection}" IsEnabled="{Binding HasSelection}" />
-            <TextBlock Classes="secondary" Text="{Binding SelectionText}" VerticalAlignment="Center" />
-          </StackPanel>
         </StackPanel>
 
         <TextBlock Grid.Row="1" Classes="label" Text="Picture:" />
