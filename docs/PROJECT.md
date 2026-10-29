@@ -418,6 +418,26 @@ running through the dotnet host (no executable to start). The entry names the ex
 from a debug build points login at that build. With `--autostart` the main window isn't opened; the *recording*
 notification says Worklapse is running (with *Record when Worklapse starts* off it starts silently, paused).
 
+### Releases and updates (Velopack, set up 2026-10-29; Windows only)
+
+`release/release.ps1` makes a release: checks first (vpk 1.2.0 to match the Velopack package, `WORKLAPSE_GITHUB_TOKEN`,
+a clean working tree, a `<Version>` above the latest GitHub release, `az login` and the .NET 8 runtime for signing),
+then downloads the latest release (for the delta), publishes with FolderProfile, `vpk pack`s into
+`src/Worklapse.App/bin/velopack` signed with Azure Trusted Signing (`release/azure-signing.json`, the same account and
+profile as Presayo; no secrets), and uploads it as GitHub release `v<Version>` on the current commit. `-Unsigned` and
+`-NoUpload` skip those steps. The version is `<Version>` in `Worklapse.App.csproj`, raised by hand before a release.
+
+- **packId `WorklapseApp`, not `Worklapse`:** Velopack installs to `%LocalAppData%\<packId>` and deletes that folder
+  on uninstall, and `%LocalAppData%\Worklapse` is the default data folder. Changing the packId later orphans installs.
+- vpk's default `--exclude` drops every `.pdb`; the script overrides it so Worklapse's own stay for crash reports.
+- `Program.Main` runs `VelopackApp` before the single-instance mutex (the installer's hooks start Worklapse.exe while
+  it may be running). Uninstalling removes the Run key (`LoginStartup.Disable`). An update downloaded by a run that
+  ended without quitting (a crash, logging off) is applied by Velopack at the next start.
+- `App/Updates/AppUpdates`: an installed Worklapse looks at the GitHub releases (public repo, no token; 60 unauthenticated
+  requests an hour per IP) once at start, downloads a newer one, and shows a bar over every view in the main window
+  (*Restart to Update*). Quitting installs it silently; the button quits the usual way, then the updater installs it with
+  its progress window and starts Worklapse again. Failures are only logged. A build or publish folder never looks.
+
 ## Building, running, testing
 
 Requirements: .NET 10 SDK, plus what the native library needs, which `dotnet build` builds when needed (several
@@ -963,8 +983,8 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
    Worklapse.TimeSnapperReader.exe outside the bundle (and the helper ignores the win-x64 runtime VS passes to every
    project: `TreatAsLocalProperty`), leaves out the packages' native .pdb files, and
    worklapse_native.dll links the C runtime statically (`x64-windows-static`), so no Visual C++ Redistributable is
-   needed. The developer plans
-   Velopack, code signing (already set up for another project) and a GitHub page/website later. PRIVACY.md is written.
+   needed. Velopack installer, updates and signing set up 2026-10-29 (see *Releases and updates*); a GitHub
+   page/website later. PRIVACY.md is written.
    **License: GPLv3** (developer's choice 2026-10-20, `LICENSE`): it can still be relicensed more permissively later
    while the developer holds all the copyright (outside contributions would need a CLA). Still to do when packaging: a
    THIRD-PARTY-NOTICES file made from what the publish actually ships (libaom with the AOM patent license,

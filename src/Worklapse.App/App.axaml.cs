@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Worklapse.App.Theming;
 using Worklapse.App.Tray;
+using Worklapse.App.Updates;
 using Worklapse.App.ViewModels;
 using Worklapse.App.Views;
 using Worklapse.Capture.Linux;
@@ -34,6 +35,7 @@ public partial class App : Application
     private RecordingViewModel? _recording;
     private MainWindow? _mainWindow;
     private IAppTray? _tray;
+    private AppUpdates? _updates;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private ErrorWindow? _errorWindow;
     private string? _lastWindowError;
@@ -122,11 +124,13 @@ public partial class App : Application
         _settings.Changed += (_, _) => Dispatcher.UIThread.Post(() => recording.Update(_recorder.Status));
 
         CreateTray();
+        _updates = new AppUpdates(() => QuitAsync(restartForUpdate: true));
         _recorder.Start();
         // Started at login, it stays in the tray (the "recording" notification says it's there).
         if (desktop.Args?.Contains(LoginStartup.Argument) != true)
             ShowMainWindow(MainView.Overview);
         ReportLastCrash();
+        _ = _updates.CheckAsync();
     }
 
     /// <summary>The first time recording is under way after starting by itself, says so (if the settings want that).</summary>
@@ -259,8 +263,8 @@ public partial class App : Application
     {
         if (_mainWindow is null)
         {
-            var viewModel = new MainViewModel(_recording!, CreateDayReview, ShowSettingsAsync, _settings!, _suggestionEngine, view ?? MainView.Overview);
-            _mainWindow = new MainWindow(viewModel, _settings!, QuitAsync);
+            var viewModel = new MainViewModel(_recording!, _updates!, CreateDayReview, ShowSettingsAsync, _settings!, _suggestionEngine, view ?? MainView.Overview);
+            _mainWindow = new MainWindow(viewModel, _settings!, () => QuitAsync());
             _mainWindow.Closed += (_, _) =>
             {
                 _mainWindow = null;
@@ -359,7 +363,8 @@ public partial class App : Application
                 : "It keeps recording in the tray. Open Worklapse or quit it from its tray icon.");
     }
 
-    private async Task QuitAsync()
+    /// <param name="restartForUpdate">Starts Worklapse again once the downloaded update is installed.</param>
+    private async Task QuitAsync(bool restartForUpdate = false)
     {
         if (_quitting)
             return;
@@ -373,6 +378,8 @@ public partial class App : Application
         _platform?.Dispose();
         _tray?.Dispose();
         Log.Info("Worklapse quit.");
+        // A downloaded update installs once this process has gone.
+        _updates?.InstallAfterExit(restartForUpdate);
         _desktop?.Shutdown();
     }
 }

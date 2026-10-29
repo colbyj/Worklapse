@@ -1,0 +1,15 @@
+{
+  "Endpoint": "https://wus2.codesigning.azure.net/",
+  "CodeSigningAccountName": "Presayo",
+  "CertificateProfileName": "Colby",
+  "ExcludeCredentials": [
+    "InteractiveBrowserCredential",
+    "SharedTokenCacheCredential",
+    "VisualStudioCredential",
+    "VisualStudioCodeCredential",
+    "AzureDeveloperCliCredential",
+    "AzurePowerShellCredential",
+    "ManagedIdentityCredential",
+    "WorkloadIdentityCredential"
+  ]
+}

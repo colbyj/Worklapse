@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Worklapse.App.Updates;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Suggestions;
 
@@ -23,10 +24,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _dayReviewIsFresh; // just made or moved to a day: showing it needs no refresh
 
     /// <param name="createDayReview">Makes Day review on a day, or on the latest day recorded (null).</param>
-    public MainViewModel(RecordingViewModel recording, Func<DateOnly?, DayReviewViewModel> createDayReview, Func<Task> openSettings,
-        SettingsStore settings, SuggestionEngine suggestionEngine, MainView first)
+    public MainViewModel(RecordingViewModel recording, AppUpdates updates, Func<DateOnly?, DayReviewViewModel> createDayReview,
+        Func<Task> openSettings, SettingsStore settings, SuggestionEngine suggestionEngine, MainView first)
     {
         Recording = recording;
+        Updates = updates;
         _createDayReview = createDayReview;
         _openSettings = openSettings;
         Overview = new OverviewViewModel(settings, suggestionEngine, OpenDay);
@@ -37,6 +39,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     public RecordingViewModel Recording { get; }
+
+    public AppUpdates Updates { get; }
 
     // These read their data folder and day start from the settings at each load, so they need nothing after a change of either.
     public OverviewViewModel Overview { get; }

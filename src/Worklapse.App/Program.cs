@@ -1,4 +1,5 @@
 using Avalonia;
+using Velopack;
 using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Settings;
 
@@ -9,6 +10,14 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // The installer and updater start Worklapse.exe to run their hooks, and Velopack exits once they're done; first,
+        // so they run even while another Worklapse holds the mutex. It also installs an update downloaded by a run that
+        // ended without quitting. Uninstalling stops Worklapse starting at login (the Run key would name a deleted exe).
+        var velopack = VelopackApp.Build();
+        if (OperatingSystem.IsWindows())
+            velopack.OnBeforeUninstallFastCallback(_ => LoginStartup.Disable());
+        velopack.Run();
+
         // Two recorders would write the same database and video folders; only one instance may run.
         using var instance = new Mutex(initiallyOwned: true, $"Worklapse-{Environment.UserName}", out var isFirst);
         if (!isFirst)

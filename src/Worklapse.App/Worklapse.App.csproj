@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>Worklapse</AssemblyName>
+    <!-- The release's version: release/release.ps1 packs the installer and update under it. -->
+    <Version>0.1.0</Version>
     <RootNamespace>Worklapse.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/worklapse.ico</ApplicationIcon>
@@ -28,6 +30,7 @@
     <PackageReference Include="Avalonia.Controls.ColorPicker" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="FluentIcons.Avalonia" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
 
   <ItemGroup>
