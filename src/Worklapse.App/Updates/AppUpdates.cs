@@ -20,6 +20,9 @@ public sealed partial class AppUpdates : ObservableObject
     private UpdateManager? _manager; // null until an installed Worklapse has looked
     private VelopackAsset? _downloaded;
 
+    /// <summary>This Worklapse's version (the release's, which <c>release/release.ps1</c> packs under).</summary>
+    public static string CurrentVersion { get; } = typeof(AppUpdates).Assembly.GetName().Version?.ToString(3) ?? "?";
+
     /// <param name="restart">Quits Worklapse the usual way, then has <see cref="InstallAfterExit"/> start it again.</param>
     public AppUpdates(Func<Task> restart) => _restart = restart;
 
@@ -32,6 +35,10 @@ public sealed partial class AppUpdates : ObservableObject
 
     public string ReadyText => $"Worklapse {ReadyVersion} is ready.";
 
+    /// <summary>The releases were read and none is newer than this one.</summary>
+    [ObservableProperty]
+    private bool _isUpToDate;
+
     /// <summary>Downloads a newer release if there is one. Failing (offline, say) is only logged.</summary>
     public async Task CheckAsync()
     {
@@ -42,7 +49,10 @@ public sealed partial class AppUpdates : ObservableObject
                 return;
             _manager = manager;
             if (await manager.CheckForUpdatesAsync() is not { } update)
+            {
+                IsUpToDate = true;
                 return;
+            }
             await manager.DownloadUpdatesAsync(update);
             _downloaded = update.TargetFullRelease;
             ReadyVersion = _downloaded.Version.ToString();

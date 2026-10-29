@@ -68,6 +68,17 @@ public partial class SettingsWindow : Window
             await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(ViewModel.DataFolder.Trim()));
     }
 
+    private async void OnOpenLicense(object? sender, RoutedEventArgs e) => await OpenFileAsync(AboutViewModel.LicensePath);
+
+    private async void OnOpenNotices(object? sender, RoutedEventArgs e) => await OpenFileAsync(AboutViewModel.NoticesPath);
+
+    /// <summary>Opens a text file beside the executable in the desktop's viewer for it.</summary>
+    private async Task OpenFileAsync(string path)
+    {
+        if (File.Exists(path))
+            await Launcher.LaunchFileInfoAsync(new FileInfo(path));
+    }
+
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
 
     /// <summary>Deletes the selected category or project, asking first when it's in the history already.</summary>

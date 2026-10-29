@@ -1,5 +1,6 @@
 using Avalonia;
 using Velopack;
+using Worklapse.App.Updates;
 using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Settings;
 
@@ -23,7 +24,7 @@ internal static class Program
         if (!isFirst)
             return 1;
 
-        Log.Start(typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "?");
+        Log.Start(AppUpdates.CurrentVersion);
         // An exception on any other thread ends the process; the log keeps it and the next start says so. (The UI
         // thread's are caught by App.)
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>

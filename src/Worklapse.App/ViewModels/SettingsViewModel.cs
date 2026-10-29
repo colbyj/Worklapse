@@ -4,6 +4,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dapper;
+using Worklapse.App.Updates;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
@@ -38,10 +39,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// </param>
     /// <param name="pastReading">Read Past Days; null where the platform can't read screens.</param>
     /// <param name="showPastReading">Shows Read Past Days' progress window.</param>
-    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, PrimaryScreenSampler? sampler = null,
+    public SettingsViewModel(SettingsStore store, IReadOnlyList<MonitorInfo> monitors, AppUpdates updates, PrimaryScreenSampler? sampler = null,
         bool knowsPrimaryMonitor = true, BackgroundScreenReading? pastReading = null, Action? showPastReading = null)
     {
         _store = store;
+        About = new AboutViewModel(updates);
         _pastReading = pastReading;
         _showPastReading = showPastReading;
         if (pastReading is not null)
@@ -92,7 +94,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     // Tabs, in order.
-    public const int RecordingTab = 0, GeneralTab = 1, ApplicationsTab = 2, ProjectsTab = 3, SuggestionsTab = 4;
+    public const int RecordingTab = 0, GeneralTab = 1, ApplicationsTab = 2, ProjectsTab = 3, SuggestionsTab = 4, AboutTab = 5;
 
     public ObservableCollection<MonitorOption> Monitors { get; } = [];
 
@@ -101,6 +103,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>The Projects page; kept in the history in the data folder.</summary>
     public ProjectsViewModel Projects { get; }
+
+    public AboutViewModel About { get; }
 
     /// <summary>The tab shown; Defaults only applies to (and only shows on) Recording and General.</summary>
     [ObservableProperty]

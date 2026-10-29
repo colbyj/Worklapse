@@ -314,7 +314,7 @@ public partial class App : Application
         var monitors = _platform!.Screen.GetMonitors();
         // The recording preview captures the primary monitor with a source of its own.
         var sampler = _platform.CreateScreenSource is { } createSource ? new PrimaryScreenSampler(createSource()) : null;
-        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, sampler, _platform.KnowsPrimaryMonitor, _pastReading, ShowPastReading) };
+        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, _updates!, sampler, _platform.KnowsPrimaryMonitor, _pastReading, ShowPastReading) };
         var owner = ShowMainWindow();
         await dialog.ShowDialog(owner);
         // Projects and links may have changed (they live in the history, not the settings file).

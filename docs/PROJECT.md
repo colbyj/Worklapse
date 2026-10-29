@@ -436,9 +436,14 @@ profile as Presayo; no secrets), and uploads it as GitHub release `v<Version>` o
   it may be running). Uninstalling removes the Run key (`LoginStartup.Disable`). An update downloaded by a run that
   ended without quitting (a crash, logging off) is applied by Velopack at the next start.
 - `App/Updates/AppUpdates`: an installed Worklapse looks at the GitHub releases (public repo, no token; 60 unauthenticated
-  requests an hour per IP) once at start, downloads a newer one, and shows a bar over every view in the main window
-  (*Restart to Update*). Quitting installs it silently; the button quits the usual way, then the updater installs it with
-  its progress window and starts Worklapse again. Failures are only logged. A build or publish folder never looks.
+  requests an hour per IP) once at start, downloads a newer one, and then shows an icon on the main window's rail,
+  above the recording button, whose menu names the version and offers *Update Now*. Quitting installs it silently;
+  *Update Now* quits the usual way, then the updater installs it with its progress window and starts Worklapse again.
+  Failures are only logged. A build or publish folder never looks.
+- Settings' **About** page (`AboutViewModel`): the version, the waiting update or "up to date" (after a check found
+  nothing), the GPLv3 line, and the third-party components with their licenses, with links that open `LICENSE.txt`
+  and `THIRD-PARTY-NOTICES.txt` (copied beside the executable in builds as well as publishes). Its component list
+  matches the list at the top of the notices file, without versions: change both together.
 
 ## Building, running, testing
 

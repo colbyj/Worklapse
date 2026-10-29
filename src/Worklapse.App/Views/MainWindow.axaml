@@ -71,6 +71,18 @@
             BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,1,0" Padding="0,6">
       <DockPanel>
         <StackPanel DockPanel.Dock="Bottom" Spacing="2">
+          <!-- A downloaded update: its menu installs it now (quitting installs it too). -->
+          <Button Classes="rail" IsVisible="{Binding Updates.IsReady}" ToolTip.Tip="{Binding Updates.ReadyText}"
+                  AutomationProperties.Name="Update available">
+            <Button.Flyout>
+              <MenuFlyout Placement="RightEdgeAlignedBottom">
+                <MenuItem Header="{Binding Updates.ReadyText}" IsEnabled="False" />
+                <Separator />
+                <MenuItem Header="Update Now" Command="{Binding Updates.RestartCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+            <ic:SymbolIcon Symbol="ArrowCircleDown" Foreground="{DynamicResource UiAccentBrush}" />
+          </Button>
           <Button Classes="rail" Command="{Binding Recording.TogglePauseCommand}" ToolTip.Tip="{Binding Recording.RailTip}"
                   AutomationProperties.Name="{Binding Recording.RailTip}">
             <Panel Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -106,19 +118,6 @@
               <ic:SymbolIcon Symbol="DocumentTable" />
             </Panel>
           </Button>
-        </StackPanel>
-      </DockPanel>
-    </Border>
-
-    <!-- A downloaded update, over every view. -->
-    <Border DockPanel.Dock="Top" IsVisible="{Binding Updates.IsReady}" Padding="10,5" BorderThickness="0,0,0,1"
-            Background="{DynamicResource UiAccentTintBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}">
-      <DockPanel>
-        <Button DockPanel.Dock="Right" Content="Restart to Update" Command="{Binding Updates.RestartCommand}" />
-        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <ic:SymbolIcon Symbol="ArrowCircleDown" FontSize="16" VerticalAlignment="Center" />
-          <TextBlock Text="{Binding Updates.ReadyText}" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <TextBlock Text="It installs when Worklapse quits." VerticalAlignment="Center" />
         </StackPanel>
       </DockPanel>
     </Border>

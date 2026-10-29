@@ -694,6 +694,46 @@
         </StackPanel>
       </TabItem>
 
+      <TabItem Header="About">
+        <ScrollViewer>
+          <StackPanel Margin="10" Spacing="8" DataContext="{Binding About}" x:DataType="vm:AboutViewModel">
+            <Border Classes="group">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="groupHeader" Text="Worklapse" />
+                <TextBlock Text="{Binding VersionText}" />
+                <TextBlock IsVisible="{Binding Updates.IsReady}" TextWrapping="Wrap">
+                  <Run Text="{Binding Updates.ReadyText}" FontWeight="SemiBold" />
+                  <Run Text="It installs when Worklapse quits, or now from the update icon in the main window." />
+                </TextBlock>
+                <TextBlock Classes="hint" Text="Worklapse is up to date" IsVisible="{Binding Updates.IsUpToDate}" />
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,4,0,0">
+                  <TextBlock Text="Free software under the GNU General Public License, version 3." VerticalAlignment="Center" />
+                  <HyperlinkButton Content="License" Padding="0" Click="OnOpenLicense" IsVisible="{Binding HasLicense}" VerticalAlignment="Center" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="group">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="groupHeader" Text="Third-party software" />
+                <ItemsControl ItemsSource="{Binding Components}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ThirdPartyComponent">
+                      <Grid ColumnDefinitions="280,*" Margin="0,1">
+                        <TextBlock Text="{Binding Name}" />
+                        <TextBlock Grid.Column="1" Text="{Binding License}" Classes="hint" VerticalAlignment="Center" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <HyperlinkButton Content="Third-party notices" Padding="0" Click="OnOpenNotices" IsVisible="{Binding HasNotices}"
+                                 ToolTip.Tip="Each component's version, copyright and license" Margin="0,4,0,0" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
     </TabControl>
   </DockPanel>
 </Window>
