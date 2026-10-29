@@ -56,17 +56,36 @@ public sealed class WorklapseDatabase : IDisposable
 
     public void Dispose() => Connection.Dispose();
 
+    /// <summary>
+    /// Brings the schema up to date. The recorder and the UI open their own connections, often at the same moment, so the
+    /// steps run under the write lock and the version is read again once it is held: the connections that lose the race
+    /// wait (busy_timeout), then find the schema current.
+    /// </summary>
     private void Migrate()
     {
-        using var versionCommand = Command("PRAGMA user_version;");
-        var version = Convert.ToInt32(versionCommand.ExecuteScalar());
+        if (ReadVersion() == SchemaVersion)
+            return;
+        using var transaction = Connection.BeginTransaction(deferred: false);
+        var version = ReadVersion();
         if (version > SchemaVersion)
             throw new DatabaseVersionException(
                 $"The database in '{DataFolder}' was created by a newer version of Worklapse (schema {version}).");
+        MigrateFrom(version);
+        transaction.Commit();
+    }
+
+    private int ReadVersion()
+    {
+        using var command = Command("PRAGMA user_version;");
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>The steps from <paramref name="version"/> to <see cref="SchemaVersion"/>, inside the caller's transaction.</summary>
+    private void MigrateFrom(int version)
+    {
 
         if (version < 1)
         {
-            using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE apps (
                     id        INTEGER PRIMARY KEY,
@@ -135,35 +154,29 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 1;");
-            transaction.Commit();
         }
 
         if (version < 2)
         {
             // Segments are first written to a staging file and encoded to AV1 when complete. While staged,
             // segment_frames point into the staging file (path + ".staging").
-            using var transaction = BeginTransaction();
             Execute("""
                 ALTER TABLE segments ADD COLUMN state INTEGER NOT NULL DEFAULT 1;   -- 0 = staged, 1 = encoded
                 CREATE INDEX ix_segments_state ON segments (state) WHERE state = 0;
                 """);
             Execute("PRAGMA user_version = 2;");
-            transaction.Commit();
         }
 
         if (version < 3)
         {
-            using var transaction = BeginTransaction();
             Execute("ALTER TABLE apps ADD COLUMN productive INTEGER NOT NULL DEFAULT 0;");
             Execute("PRAGMA user_version = 3;");
-            transaction.Commit();
         }
 
         if (version < 4)
         {
             // Removing deleted captures' video from disk. Segment frames can be dropped once no capture refers
             // to them; the batch encoder then removes or rebuilds their segment.
-            using var transaction = BeginTransaction();
             Execute("""
                 -- Finds who still refers to a segment frame (also what the foreign key check on deleting one uses).
                 CREATE INDEX ix_frames_segment ON frames (segment_id, frame_index);
@@ -192,14 +205,12 @@ public sealed class WorklapseDatabase : IDisposable
                 WHERE NOT EXISTS (SELECT 1 FROM frames f WHERE f.segment_id = sf.segment_id AND f.frame_index = sf.frame_index);
                 """);
             Execute("PRAGMA user_version = 4;");
-            transaction.Commit();
         }
 
         if (version < 5)
         {
             // Websites, from the browser's address bar at capture time (domain only). A capture with a site is
             // on-task if the site is; otherwise it follows its app. Older captures have no site.
-            using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE sites (
                     id          INTEGER PRIMARY KEY,
@@ -210,7 +221,6 @@ public sealed class WorklapseDatabase : IDisposable
                 CREATE INDEX ix_captures_site ON captures (site_id) WHERE site_id IS NOT NULL;
                 """);
             Execute("PRAGMA user_version = 5;");
-            transaction.Commit();
         }
 
         if (version < 6)
@@ -218,7 +228,6 @@ public sealed class WorklapseDatabase : IDisposable
             // Which monitors were attached at each capture, captured or not, so Day review shows the arrangement
             // as it was. Plugging monitors in or out adds monitors rows, and without this every monitor of the day
             // was drawn at once, on top of each other. Older captures have none (Day review works it out).
-            using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE layouts (
                     id        INTEGER PRIMARY KEY,
@@ -227,14 +236,12 @@ public sealed class WorklapseDatabase : IDisposable
                 ALTER TABLE captures ADD COLUMN layout_id INTEGER REFERENCES layouts (id);
                 """);
             Execute("PRAGMA user_version = 6;");
-            transaction.Commit();
         }
 
         if (version < 7)
         {
             // Recording as images (JPEG or WebP) instead of video: each image is a segment with one frame, in its own
             // file. Staged means the recorder may still show it again for a monitor that hasn't changed.
-            using var transaction = BeginTransaction();
             Execute("""
                 ALTER TABLE segments ADD COLUMN format INTEGER NOT NULL DEFAULT 0;   -- 0 = AV1 video, 1 = JPEG, 2 = WebP
 
@@ -242,20 +249,17 @@ public sealed class WorklapseDatabase : IDisposable
                 CREATE INDEX ix_segments_path ON segments (path);
                 """);
             Execute("PRAGMA user_version = 7;");
-            transaction.Commit();
         }
 
         if (version < 8)
         {
             // Apps (by exe name) and sites nothing is recorded for while they have the focus: no capture at all,
             // so that time shows as not recorded.
-            using var transaction = BeginTransaction();
             Execute("""
                 ALTER TABLE apps ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE sites ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
                 """);
             Execute("PRAGMA user_version = 8;");
-            transaction.Commit();
         }
 
         if (version < 9)
@@ -263,7 +267,6 @@ public sealed class WorklapseDatabase : IDisposable
             // Projects. An app or site linked to a project marks its active time with it; ranges set by hand override
             // the links (a NULL project there means "no project"). Notes belonged to a project and a moment, shown
             // on the block of that project around it (until schema 10). The timesheet holds the time to bill per project per day.
-            using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE categories (
                     id     INTEGER PRIMARY KEY,
@@ -312,13 +315,11 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 9;");
-            transaction.Commit();
         }
 
         if (version < 10)
         {
             // Notes are per project per day, not per block (2026-10-19); none had been written yet to carry over.
-            using var transaction = BeginTransaction();
             Execute("""
                 DROP TABLE notes;
 
@@ -330,14 +331,12 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 10;");
-            transaction.Commit();
         }
 
         if (version < 11)
         {
             // Window title rules: a capture whose window title contains a project's text (in one app, or any) is marked
             // with the project, before its site's and app's links. Looked up when history is read, like the links.
-            using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE title_rules (
                     id          INTEGER PRIMARY KEY,
@@ -348,7 +347,6 @@ public sealed class WorklapseDatabase : IDisposable
                 );
                 """);
             Execute("PRAGMA user_version = 11;");
-            transaction.Commit();
         }
 
         if (version < 12)
@@ -356,7 +354,6 @@ public sealed class WorklapseDatabase : IDisposable
             // Captures imported from TimeSnapper, by its ACTIVITY.ID, so importing again adds only what is new. A row
             // stays when its capture is deleted (capture_id NULL), so what was deleted doesn't come back. Captures
             // without a row here are Worklapse's own.
-            using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE timesnapper_imports (
                     activity_id  INTEGER PRIMARY KEY,
@@ -364,14 +361,12 @@ public sealed class WorklapseDatabase : IDisposable
                 );
                 """);
             Execute("PRAGMA user_version = 12;");
-            transaction.Commit();
         }
 
         if (version < 13)
         {
             // Suggested projects (docs/SUGGESTIONS.md): the words read off each capture's active window, what apps, sites
             // and projects opt out of, and the suggested blocks with the developer's decisions on them.
-            using var transaction = BeginTransaction();
             Execute("""
                 -- Words read off a capture's active window (lower case, each once, space-separated), for suggestions only.
                 -- Never the text as read. Goes with its capture, and when reading is turned off for its app, site or project.
@@ -412,26 +407,22 @@ public sealed class WorklapseDatabase : IDisposable
                 ) WITHOUT ROWID;
                 """);
             Execute("PRAGMA user_version = 13;");
-            transaction.Commit();
         }
 
         if (version < 14)
         {
             // When a project runs: suggestions don't offer it outside those days.
-            using var transaction = BeginTransaction();
             Execute("""
                 ALTER TABLE projects ADD COLUMN starts_on TEXT;   -- its first day (yyyy-MM-dd); NULL = no limit
                 ALTER TABLE projects ADD COLUMN ends_on   TEXT;   -- its last day
                 """);
             Execute("PRAGMA user_version = 14;");
-            transaction.Commit();
         }
 
         if (version < 15)
         {
             // Suggestions become stretches of one project's time, and the breaks between project time are offered on their
             // own. Open blocks are worked out again as stretches; decided ones stay, so a rejected one isn't offered again.
-            using var transaction = BeginTransaction();
             Execute("""
                 DELETE FROM suggestions WHERE state IN (0, 3);
                 DROP TABLE suggestion_parts;
@@ -450,19 +441,16 @@ public sealed class WorklapseDatabase : IDisposable
                 CREATE INDEX ix_suggestion_breaks_start ON suggestion_breaks (start_ms);
                 """);
             Execute("PRAGMA user_version = 15;");
-            transaction.Commit();
         }
 
         if (version < 16)
         {
             // On-task or off-task set by hand on stretches of time, over what the app or site says.
-            using var transaction = BeginTransaction();
             Execute("""
                 ALTER TABLE captures ADD COLUMN task_mark INTEGER;   -- 1 = on-task, 0 = off-task, NULL = as its app or site
                 CREATE INDEX ix_captures_task_mark ON captures (task_mark) WHERE task_mark IS NOT NULL;
                 """);
             Execute("PRAGMA user_version = 16;");
-            transaction.Commit();
         }
     }
 }

@@ -26,6 +26,28 @@ public class StorageTests
     }
 
     [Fact]
+    public void ConnectionsOpeningAnOlderDatabaseAtOnceUpgradeItOnce()
+    {
+        using var folder = new TempFolder();
+        for (var round = 0; round < 10; round++)
+        {
+            using (var db = WorklapseDatabase.Open(folder.Path))
+                db.Execute("DROP INDEX ix_captures_task_mark; ALTER TABLE captures DROP COLUMN task_mark; PRAGMA user_version = 15;");
+
+            // The recorder, Day review and the Overview's background load all open one when the app starts.
+            using var start = new Barrier(4);
+            var opened = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                using var db = WorklapseDatabase.Open(folder.Path);
+                using var version = db.Command("PRAGMA user_version;");
+                return Convert.ToInt32(version.ExecuteScalar());
+            })).ToArray();
+            Assert.All(opened.Select(t => t.GetAwaiter().GetResult()), v => Assert.Equal(16, v));
+        }
+    }
+
+    [Fact]
     public void AppsAreDeduplicatedIncludingThoseWithoutAPath()
     {
         using var folder = new TempFolder();
