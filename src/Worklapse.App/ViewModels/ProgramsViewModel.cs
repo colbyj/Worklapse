@@ -13,8 +13,8 @@ public sealed partial class ProgramRow : ObservableObject
     {
         Program = usage.Program;
         Recorded = usage.Recorded;
-        Saved = usage.Productive;
-        _productive = usage.Productive;
+        Saved = usage.OnTask;
+        _onTask = usage.OnTask;
         SavedExcluded = usage.Excluded;
         _excluded = usage.Excluded;
         SavedProject = project;
@@ -29,7 +29,7 @@ public sealed partial class ProgramRow : ObservableObject
     public TimeSpan Recorded { get; }
     public string RecordedText => DurationText.Of(Recorded);
 
-    /// <summary>The classification in the database; <see cref="Productive"/> is what the dialog shows.</summary>
+    /// <summary>The classification in the database; <see cref="OnTask"/> is what the dialog shows.</summary>
     public bool Saved { get; set; }
 
     /// <summary>The exclusion in the database; <see cref="Excluded"/> is what the dialog shows.</summary>
@@ -42,10 +42,10 @@ public sealed partial class ProgramRow : ObservableObject
     public bool SavedReadScreen { get; set; }
     public bool SavedLearn { get; set; }
 
-    public bool IsDirty => Productive != Saved || Excluded != SavedExcluded || Project != SavedProject
+    public bool IsDirty => OnTask != Saved || Excluded != SavedExcluded || Project != SavedProject
         || ReadScreen != SavedReadScreen || Learn != SavedLearn;
 
-    [ObservableProperty] private bool _productive;
+    [ObservableProperty] private bool _onTask;
 
     /// <summary>Nothing is recorded while it has the focus.</summary>
     [ObservableProperty] private bool _excluded;
@@ -71,7 +71,7 @@ public sealed partial class ProgramRow : ObservableObject
 
 public enum ProgramSort
 {
-    Productive,
+    OnTask,
     Excluded,
     ReadScreen,
     Learn,
@@ -82,7 +82,7 @@ public enum ProgramSort
 }
 
 /// <summary>
-/// The Applications page of the Settings dialog: every app and website recorded, to mark productive, exclude from
+/// The Applications page of the Settings dialog: every app and website recorded, to mark on-task, exclude from
 /// recording, link to a project, or opt out of suggestions (reading its screen, learning from it). The marks live in the history database (they belong with the history), and like
 /// the other settings take effect on Apply or OK.
 /// </summary>
@@ -107,7 +107,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
     [ObservableProperty] private ProgramSort _sort = ProgramSort.Recorded;
     [ObservableProperty] private bool _descending = true;
 
-    public string ProductiveHeader => Header("On-task", ProgramSort.Productive);
+    public string OnTaskHeader => Header("On-task", ProgramSort.OnTask);
     public string ExcludedHeader => Header("Excluded", ProgramSort.Excluded);
     public string ReadScreenHeader => Header("Read screen", ProgramSort.ReadScreen);
     public string LearnHeader => Header("Learn", ProgramSort.Learn);
@@ -173,8 +173,8 @@ public sealed partial class ProgramsViewModel : ObservableObject
         using var history = new HistoryStore(WorklapseDatabase.Open(dataFolder));
         foreach (var row in changed)
         {
-            if (row.Productive != row.Saved)
-                history.SetProductive(row.Program, row.Productive);
+            if (row.OnTask != row.Saved)
+                history.SetOnTask(row.Program, row.OnTask);
             if (row.Excluded != row.SavedExcluded)
                 history.SetExcluded(row.Program, row.Excluded);
             if (row.Project != row.SavedProject)
@@ -183,7 +183,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
                 history.SetReadScreen(row.Program, row.ReadScreen);
             if (row.Learn != row.SavedLearn)
                 history.SetLearn(row.Program, row.Learn);
-            row.Saved = row.Productive;
+            row.Saved = row.OnTask;
             row.SavedExcluded = row.Excluded;
             row.SavedProject = row.Project;
             row.SavedReadScreen = row.ReadScreen;
@@ -197,7 +197,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
         if (Sort == column)
             Descending = !Descending;
         else
-            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.Productive or ProgramSort.Excluded
+            (Sort, Descending) = (column, column is ProgramSort.Recorded or ProgramSort.OnTask or ProgramSort.Excluded
                 or ProgramSort.ReadScreen or ProgramSort.Learn);
         Refresh();
     }
@@ -210,7 +210,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
         IEnumerable<ProgramRow> rows = filter.Length == 0 ? _all : _all.Where(r => r.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase));
         Func<ProgramRow, object> key = Sort switch
         {
-            ProgramSort.Productive => r => r.Productive,
+            ProgramSort.OnTask => r => r.OnTask,
             ProgramSort.Excluded => r => r.Excluded,
             ProgramSort.ReadScreen => r => r.ReadScreen,
             ProgramSort.Learn => r => r.Learn,
@@ -227,7 +227,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
         Status = _all.Count == 0 ? "Nothing recorded yet."
             : filter.Length > 0 ? $"{Rows.Count} of {apps} apps and {sites} websites"
             : $"{apps} apps and {sites} websites";
-        OnPropertyChanged(nameof(ProductiveHeader));
+        OnPropertyChanged(nameof(OnTaskHeader));
         OnPropertyChanged(nameof(ExcludedHeader));
         OnPropertyChanged(nameof(ReadScreenHeader));
         OnPropertyChanged(nameof(LearnHeader));

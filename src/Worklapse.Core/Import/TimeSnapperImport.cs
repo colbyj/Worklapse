@@ -32,7 +32,7 @@ public sealed record TimeSnapperResult(int Imported, int WithoutPicture, int Alr
 /// Worklapse's own counts for is left out. TimeSnapper fills only what Worklapse didn't record (not running, paused,
 /// an excluded app).</item>
 /// <item>Importing again adds only what is new (<c>timesnapper_imports</c>).</item>
-/// <item>Programs and sites TimeSnapper counts as productive are marked so, if Worklapse has them; nothing is unmarked.</item>
+/// <item>Programs and sites TimeSnapper counts as productive are marked on-task, if Worklapse has them; nothing is unmarked.</item>
 /// <item>Sites whose name isn't a host (TimeSnapper sometimes took a page title for one) are dropped: those captures
 /// have their browser only.</item>
 /// </list>
@@ -110,7 +110,7 @@ public static class TimeSnapperImport
             }
         }
         added += Write(store, data, batch, monitorId, layoutId);
-        MarkProductive(db, data);
+        MarkOnTask(db, data);
         progress?.Report(new TimeSnapperProgress(read, data.ActivityCount, added));
         return new TimeSnapperResult(added, withoutPicture, already, recorded, deleted, unreadable);
     }
@@ -315,8 +315,8 @@ public static class TimeSnapperImport
         }
     }
 
-    /// <summary>Marks what TimeSnapper counts as productive, by exe name or site, where Worklapse has it.</summary>
-    private static void MarkProductive(WorklapseDatabase db, ITimeSnapperData data)
+    /// <summary>Marks on-task what TimeSnapper counts as productive, by exe name or site, where Worklapse has it.</summary>
+    private static void MarkOnTask(WorklapseDatabase db, ITimeSnapperData data)
     {
         using var transaction = db.BeginTransaction();
         foreach (var id in data.Classified)

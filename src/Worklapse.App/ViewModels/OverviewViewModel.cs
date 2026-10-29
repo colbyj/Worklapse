@@ -58,7 +58,7 @@ public sealed record OverviewCell(string Text, bool IsZero);
 
 /// <summary>
 /// A line of the totals tree: a category (or "No category", or "No project") that expands and collapses, or a project
-/// (or Productive / Other under "No project"). <see cref="Brush"/> is null for time without a project, drawn as an
+/// (or On-task / Off-task under "No project"). <see cref="Brush"/> is null for time without a project, drawn as an
 /// empty square as in Day review.
 /// </summary>
 public sealed record OverviewTreeRow(
@@ -191,7 +191,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             return;
         var days = data.Days
             .Where(d => d.Extent is not null
-                && (d.Time.Unassigned.Productive + d.Time.Unassigned.Other > TimeSpan.Zero || data.Suggestions.GetValueOrDefault(d.Day) > 0))
+                && (d.Time.Unassigned.OnTask + d.Time.Unassigned.OffTask > TimeSpan.Zero || data.Suggestions.GetValueOrDefault(d.Day) > 0))
             .Select(d => d.Day)
             .OrderByDescending(d => d)
             .ToList();
@@ -257,8 +257,8 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             var activity = summary.Activity
                 .Select(r => new TimelineSpan(Seconds(midnight, r.Start), Seconds(midnight, r.End), r.Kind switch
                 {
-                    ActivityKind.Productive => TimelineKind.Productive,
-                    ActivityKind.Other => TimelineKind.Other,
+                    ActivityKind.OnTask => TimelineKind.OnTask,
+                    ActivityKind.OffTask => TimelineKind.OffTask,
                     _ => TimelineKind.Idle,
                 }, Marked: false))
                 .ToList();
@@ -289,7 +289,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             var time = summary.Time;
             var bar = data.Catalog.ByCategory(time.Totals.Keys)
                 .Select(g => new BarSegment(g.Projects.Sum(p => time.Totals[p].Assigned.TotalSeconds), ProjectCatalog.BrushOf(g.Category)))
-                .Append(new BarSegment((time.Unassigned.Productive + time.Unassigned.Other).TotalSeconds, AppBrushes.NotRecorded, Hatched: true))
+                .Append(new BarSegment((time.Unassigned.OnTask + time.Unassigned.OffTask).TotalSeconds, AppBrushes.NotRecorded, Hatched: true))
                 .Where(s => s.Value > 0)
                 .ToList();
             var empty = time.Assigned == TimeSpan.Zero && time.Active == TimeSpan.Zero;
@@ -324,12 +324,12 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
                         Cells(totals.Assigned[project]), Hm(totals.Assigned[project].SumTime(t => t)), Hm(totals.Logged.GetValueOrDefault(project))));
         }
 
-        var noProject = totals.Productive.Zip(totals.Other, (p, o) => p + o).ToArray();
+        var noProject = totals.OnTask.Zip(totals.OffTask, (p, o) => p + o).ToArray();
         AddGroup(NoProjectKey, "No project", null, noProject, "–");
         if (!_collapsed.Contains(NoProjectKey))
         {
-            Tree.Add(new OverviewTreeRow("On-task", AppBrushes.Productive, false, false, null, Cells(totals.Productive), Hm(totals.Productive.SumTime(t => t)), "–"));
-            Tree.Add(new OverviewTreeRow("Off-task", AppBrushes.Other, false, false, null, Cells(totals.Other), Hm(totals.Other.SumTime(t => t)), "–"));
+            Tree.Add(new OverviewTreeRow("On-task", AppBrushes.OnTask, false, false, null, Cells(totals.OnTask), Hm(totals.OnTask.SumTime(t => t)), "–"));
+            Tree.Add(new OverviewTreeRow("Off-task", AppBrushes.OffTask, false, false, null, Cells(totals.OffTask), Hm(totals.OffTask.SumTime(t => t)), "–"));
         }
 
         var assigned = totals.AssignedPerColumn();

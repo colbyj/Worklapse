@@ -13,7 +13,7 @@ public readonly record struct MonitorFrame(long MonitorId, FrameRef Frame);
 
 /// <summary>One capture tick as recorded, with how its app and site are classified now.</summary>
 /// <param name="Site">The website a browser showed (domain only); null for other apps and older captures.</param>
-/// <param name="SiteProductive">The site's classification; null when there is no site.</param>
+/// <param name="SiteOnTask">The site's classification; null when there is no site.</param>
 /// <param name="MonitorIds">
 /// The monitors attached at the time, captured or not (ascending ids, see <see cref="DayHistory.Monitors"/>): as
 /// recorded, or for captures recorded before that, as <see cref="MonitorLayouts"/> works it out.
@@ -30,8 +30,8 @@ public sealed record CaptureRecord(
     string? Site,
     string? WindowTitle,
     PixelRect? Window,
-    bool AppProductive,
-    bool? SiteProductive,
+    bool AppOnTask,
+    bool? SiteOnTask,
     bool PendingDelete,
     IReadOnlyList<MonitorFrame> Frames,
     IReadOnlyList<long> MonitorIds,
@@ -43,31 +43,31 @@ public sealed record CaptureRecord(
     public bool IsActive => Kind == CaptureKind.Active;
 
     /// <summary>
-    /// On-task (shown as such; "productive" in the code and the database): a mark set by hand on its time decides, then
+    /// On-task ("productive" in the database): a mark set by hand on its time decides, then
     /// the more specific classification: the site's when there is one, otherwise the app's. So a browser marked on-task
     /// counts only for pages without a known site.
     /// </summary>
-    public bool Productive => TaskMark ?? SiteProductive ?? AppProductive;
+    public bool OnTask => TaskMark ?? SiteOnTask ?? AppOnTask;
 
     /// <summary>
     /// The project this capture's rules and links point to: a window title rule's when one matches, otherwise the site's
-    /// link when it has one, otherwise the app's. Unlike <see cref="Productive"/>, a site without a link leaves it to its
+    /// link when it has one, otherwise the app's. Unlike <see cref="OnTask"/>, a site without a link leaves it to its
     /// browser, so a browser kept for one project covers every page that isn't linked elsewhere.
     /// </summary>
     public long? LinkedProjectId => RuleProjectId ?? SiteProjectId ?? AppProjectId;
 }
 
 /// <summary>
-/// What a day's totals need of a capture: when, active or idle, productive, marked for deletion, and the project its
+/// What a day's totals need of a capture: when, active or idle, on-task, marked for deletion, and the project its
 /// links point to (<see cref="CaptureRecord.LinkedProjectId"/>). Read for many days at once
 /// (<see cref="HistoryStore.LoadSamples"/>) without names, titles or frames.
 /// </summary>
-public readonly record struct ActivitySample(DateTimeOffset Time, CaptureKind Kind, bool Productive, bool PendingDelete, long? LinkedProjectId)
+public readonly record struct ActivitySample(DateTimeOffset Time, CaptureKind Kind, bool OnTask, bool PendingDelete, long? LinkedProjectId)
 {
     public bool IsActive => Kind == CaptureKind.Active;
 
     public static ActivitySample Of(CaptureRecord capture) =>
-        new(capture.Time, capture.Kind, capture.Productive, capture.PendingDelete, capture.LinkedProjectId);
+        new(capture.Time, capture.Kind, capture.OnTask, capture.PendingDelete, capture.LinkedProjectId);
 }
 
 public enum ProgramKind
@@ -76,7 +76,7 @@ public enum ProgramKind
     Site,
 }
 
-/// <summary>An app (by exe name) or a website (by domain), as classified productive or not.</summary>
+/// <summary>An app (by exe name) or a website (by domain), as classified on-task or not.</summary>
 public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 
 /// <summary>An app or site with its classification and how long it was recorded.</summary>
@@ -84,7 +84,7 @@ public readonly record struct ProgramKey(ProgramKind Kind, string Name);
 /// <param name="ProjectId">The project its active time is marked with, if it's linked to one.</param>
 /// <param name="ReadScreen">The text in its windows is read, for suggestions.</param>
 /// <param name="Learn">Its windows teach and sway suggestions.</param>
-public sealed record ProgramUsage(ProgramKey Program, bool Productive, bool Excluded, TimeSpan Recorded, long? ProjectId = null,
+public sealed record ProgramUsage(ProgramKey Program, bool OnTask, bool Excluded, TimeSpan Recorded, long? ProjectId = null,
     bool ReadScreen = true, bool Learn = true);
 
 /// <summary>A window title as recorded in an app (by exe name), with its active time.</summary>
@@ -105,7 +105,7 @@ public sealed record DayHistory(DateOnly Day, IReadOnlyList<CaptureRecord> Captu
 /// (no input); NotRecorded is time inside the span with no captures at all (Worklapse not running, paused,
 /// or the screen locked).
 /// </summary>
-public sealed record SpanSummary(TimeSpan Length, TimeSpan Active, TimeSpan Productive, TimeSpan Other, TimeSpan Idle, TimeSpan Marked, TimeSpan NotRecorded)
+public sealed record SpanSummary(TimeSpan Length, TimeSpan Active, TimeSpan OnTask, TimeSpan OffTask, TimeSpan Idle, TimeSpan Marked, TimeSpan NotRecorded)
 {
     /// <summary>
     /// Sums a span. Each capture stands for the time until the next one, capped at
@@ -114,7 +114,7 @@ public sealed record SpanSummary(TimeSpan Length, TimeSpan Active, TimeSpan Prod
     public static SpanSummary For(IReadOnlyList<CaptureRecord> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
     {
         var active = TimeSpan.Zero;
-        var productive = TimeSpan.Zero;
+        var onTask = TimeSpan.Zero;
         var marked = TimeSpan.Zero;
         var idle = TimeSpan.Zero;
         foreach (var (capture, length) in Lengths(captures, start, end, maxCaptureLength))
@@ -124,8 +124,8 @@ public sealed record SpanSummary(TimeSpan Length, TimeSpan Active, TimeSpan Prod
             else if (capture.IsActive)
             {
                 active += length;
-                if (capture.Productive)
-                    productive += length;
+                if (capture.OnTask)
+                    onTask += length;
             }
             else
             {
@@ -135,7 +135,7 @@ public sealed record SpanSummary(TimeSpan Length, TimeSpan Active, TimeSpan Prod
 
         var total = end - start;
         var notRecorded = total - active - marked - idle;
-        return new SpanSummary(total, active, productive, active - productive, idle, marked,
+        return new SpanSummary(total, active, onTask, active - onTask, idle, marked,
             notRecorded < TimeSpan.Zero ? TimeSpan.Zero : notRecorded);
     }
 

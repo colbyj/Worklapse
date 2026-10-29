@@ -11,8 +11,8 @@ public class ProjectTests
     private static readonly DateOnly Day = DateOnly.FromDateTime(Nine.LocalDateTime);
 
     private static CaptureRecord Capture(int seconds, long? appProject = null, CaptureKind kind = CaptureKind.Active,
-        string? site = null, long? siteProject = null, bool productive = false, bool marked = false) =>
-        new(seconds, Nine.AddSeconds(seconds), kind, "app.exe", site, "Title", null, productive, site is null ? null : productive,
+        string? site = null, long? siteProject = null, bool onTask = false, bool marked = false) =>
+        new(seconds, Nine.AddSeconds(seconds), kind, "app.exe", site, "Title", null, onTask, site is null ? null : onTask,
             marked, [], [], appProject, siteProject);
 
     private static ProjectTime Build(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan>? spans = null) =>
@@ -115,13 +115,13 @@ public class ProjectTests
         var (code, firefox, github) = (new ProgramKey(ProgramKind.App, "Code.exe"), new ProgramKey(ProgramKind.App, "firefox.exe"),
             new ProgramKey(ProgramKind.Site, "github.com"));
 
-        // Productive: a site always decides for its pages, so a browser's mark reaches only pages without one.
-        Assert.Equal([(0, 10), (50, 60), (70, 85)], Seconds(MarkReach.Productive(captures, code, Max)));
-        Assert.Equal([(10, 20)], Seconds(MarkReach.Productive(captures, firefox, Max)));
-        Assert.Equal([(20, 30)], Seconds(MarkReach.Productive(captures, github, Max)));
+        // On-task: a site always decides for its pages, so a browser's mark reaches only pages without one.
+        Assert.Equal([(0, 10), (50, 60), (70, 85)], Seconds(MarkReach.OnTask(captures, code, Max)));
+        Assert.Equal([(10, 20)], Seconds(MarkReach.OnTask(captures, firefox, Max)));
+        Assert.Equal([(20, 30)], Seconds(MarkReach.OnTask(captures, github, Max)));
         // Time marked on- or off-task by hand isn't the app's to decide.
         var withMark = captures.Select((c, i) => i == 0 ? c with { TaskMark = true } : c).ToArray();
-        Assert.Equal([(50, 60), (70, 85)], Seconds(MarkReach.Productive(withMark, code, Max)));
+        Assert.Equal([(50, 60), (70, 85)], Seconds(MarkReach.OnTask(withMark, code, Max)));
 
         // A link: not where time is set by hand; a browser's also reaches sites without a link of their own.
         Assert.Equal([(10, 12), (15, 20), (30, 40)], Seconds(MarkReach.Link(captures, [Span(12, 15, null)], firefox, Max)));
@@ -140,9 +140,9 @@ public class ProjectTests
     }
 
     [Fact]
-    public void ProductiveTimeIsCountedPerProjectAndForTimeWithoutOne()
+    public void OnTaskTimeIsCountedPerProjectAndForTimeWithoutOne()
     {
-        var time = Build([Capture(0, appProject: 1, productive: true), Capture(10, appProject: 1), Capture(20, productive: true), Capture(30)]);
+        var time = Build([Capture(0, appProject: 1, onTask: true), Capture(10, appProject: 1), Capture(20, onTask: true), Capture(30)]);
 
         Assert.Equal(new ProjectTotals(TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(10)), time.Totals[1]);
         Assert.Equal(new UnassignedTotals(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(15), TimeSpan.Zero), time.Unassigned);
@@ -330,14 +330,14 @@ public class ProjectTests
         var northwind = recording.GetOrAddSite("northwind.example");
         history.SetProject(new ProgramKey(ProgramKind.App, "firefox.exe"), worklapse);
         history.SetProject(new ProgramKey(ProgramKind.Site, "northwind.example"), client);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "firefox.exe"), true);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "Code.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "firefox.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "Code.exe"), true);
 
         for (var day = 0; day < 3; day++)
         {
             var at = Nine.AddDays(day);
             recording.InsertCapture(at, CaptureKind.Active, code, "t", null);
-            recording.InsertCapture(at.AddSeconds(10), CaptureKind.Active, firefox, "t", null, github);    // site not productive, browser's link
+            recording.InsertCapture(at.AddSeconds(10), CaptureKind.Active, firefox, "t", null, github);    // site not on-task, browser's link
             recording.InsertCapture(at.AddSeconds(20), CaptureKind.Active, firefox, "t", null, northwind); // the site's link
             recording.InsertCapture(at.AddSeconds(30), CaptureKind.Active, firefox, "t", null);            // no site: the browser decides
             recording.InsertCapture(at.AddSeconds(40), CaptureKind.Idle, null, null, null);
@@ -349,7 +349,7 @@ public class ProjectTests
         Assert.Equal(expected, history.LoadSamples(Day, Day.AddDays(2)));
         Assert.Equal(
             [(true, (long?)null), (false, worklapse), (false, client), (true, worklapse), (false, null)],
-            expected.Take(5).Select(s => (s.Productive, s.LinkedProjectId)));
+            expected.Take(5).Select(s => (s.OnTask, s.LinkedProjectId)));
         Assert.True(expected[3].PendingDelete);
     }
 
@@ -366,7 +366,7 @@ public class ProjectTests
         var code = recording.GetOrAddApp("Code.exe", null);
         var other = recording.GetOrAddApp("game.exe", null);
         history.SetProject(new ProgramKey(ProgramKind.App, "Code.exe"), worklapse);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "Code.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "Code.exe"), true);
 
         // Day 1: Code for a minute, then a game, idle, and a capture marked for deletion; one more just before midnight.
         for (var s = 0; s < 60; s += 10)
@@ -397,7 +397,7 @@ public class ProjectTests
         Assert.Equal((Nine, midnight), one.Extent);
         Assert.Equal(TimeSpan.FromSeconds(60 + 10 + 5), one.Time.Active);                // Code, the game, the last one; not idle or marked
         Assert.Equal(
-            [(0, 60, ActivityKind.Productive), (60, 70, ActivityKind.Other), (70, 80, ActivityKind.Idle)],
+            [(0, 60, ActivityKind.OnTask), (60, 70, ActivityKind.OffTask), (70, 80, ActivityKind.Idle)],
             one.Activity.Take(3).Select(r => ((int)(r.Start - Nine).TotalSeconds, (int)(r.End - Nine).TotalSeconds, r.Kind)));
         Assert.Equal([new ProjectNote(Day, worklapse, "Panning")], one.Notes);
 

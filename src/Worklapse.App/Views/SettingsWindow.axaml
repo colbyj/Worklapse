@@ -358,7 +358,7 @@
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
                 <Grid ColumnDefinitions="88,76,92,62,*,64,140,84" Margin="0,0,14,0">
-                  <Button Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ProductiveHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Productive}" />
+                  <Button Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding OnTaskHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.OnTask}" />
                   <Button Grid.Column="1" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ExcludedHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.Excluded}" />
                   <Button Grid.Column="2" Classes="columnHeader" HorizontalContentAlignment="Center" Content="{Binding ReadScreenHeader}" Command="{Binding SortByCommand}" CommandParameter="{x:Static vm:ProgramSort.ReadScreen}"
                           ToolTip.Tip="Read the text in its windows, for suggestions · off deletes what was read" />
@@ -374,7 +374,7 @@
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:ProgramRow">
                     <Grid ColumnDefinitions="82,76,92,62,*,64,140,78">
-                      <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}"
+                      <CheckBox IsChecked="{Binding OnTask}" AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}"
                                 HorizontalAlignment="Center" Margin="-6,-3,0,-3" Padding="0" />
                       <CheckBox Grid.Column="1" IsChecked="{Binding Excluded}" AutomationProperties.Name="{Binding Name, StringFormat='Excluded: {0}'}"
                                 HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />

@@ -335,7 +335,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         OperatingSystem.IsWindows() && Directory.Exists(Worklapse.Core.Import.TimeSnapperSource.DefaultProgramFolder);
 
     /// <summary>
-    /// TimeSnapper's history was imported: the Applications page lists its apps and sites and the productive marks it
+    /// TimeSnapper's history was imported: the Applications page lists its apps and sites and the on-task marks it
     /// brought, unless it has changes of its own not applied yet (they're kept; it shows the rest at the next opening).
     /// </summary>
     public async Task HistoryImportedAsync()

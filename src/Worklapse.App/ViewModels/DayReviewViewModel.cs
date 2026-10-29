@@ -23,8 +23,8 @@ public sealed record MonitorChoice(MonitorRecord? Monitor, string Label)
 
 public sealed record StatItem(string Label, string Value, string Note, IBrush? Swatch);
 
-/// <summary>One entry of the right-click menu: switches an app or site to <paramref name="MakeProductive"/>.</summary>
-public sealed record ClassificationChoice(string Label, ProgramKey Program, bool MakeProductive);
+/// <summary>One entry of the right-click menu: switches an app or site to <paramref name="MakeOnTask"/>.</summary>
+public sealed record ClassificationChoice(string Label, ProgramKey Program, bool MakeOnTask);
 
 /// <param name="More">Apps and sites in the selection beyond those listed.</param>
 public sealed record ClassificationMenu(IReadOnlyList<ClassificationChoice> Choices, int More);
@@ -412,7 +412,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         Reload(Current >= 0 ? Captures[Current].Id : null);
     }
 
-    // --- productive or not --------------------------------------------------------------------
+    // --- on-task or not --------------------------------------------------------------------
 
     /// <summary>Apps and sites listed for a selection, longest first; the rest are on the Applications page.</summary>
     public const int MaxClassificationChoices = 12;
@@ -450,9 +450,9 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Marks an app or site; it applies to all history, and the timeline and totals update.</summary>
-    public void SetProductive(ProgramKey program, bool productive)
+    public void SetOnTask(ProgramKey program, bool onTask)
     {
-        Edit($"Mark {program.Name} as {(productive ? "On-task" : "Off-task")}", () => _history.SetProductive(program, productive));
+        Edit($"Mark {program.Name} as {(onTask ? "On-task" : "Off-task")}", () => _history.SetOnTask(program, onTask));
         Reload(Current >= 0 && Current < Captures.Count ? Captures[Current].Id : null);
     }
 
@@ -476,26 +476,26 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
 
     private static ClassificationChoice Choice(ProgramKey program, IReadOnlyList<CaptureRecord> captures, TimeSpan? time)
     {
-        bool productive;
+        bool onTask;
         var browserWithSites = false;
         if (program.Kind == ProgramKind.Site)
         {
-            productive = captures.First(c => c.Site == program.Name).SiteProductive == true;
+            onTask = captures.First(c => c.Site == program.Name).SiteOnTask == true;
         }
         else
         {
             var ofApp = captures.Where(c => string.Equals(c.AppName, program.Name, StringComparison.OrdinalIgnoreCase)).ToList();
-            productive = ofApp[0].AppProductive;
+            onTask = ofApp[0].AppOnTask;
             // Its classification doesn't reach the pages with a known site, which follow the site.
             browserWithSites = ofApp.Any(c => c.Site is not null);
         }
 
-        var label = $"Mark {program.Name} as {(productive ? "Off-task" : "On-task")}";
+        var label = $"Mark {program.Name} as {(onTask ? "Off-task" : "On-task")}";
         if (browserWithSites)
             label += " (pages without a known site)";
         if (time is { } t)
             label += $"  —  {Duration(t)}";
-        return new ClassificationChoice(label, program, !productive);
+        return new ClassificationChoice(label, program, !onTask);
     }
 
     // --- monitor and speed choices ------------------------------------------------------------
@@ -616,7 +616,7 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
             var c = Captures[i];
             var start = Seconds(c);
             var end = start + CaptureLength(i).TotalSeconds;
-            var kind = !c.IsActive ? TimelineKind.Idle : c.Productive ? TimelineKind.Productive : TimelineKind.Other;
+            var kind = !c.IsActive ? TimelineKind.Idle : c.OnTask ? TimelineKind.OnTask : TimelineKind.OffTask;
             if (spans.Count > 0 && spans[^1] is var last && last.Kind == kind && last.Marked == c.PendingDelete && start - last.End < 1)
                 spans[^1] = last with { End = end };
             else
@@ -722,9 +722,9 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         FrameTime = c.Time.ToLocalTime().ToString("T", CultureInfo.CurrentCulture);
         (FrameState, FrameStateBrush) = c.PendingDelete ? ("Marked for deletion", AppBrushes.Marked)
             : !c.IsActive ? ("Idle", AppBrushes.Idle)
-            : c.TaskMark is { } onTask ? (onTask ? "On-task (marked)" : "Off-task (marked)", onTask ? AppBrushes.Productive : AppBrushes.Other)
-            : c.Productive ? ("On-task", AppBrushes.Productive)
-            : ("Off-task", AppBrushes.Other);
+            : c.TaskMark is { } onTask ? (onTask ? "On-task (marked)" : "Off-task (marked)", onTask ? AppBrushes.OnTask : AppBrushes.OffTask)
+            : c.OnTask ? ("On-task", AppBrushes.OnTask)
+            : ("Off-task", AppBrushes.OffTask);
     }
 
     private void UpdateSummary()
@@ -742,11 +742,11 @@ public sealed partial class DayReviewViewModel : ObservableObject, IDisposable
         SummaryTitle = HasSelection ? "Selection" : "Whole day";
         SummaryRange = $"{Clock(start)} – {Clock(end)}";
         var activeShare = summary.Length.Ticks == 0 ? 0 : (int)Math.Round(100.0 * summary.Active.Ticks / summary.Length.Ticks);
-        var productiveShare = summary.Active.Ticks == 0 ? 0 : (int)Math.Round(100.0 * summary.Productive.Ticks / summary.Active.Ticks);
+        var onTaskShare = summary.Active.Ticks == 0 ? 0 : (int)Math.Round(100.0 * summary.OnTask.Ticks / summary.Active.Ticks);
         Stats.Add(new StatItem("Length", Duration(summary.Length), "", null));
         Stats.Add(new StatItem("Active", Duration(summary.Active), $"({activeShare}%)", null));
-        Stats.Add(new StatItem("On-task", Duration(summary.Productive), $"({productiveShare}% of active)", AppBrushes.Productive));
-        Stats.Add(new StatItem("Off-task", Duration(summary.Other), "", AppBrushes.Other));
+        Stats.Add(new StatItem("On-task", Duration(summary.OnTask), $"({onTaskShare}% of active)", AppBrushes.OnTask));
+        Stats.Add(new StatItem("Off-task", Duration(summary.OffTask), "", AppBrushes.OffTask));
         Stats.Add(new StatItem("Idle", Duration(summary.Idle), "", AppBrushes.Idle));
         if (summary.NotRecorded >= TimeSpan.FromMinutes(1))
             Stats.Add(new StatItem("Not recorded", Duration(summary.NotRecorded), "", null));

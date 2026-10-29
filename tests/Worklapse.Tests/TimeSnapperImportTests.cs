@@ -156,7 +156,7 @@ public class TimeSnapperImportTests
     }
 
     [Fact]
-    public void WhatTimeSnapperCountsProductiveIsMarkedAndNothingIsUnmarked()
+    public void WhatTimeSnapperCountsProductiveIsMarkedOnTaskAndNothingIsUnmarked()
     {
         using var data = new TempFolder();
         using var snapshots = new TempFolder();
@@ -166,7 +166,7 @@ public class TimeSnapperImportTests
             var code = store.GetOrAddApp("Code.exe", null);
             store.InsertCapture(new DateTimeOffset(Nine.AddHours(-1)), CaptureKind.Active, code, "Worklapse's own", null);
             using var history = new HistoryStore(WorklapseDatabase.Open(data.Path));
-            history.SetProductive(new ProgramKey(ProgramKind.App, "Code.exe"), true);
+            history.SetOnTask(new ProgramKey(ProgramKind.App, "Code.exe"), true);
         }
         var source = new FakeData(
             Activity(1, 0, WriteJpeg(snapshots, "1.jpg", 32, 32, 1), "firefox.exe", "Inbox", Firefox, Mail),
@@ -179,7 +179,7 @@ public class TimeSnapperImportTests
         Import(data, source);
 
         using var store2 = new HistoryStore(WorklapseDatabase.Open(data.Path));
-        var programs = store2.GetPrograms(TimeSpan.FromSeconds(10)).ToDictionary(p => p.Program, p => p.Productive);
+        var programs = store2.GetPrograms(TimeSpan.FromSeconds(10)).ToDictionary(p => p.Program, p => p.OnTask);
         Assert.Equal(new Dictionary<ProgramKey, bool>
         {
             [new(ProgramKind.App, "Code.exe")] = true,

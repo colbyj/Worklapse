@@ -19,25 +19,25 @@ public sealed record ProjectOption(long? Id, string Name, IBrush Brush, string C
 }
 
 /// <summary>
-/// An app or site with its two marks, Productive and Project, which Day review saves as soon as they change.
-/// Productive applies to the app or site on every day; what Project applies to is the row's (the app's link, or a
+/// An app or site with its two marks, On-task and Project, which Day review saves as soon as they change.
+/// On-task applies to the app or site on every day; what Project applies to is the row's (the app's link, or a
 /// stretch of time).
 /// </summary>
 public abstract partial class ProgramMarksRow : ObservableObject
 {
-    private readonly Action<ProgramKey, bool>? _setProductive;
+    private readonly Action<ProgramKey, bool>? _setOnTask;
     private readonly Action<ProgramKey, ProjectOption>? _setProject;
-    private bool _productive;
+    private bool _onTask;
     private ProjectOption? _project;
 
     /// <param name="project">Null when it can't be one choice (a stretch of time partly under one project).</param>
-    protected ProgramMarksRow(ProgramKey? program, bool productive, ProjectOption? project,
-        Action<ProgramKey, bool>? setProductive, Action<ProgramKey, ProjectOption>? setProject)
+    protected ProgramMarksRow(ProgramKey? program, bool onTask, ProjectOption? project,
+        Action<ProgramKey, bool>? setOnTask, Action<ProgramKey, ProjectOption>? setProject)
     {
         Program = program;
-        _productive = productive;
+        _onTask = onTask;
         _project = project;
-        _setProductive = setProductive;
+        _setOnTask = setOnTask;
         _setProject = setProject;
     }
 
@@ -46,13 +46,13 @@ public abstract partial class ProgramMarksRow : ObservableObject
 
     public bool HasProgram => Program is not null;
 
-    public bool Productive
+    public bool OnTask
     {
-        get => _productive;
+        get => _onTask;
         set
         {
-            if (SetProperty(ref _productive, value) && Program is { } program)
-                _setProductive?.Invoke(program, value);
+            if (SetProperty(ref _onTask, value) && Program is { } program)
+                _setOnTask?.Invoke(program, value);
         }
     }
 
@@ -73,9 +73,9 @@ public abstract partial class ProgramMarksRow : ObservableObject
 }
 
 /// <summary>An app or site used on the day, on the Applications tab.</summary>
-public sealed class DayAppRow(ProgramKey program, TimeSpan active, bool productive, ProjectOption project,
-    Action<ProgramKey, bool> setProductive, Action<ProgramKey, ProjectOption> setProject)
-    : ProgramMarksRow(program, productive, project, setProductive, setProject)
+public sealed class DayAppRow(ProgramKey program, TimeSpan active, bool onTask, ProjectOption project,
+    Action<ProgramKey, bool> setOnTask, Action<ProgramKey, ProjectOption> setProject)
+    : ProgramMarksRow(program, onTask, project, setOnTask, setProject)
 {
     public string Name => Program!.Value.Name;
     public string ActiveText => DurationText.Of(active);
@@ -84,11 +84,11 @@ public sealed class DayAppRow(ProgramKey program, TimeSpan active, bool producti
 /// <summary>
 /// A recorded segment: one app or site in a row, or idle, or not recorded (in a selection, on the Recorded Segments
 /// tab, or the one the playhead is in). Its Project is the project of that stretch of time only (set by hand);
-/// Productive is the app's or site's.
+/// On-task is the app's or site's.
 /// </summary>
-public sealed class SegmentRow(DateTimeOffset from, DateTimeOffset to, string range, string name, ProgramKey? program, bool productive,
-    ProjectOption? project, Action<ProgramKey, bool> setProductive, Action<ProgramKey, ProjectOption> setProject)
-    : ProgramMarksRow(program, productive, project, setProductive, setProject)
+public sealed class SegmentRow(DateTimeOffset from, DateTimeOffset to, string range, string name, ProgramKey? program, bool onTask,
+    ProjectOption? project, Action<ProgramKey, bool> setOnTask, Action<ProgramKey, ProjectOption> setProject)
+    : ProgramMarksRow(program, onTask, project, setOnTask, setProject)
 {
     private bool _isPicked;
 
@@ -323,7 +323,7 @@ public sealed partial class DayReviewViewModel
 
     /// <summary>
     /// Works out the day's projects again: after the day is (re)loaded, or a range is set, or a note or logged time
-    /// changes. Links and productive marks need the day reloaded first (they come with the captures). After an edit
+    /// changes. Links and on-task marks need the day reloaded first (they come with the captures). After an edit
     /// (<paramref name="edited"/>), suggestions worked out again wait to be shown.
     /// </summary>
     private void RebuildProjects(bool edited = true)
@@ -387,8 +387,8 @@ public sealed partial class DayReviewViewModel
         rows.Clear();
         foreach (var (program, time) in SpanSummary.ByProgram(Captures, start, end, _maxCaptureLength))
         {
-            var (productive, projectId) = MarksOf(program);
-            rows.Add(new DayAppRow(program, time, productive, OptionOf(projectId), SetProductiveSoon, SetProjectSoon));
+            var (onTask, projectId) = MarksOf(program);
+            rows.Add(new DayAppRow(program, time, onTask, OptionOf(projectId), SetOnTaskSoon, SetProjectSoon));
         }
     }
 
@@ -570,14 +570,14 @@ public sealed partial class DayReviewViewModel
     private SegmentRow Segment(DateTimeOffset from, DateTimeOffset to, CaptureRecord? capture)
     {
         if (capture is not { } c)
-            return new SegmentRow(from, to, RangeText(from, to), "Not recorded", null, false, ProjectOfSpan(from, to), SetProductiveSoon, (_, _) => { });
+            return new SegmentRow(from, to, RangeText(from, to), "Not recorded", null, false, ProjectOfSpan(from, to), SetOnTaskSoon, (_, _) => { });
         ProgramKey? program = !c.IsActive || c.PendingDelete ? null
             : c.Site is { } site ? new ProgramKey(ProgramKind.Site, site)
             : c.AppName is { } app ? new ProgramKey(ProgramKind.App, app) : null;
         var name = c.PendingDelete ? "Marked for deletion" : !c.IsActive ? "Idle" : program?.Name ?? "Unknown";
-        var productive = program is { } p && MarksOf(p).Productive;
-        return new SegmentRow(from, to, RangeText(from, to), name, program, productive, ProjectOfSpan(from, to),
-            SetProductiveSoon, (_, project) => SetSpanProjectSoon(from, to, project));
+        var onTask = program is { } p && MarksOf(p).OnTask;
+        return new SegmentRow(from, to, RangeText(from, to), name, program, onTask, ProjectOfSpan(from, to),
+            SetOnTaskSoon, (_, project) => SetSpanProjectSoon(from, to, project));
     }
 
     /// <summary>Two captures in the same segment: the same app or site, or both idle, or both marked for deletion.</summary>
@@ -585,15 +585,15 @@ public sealed partial class DayReviewViewModel
         a.IsActive == b.IsActive && a.PendingDelete == b.PendingDelete
         && (!a.IsActive || (string.Equals(a.AppName, b.AppName, StringComparison.OrdinalIgnoreCase) && a.Site == b.Site));
 
-    /// <summary>A program's marks as the day's captures carry them (Productive, and its own project link).</summary>
-    private (bool Productive, long? ProjectId) MarksOf(ProgramKey program)
+    /// <summary>A program's marks as the day's captures carry them (On-task, and its own project link).</summary>
+    private (bool OnTask, long? ProjectId) MarksOf(ProgramKey program)
     {
         foreach (var c in Captures)
         {
             if (program.Kind == ProgramKind.Site && c.Site == program.Name)
-                return (c.SiteProductive == true, c.SiteProjectId);
+                return (c.SiteOnTask == true, c.SiteProjectId);
             if (program.Kind == ProgramKind.App && string.Equals(c.AppName, program.Name, StringComparison.OrdinalIgnoreCase))
-                return (c.AppProductive, c.AppProjectId);
+                return (c.AppOnTask, c.AppProjectId);
         }
         return (false, null);
     }
@@ -625,8 +625,8 @@ public sealed partial class DayReviewViewModel
     private void SetSpanProjectSoon(DateTimeOffset from, DateTimeOffset to, ProjectOption project) =>
         Dispatcher.UIThread.Post(() => SetProject((from, to), project.Id));
 
-    private void SetProductiveSoon(ProgramKey program, bool productive) =>
-        Dispatcher.UIThread.Post(() => SetProductive(program, productive));
+    private void SetOnTaskSoon(ProgramKey program, bool onTask) =>
+        Dispatcher.UIThread.Post(() => SetOnTask(program, onTask));
 
     /// <summary>Links an app or site to a project (all history); the day is reloaded to show it.</summary>
     private void SetProjectSoon(ProgramKey program, ProjectOption project) => Dispatcher.UIThread.Post(() =>

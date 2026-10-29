@@ -4,9 +4,9 @@ namespace Worklapse.Core.Projects;
 
 /// <summary>A stretch of time marked with one project, with nothing else in between.</summary>
 /// <param name="Active">Time with input inside it (captures marked for deletion left out).</param>
-/// <param name="Productive">The productive part of <paramref name="Active"/>.</param>
+/// <param name="OnTask">The on-task part of <paramref name="Active"/>.</param>
 /// <param name="SetByHand">How much of it comes from ranges set by hand rather than links.</param>
-public sealed record ProjectBlock(DateTimeOffset Start, DateTimeOffset End, long ProjectId, TimeSpan Active, TimeSpan Productive, TimeSpan SetByHand)
+public sealed record ProjectBlock(DateTimeOffset Start, DateTimeOffset End, long ProjectId, TimeSpan Active, TimeSpan OnTask, TimeSpan SetByHand)
 {
     /// <summary>Everything in the block, idle or not recorded included: the project's Assigned time.</summary>
     public TimeSpan Length => End - Start;
@@ -14,11 +14,11 @@ public sealed record ProjectBlock(DateTimeOffset Start, DateTimeOffset End, long
 
 /// <param name="Assigned">All time marked with the project, idle or not recorded included.</param>
 /// <param name="Active">Time with input.</param>
-/// <param name="Productive">Active time in productive apps and sites.</param>
-public sealed record ProjectTotals(TimeSpan Assigned, TimeSpan Active, TimeSpan Productive);
+/// <param name="OnTask">Active time in on-task apps and sites.</param>
+public sealed record ProjectTotals(TimeSpan Assigned, TimeSpan Active, TimeSpan OnTask);
 
 /// <summary>Recorded time marked with no project.</summary>
-public sealed record UnassignedTotals(TimeSpan Productive, TimeSpan Other, TimeSpan Idle);
+public sealed record UnassignedTotals(TimeSpan OnTask, TimeSpan OffTask, TimeSpan Idle);
 
 /// <summary>A span of time (usually a day) worked out per project.</summary>
 /// <param name="Recorded">Time captured, active or idle (captures marked for deletion left out), project or not.</param>
@@ -32,13 +32,13 @@ public sealed record ProjectTime(IReadOnlyList<ProjectBlock> Blocks, IReadOnlyDi
     public TimeSpan Assigned => Blocks.Aggregate(TimeSpan.Zero, (sum, b) => sum + b.Length);
 
     /// <summary>All time with input, marked with a project or not.</summary>
-    public TimeSpan Active => Totals.Values.Aggregate(Unassigned.Productive + Unassigned.Other, (sum, t) => sum + t.Active);
+    public TimeSpan Active => Totals.Values.Aggregate(Unassigned.OnTask + Unassigned.OffTask, (sum, t) => sum + t.Active);
 }
 
 public enum ActivityKind
 {
-    Productive,
-    Other,
+    OnTask,
+    OffTask,
     Idle,
 }
 
@@ -83,7 +83,7 @@ public static class ProjectTimeline
         cuts.Sort();
 
         var blocks = new List<ProjectBlock>();
-        var (unassignedProductive, unassignedOther, unassignedIdle) = (TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
+        var (unassignedOnTask, unassignedOther, unassignedIdle) = (TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
         var (p, s) = (0, 0);
         for (var i = 0; i + 1 < cuts.Count; i++)
         {
@@ -97,22 +97,22 @@ public static class ProjectTimeline
 
             var length = to - from;
             var active = piece is { Kind: PieceKind.Active } ? length : TimeSpan.Zero;
-            var productive = piece is { Kind: PieceKind.Active, Productive: true } ? length : TimeSpan.Zero;
+            var onTask = piece is { Kind: PieceKind.Active, OnTask: true } ? length : TimeSpan.Zero;
             var project = span is not null ? span.ProjectId : piece?.Link;
 
             if (project is { } id)
             {
                 var byHand = span is not null ? length : TimeSpan.Zero;
                 if (blocks.Count > 0 && blocks[^1] is var last && last.ProjectId == id && last.End == from)
-                    blocks[^1] = last with { End = to, Active = last.Active + active, Productive = last.Productive + productive, SetByHand = last.SetByHand + byHand };
+                    blocks[^1] = last with { End = to, Active = last.Active + active, OnTask = last.OnTask + onTask, SetByHand = last.SetByHand + byHand };
                 else
-                    blocks.Add(new ProjectBlock(from, to, id, active, productive, byHand));
+                    blocks.Add(new ProjectBlock(from, to, id, active, onTask, byHand));
             }
             else if (piece is { } recorded)
             {
                 if (recorded.Kind == PieceKind.Active)
                 {
-                    if (recorded.Productive) unassignedProductive += length;
+                    if (recorded.OnTask) unassignedOnTask += length;
                     else unassignedOther += length;
                 }
                 else if (recorded.Kind == PieceKind.Idle)
@@ -126,13 +126,13 @@ public static class ProjectTimeline
         foreach (var block in blocks)
         {
             var sum = totals.GetValueOrDefault(block.ProjectId) ?? new ProjectTotals(TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
-            totals[block.ProjectId] = new ProjectTotals(sum.Assigned + block.Length, sum.Active + block.Active, sum.Productive + block.Productive);
+            totals[block.ProjectId] = new ProjectTotals(sum.Assigned + block.Length, sum.Active + block.Active, sum.OnTask + block.OnTask);
         }
-        return new ProjectTime(blocks, totals, new UnassignedTotals(unassignedProductive, unassignedOther, unassignedIdle), recordedTime);
+        return new ProjectTime(blocks, totals, new UnassignedTotals(unassignedOnTask, unassignedOther, unassignedIdle), recordedTime);
     }
 
     /// <summary>
-    /// The recorded time in start..end as runs of productive, other and idle time, for an activity lane; time not
+    /// The recorded time in start..end as runs of on-task, off-task and idle time, for an activity lane; time not
     /// recorded and captures marked for deletion are gaps.
     /// </summary>
     public static List<ActivityRun> Activity(IReadOnlyList<ActivitySample> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
@@ -142,7 +142,7 @@ public static class ProjectTimeline
         {
             if (piece.Kind == PieceKind.Marked)
                 continue;
-            var kind = piece.Kind == PieceKind.Idle ? ActivityKind.Idle : piece.Productive ? ActivityKind.Productive : ActivityKind.Other;
+            var kind = piece.Kind == PieceKind.Idle ? ActivityKind.Idle : piece.OnTask ? ActivityKind.OnTask : ActivityKind.OffTask;
             if (runs.Count > 0 && runs[^1] is var last && last.Kind == kind && last.End == piece.From)
                 runs[^1] = last with { End = piece.To };
             else
@@ -154,7 +154,7 @@ public static class ProjectTimeline
     private enum PieceKind { Active, Idle, Marked }
 
     /// <summary>The time one capture stands for, clipped to the span, and the project its links point to.</summary>
-    private readonly record struct Piece(DateTimeOffset From, DateTimeOffset To, PieceKind Kind, bool Productive, long? Link);
+    private readonly record struct Piece(DateTimeOffset From, DateTimeOffset To, PieceKind Kind, bool OnTask, long? Link);
 
     private static List<Piece> Pieces(IReadOnlyList<ActivitySample> captures, DateTimeOffset start, DateTimeOffset end, TimeSpan maxCaptureLength)
     {
@@ -172,7 +172,7 @@ public static class ProjectTimeline
                 continue;
 
             var kind = capture.PendingDelete ? PieceKind.Marked : capture.IsActive ? PieceKind.Active : PieceKind.Idle;
-            pieces.Add(new Piece(from, to, kind, capture.Productive, kind == PieceKind.Active ? capture.LinkedProjectId : null));
+            pieces.Add(new Piece(from, to, kind, capture.OnTask, kind == PieceKind.Active ? capture.LinkedProjectId : null));
         }
         return pieces;
     }

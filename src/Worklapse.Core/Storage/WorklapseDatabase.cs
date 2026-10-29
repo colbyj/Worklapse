@@ -198,7 +198,7 @@ public sealed class WorklapseDatabase : IDisposable
         if (version < 5)
         {
             // Websites, from the browser's address bar at capture time (domain only). A capture with a site is
-            // productive if the site is; otherwise it follows its app. Older captures have no site.
+            // on-task if the site is; otherwise it follows its app. Older captures have no site.
             using var transaction = BeginTransaction();
             Execute("""
                 CREATE TABLE sites (

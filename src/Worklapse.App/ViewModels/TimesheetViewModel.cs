@@ -22,7 +22,7 @@ public sealed partial class TimesheetDayRow(DateOnly day, IRelayCommand open) : 
 
     [ObservableProperty] private string _noteText = "";
     [ObservableProperty] private string _activeText = "";
-    [ObservableProperty] private string _productiveText = "";
+    [ObservableProperty] private string _onTaskText = "";
     [ObservableProperty] private string _assignedText = "";
     [ObservableProperty] private string _loggedText = "";
 }
@@ -50,7 +50,7 @@ public sealed partial class TimesheetLineRow : ObservableObject
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private IBrush _brush = Brushes.Transparent;
     [ObservableProperty] private string _activeText = "";
-    [ObservableProperty] private string _productiveText = "";
+    [ObservableProperty] private string _onTaskText = "";
     [ObservableProperty] private string _assignedText = "";
 
     public string NoteText
@@ -116,7 +116,7 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
     public ObservableCollection<TimesheetTotalRow> Totals { get; } = [];
 
     [ObservableProperty] private string _totalActiveText = "";
-    [ObservableProperty] private string _totalProductiveText = "";
+    [ObservableProperty] private string _totalOnTaskText = "";
     [ObservableProperty] private string _totalAssignedText = "";
     [ObservableProperty] private string _totalLoggedText = "";
 
@@ -171,7 +171,7 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
         Rows.Clear();
         Totals.Clear();
         HasNoTotals = true;
-        TotalActiveText = TotalProductiveText = TotalAssignedText = TotalLoggedText = "";
+        TotalActiveText = TotalOnTaskText = TotalAssignedText = TotalLoggedText = "";
         GrandAssignedText = GrandLoggedText = "";
         EmptyText = message;
         IsEmpty = true;
@@ -200,7 +200,7 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
                 var dayLines = byDay[dayRow.Day].ToList();
                 dayRow.NoteText = data.DayNotes.GetValueOrDefault(dayRow.Day, "");
                 dayRow.ActiveText = Hm(dayLines.SumTime(l => l.Active));
-                dayRow.ProductiveText = Hm(dayLines.SumTime(l => l.Productive));
+                dayRow.OnTaskText = Hm(dayLines.SumTime(l => l.OnTask));
                 dayRow.AssignedText = Hm(dayLines.SumTime(l => l.Assigned));
                 dayRow.LoggedText = LoggedHm(dayLines);
             }
@@ -210,14 +210,14 @@ public sealed partial class TimesheetViewModel(SettingsStore settings, Action<Da
                 lineRow.Name = data.Catalog.NameOf(line.ProjectId);
                 lineRow.Brush = data.Catalog.BrushOf(line.ProjectId);
                 lineRow.ActiveText = Hm(line.Active);
-                lineRow.ProductiveText = Hm(line.Productive);
+                lineRow.OnTaskText = Hm(line.OnTask);
                 lineRow.AssignedText = Hm(line.Assigned);
                 lineRow.Show(line.Note, line.Logged is { } logged ? Hm(logged) : "");
             }
         }
 
         TotalActiveText = Hm(data.Lines.SumTime(l => l.Active));
-        TotalProductiveText = Hm(data.Lines.SumTime(l => l.Productive));
+        TotalOnTaskText = Hm(data.Lines.SumTime(l => l.OnTask));
         TotalAssignedText = Hm(data.Lines.SumTime(l => l.Assigned));
         TotalLoggedText = LoggedHm(data.Lines);
         ShowTotals(data);

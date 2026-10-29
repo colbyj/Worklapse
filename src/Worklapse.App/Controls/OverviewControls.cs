@@ -68,8 +68,8 @@ public sealed class DayStrip : ThemedControl
                 var x1 = Math.Max(X(span.End, width), x0 + 1);
                 var brush = span.Kind switch
                 {
-                    TimelineKind.Productive => AppBrushes.Productive,
-                    TimelineKind.Other => AppBrushes.Other,
+                    TimelineKind.OnTask => AppBrushes.OnTask,
+                    TimelineKind.OffTask => AppBrushes.OffTask,
                     _ => AppBrushes.Idle,
                 };
                 context.FillRectangle(brush, new Rect(x0, track.Top, x1 - x0, ActivityHeight));

@@ -118,8 +118,8 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
                     Site: reader.IsDBNull(12) ? null : reader.GetString(12),
                     WindowTitle: title,
                     window,
-                    AppProductive: reader.GetInt64(10) != 0,
-                    SiteProductive: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
+                    AppOnTask: reader.GetInt64(10) != 0,
+                    SiteOnTask: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
                     PendingDelete: reader.GetInt64(11) != 0,
                     frames.TryGetValue(id, out var list) ? list : [],
                     MonitorIds: layout ?? [],
@@ -153,7 +153,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     /// <summary>
     /// The captures of the local days from <paramref name="from"/> up to (not including) <paramref name="to"/>, in
     /// time order, as just what totals per project need (no names, titles or frames): one query for a week or a month.
-    /// Productive and the linked project are worked out as <see cref="CaptureRecord.Productive"/> and
+    /// On-task and the linked project are worked out as <see cref="CaptureRecord.OnTask"/> and
     /// <see cref="CaptureRecord.LinkedProjectId"/> do.
     /// </summary>
     public List<ActivitySample> LoadSamples(DateOnly from, DateOnly to)
@@ -178,7 +178,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
             samples.Add(new ActivitySample(
                 DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(1))),
                 (CaptureKind)reader.GetInt32(2),
-                Productive: reader.GetInt64(4) != 0,
+                OnTask: reader.GetInt64(4) != 0,
                 PendingDelete: reader.GetInt64(3) != 0,
                 LinkedProjectId: rules.ProjectOf(reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))
                     ?? (reader.IsDBNull(5) ? null : reader.GetInt64(5))));
@@ -210,7 +210,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
 
     /// <summary>
     /// Deletes the captures marked on <paramref name="day"/> (their frame references and screen words go with them), and the
-    /// apps and sites left without captures unless marked productive or excluded, linked to a project or opted out of
+    /// apps and sites left without captures unless marked on-task or excluded, linked to a project or opted out of
     /// suggestions, so their names go too. Queues
     /// the segments the captures used, for the batch encoder to remove the frames nothing refers to any more from
     /// disk; the video stays there until it does.
@@ -261,15 +261,15 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     }
 
     /// <summary>
-    /// Marks an app (every copy with that exe name) or a site productive or not. Classification is looked up
+    /// Marks an app (every copy with that exe name) or a site on-task or not. Classification is looked up
     /// when a day is read, so this applies to all history at once.
     /// </summary>
-    public void SetProductive(ProgramKey program, bool productive)
+    public void SetOnTask(ProgramKey program, bool onTask)
     {
         using var command = db.Command(program.Kind == ProgramKind.App
             ? "UPDATE apps SET productive = $productive WHERE exe_name = $name;"
             : "UPDATE sites SET productive = $productive WHERE domain = $name;");
-        command.Parameters.AddWithValue("$productive", productive ? 1 : 0);
+        command.Parameters.AddWithValue("$productive", onTask ? 1 : 0);
         command.Parameters.AddWithValue("$name", program.Name);
         command.ExecuteNonQuery();
     }
@@ -359,7 +359,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         while (reader.Read())
             programs.Add(new ProgramUsage(
                 new ProgramKey(reader.GetInt32(0) == 0 ? ProgramKind.App : ProgramKind.Site, reader.GetString(1)),
-                Productive: reader.GetInt64(2) != 0,
+                OnTask: reader.GetInt64(2) != 0,
                 Excluded: reader.GetInt64(3) != 0,
                 TimeSpan.FromMilliseconds(reader.GetInt64(4)),
                 ProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5),

@@ -30,7 +30,7 @@
           </Grid.ColumnDefinitions>
           <TextBlock Text="{Binding Name}" Margin="6,0" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
           <TextBlock Grid.Column="1" Text="{Binding ActiveText}" HorizontalAlignment="Right" Margin="6,0" />
-          <CheckBox Grid.Column="2" Classes="cell" IsChecked="{Binding Productive}" Tag="productive"
+          <CheckBox Grid.Column="2" Classes="cell" IsChecked="{Binding OnTask}" Tag="onTask"
                     PointerEntered="OnReachEnter" PointerExited="OnReachExit" GotFocus="OnReachFocus" LostFocus="OnReachBlur"
                     AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}" />
           <ComboBox Grid.Column="3" Classes="cell" Margin="0,1,4,1" Tag="project"
@@ -61,7 +61,7 @@
           <TextBlock Grid.Column="1" Text="{Binding Name}" FontStyle="{Binding NameStyle}" Classes.secondary="{Binding !HasProgram}"
                      TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
           <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
-          <CheckBox Grid.Column="3" Classes="cell" IsChecked="{Binding Productive}" IsVisible="{Binding HasProgram}" Tag="productive"
+          <CheckBox Grid.Column="3" Classes="cell" IsChecked="{Binding OnTask}" IsVisible="{Binding HasProgram}" Tag="onTask"
                     PointerEntered="OnReachEnter" PointerExited="OnReachExit" GotFocus="OnReachFocus" LostFocus="OnReachBlur"
                     AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}" />
           <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" Margin="7,0,4,0" IsVisible="{Binding ShowsProjectName}">
@@ -334,7 +334,7 @@
                                 DropDownClosed="OnReachDropDownClosed" AutomationProperties.Name="Project of this segment"
                                 ToolTip.Tip="This segment only" />
                       <TextBlock DockPanel.Dock="Right" Text="Project" VerticalAlignment="Center" Margin="0,0,8,0" />
-                      <CheckBox Content="On-task" IsChecked="{Binding Productive}" Tag="productive" VerticalAlignment="Center"
+                      <CheckBox Content="On-task" IsChecked="{Binding OnTask}" Tag="onTask" VerticalAlignment="Center"
                                 PointerEntered="OnReachEnter" PointerExited="OnReachExit" GotFocus="OnReachFocus" LostFocus="OnReachBlur"
                                 ToolTip.Tip="{Binding Name, StringFormat='{}{0} on every day'}" />
                     </DockPanel>

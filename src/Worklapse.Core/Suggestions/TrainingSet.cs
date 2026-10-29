@@ -31,7 +31,7 @@ public sealed record SuggestionOptOuts(IReadOnlySet<long> UnsuggestedProjects, I
         }
     }
 
-    /// <summary>Whether a capture's window counts: its site decides when it has one, else its app (as for Productive).</summary>
+    /// <summary>Whether a capture's window counts: its site decides when it has one, else its app (as for On-task).</summary>
     public bool Learns(CaptureRecord capture) =>
         capture.Site is { } site ? !UnlearnedSites.Contains(site) : capture.AppName is not { } app || !UnlearnedApps.Contains(app);
 }
@@ -97,7 +97,7 @@ public static class TrainingSet
                 continue;
             if (assignment.ProjectId is { } project && optOuts.UnsuggestedProjects.Contains(project))
                 continue;
-            var label = capture.Productive ? assignment.ProjectId : null;
+            var label = capture.OnTask ? assignment.ProjectId : null;
             yield return new TrainingExample(CaptureWords.Of(capture, screenWords?.Invoke(capture.Id)), label, seconds[i]);
         }
     }

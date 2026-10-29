@@ -341,7 +341,7 @@ public partial class DayReviewView : UserControl
             foreach (var choice in choices)
             {
                 var item = new MenuItem { Header = choice.Label };
-                item.Click += (_, _) => _viewModel.SetProductive(choice.Program, choice.MakeProductive);
+                item.Click += (_, _) => _viewModel.SetOnTask(choice.Program, choice.MakeOnTask);
                 items.Add(item);
             }
             if (more > 0)
@@ -420,7 +420,7 @@ public partial class DayReviewView : UserControl
     // --- the side panel ---------------------------------------------------------------------------
 
     // Pointing at a row's mark (or tabbing to it) shows on the timeline the time it decides; the control's Tag says
-    // which mark ("productive", "project"), or "row" for the whole row.
+    // which mark ("onTask", "project"), or "row" for the whole row.
     private void OnReachEnter(object? sender, PointerEventArgs e)
     {
         if (sender is Control control)
@@ -500,8 +500,8 @@ public partial class DayReviewView : UserControl
             new Separator(),
         };
         if (row.Program is { } program)
-            items.Add(MenuEntry($"Mark {program.Name} as {(row.Productive ? "Off-task" : "On-task")}",
-                () => _viewModel.SetProductive(program, !row.Productive)));
+            items.Add(MenuEntry($"Mark {program.Name} as {(row.OnTask ? "Off-task" : "On-task")}",
+                () => _viewModel.SetOnTask(program, !row.OnTask)));
         items.Add(MenuEntry("Go To", () => _viewModel.GoTo(row.From)));
         OpenRowMenu(control, items, [target]);
     }
@@ -526,7 +526,7 @@ public partial class DayReviewView : UserControl
             MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(time)),
             TaskMarkItem(time),
             new Separator(),
-            MenuEntry($"Mark {program.Name} as {(row.Productive ? "Off-task" : "On-task")}", () => _viewModel.SetProductive(program, !row.Productive)),
+            MenuEntry($"Mark {program.Name} as {(row.OnTask ? "Off-task" : "On-task")}", () => _viewModel.SetOnTask(program, !row.OnTask)),
             MenuEntry("Go To", () => _viewModel.GoTo(time[0].Start)),
         ];
         OpenRowMenu(control, items, time);

@@ -101,7 +101,7 @@ public class SuggestionEvaluation
 
     /// <summary>
     /// What the developer says each active capture is: its range by hand (none if the range has none), else on a day
-    /// labelled frame by frame its link or rule (none without one); null where unknown. Unproductive time is no project.
+    /// labelled frame by frame its link or rule (none without one); null where unknown. Off-task time is no project.
     /// </summary>
     private static Label?[] Truth(IReadOnlyList<CaptureRecord> captures, IReadOnlyList<ProjectSpan> spans, bool fullDay)
     {
@@ -113,9 +113,9 @@ public class SuggestionEvaluation
             if (!capture.IsActive || capture.PendingDelete)
                 continue;
             if (assignments[i].ByHand)
-                truth[i] = new Label(capture.Productive ? assignments[i].ProjectId : null);
+                truth[i] = new Label(capture.OnTask ? assignments[i].ProjectId : null);
             else if (fullDay)
-                truth[i] = new Label(capture.Productive ? capture.LinkedProjectId : null);
+                truth[i] = new Label(capture.OnTask ? capture.LinkedProjectId : null);
         }
         return truth;
     }

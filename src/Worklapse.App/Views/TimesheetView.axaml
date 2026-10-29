@@ -88,7 +88,7 @@
               <Grid ColumnDefinitions="200,*,64,76,72,76" Height="25" Margin="0,0,14,0">
                 <TextBlock Text="{Binding Title}" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="2" Text="{Binding TotalActiveText}" Classes="strong time" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="3" Text="{Binding TotalProductiveText}" Classes="secondary time" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding TotalOnTaskText}" Classes="secondary time" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="4" Text="{Binding TotalAssignedText}" Classes="strong time" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="5" Text="{Binding TotalLoggedText}" Classes="strong time" VerticalAlignment="Center" Margin="10,0" />
               </Grid>
@@ -105,7 +105,7 @@
                           <TextBlock Grid.Column="1" Classes="note secondary" Text="{Binding NoteText}" Margin="6,0"
                                      TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding NoteText}" />
                           <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
-                          <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
+                          <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding OnTaskText}" />
                           <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />
                           <TextBlock Grid.Column="5" Classes="time" Text="{Binding LoggedText}" Margin="10,0" />
                         </Grid>
@@ -122,7 +122,7 @@
                                    PlaceholderText="Add a note" ToolTip.Tip="{Binding NoteText}"
                                    AutomationProperties.Name="{Binding Name, StringFormat='Note for {0}'}" />
                           <TextBlock Grid.Column="2" Classes="time" Text="{Binding ActiveText}" />
-                          <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding ProductiveText}" />
+                          <TextBlock Grid.Column="3" Classes="time secondary" Text="{Binding OnTaskText}" />
                           <TextBlock Grid.Column="4" Classes="time" Text="{Binding AssignedText}" />
                           <Border Grid.Column="5" Classes="loggedCell">
                             <TextBox Classes="cell" Margin="2,1" TextAlignment="Right" FontWeight="SemiBold"

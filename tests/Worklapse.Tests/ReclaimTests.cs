@@ -434,12 +434,12 @@ public class ReclaimTests
             var store = new RecordingStore(db);
             var work = store.GetOrAddApp("work.exe", null);
             var game = store.GetOrAddApp(SecretApp, null);
-            var productive = store.GetOrAddApp("editor.exe", null);
-            db.Execute($"UPDATE apps SET productive = 1 WHERE id = {productive};");
+            var onTaskApp = store.GetOrAddApp("editor.exe", null);
+            db.Execute($"UPDATE apps SET productive = 1 WHERE id = {onTaskApp};");
             for (var i = 0; i < 200; i++)
                 store.InsertCapture(Nine.AddSeconds(10 * i), CaptureKind.Active, i is >= 50 and < 60 ? game : work,
                     i is >= 50 and < 60 ? SecretTitle : $"Ordinary window {i}", null);
-            store.InsertCapture(Nine.AddSeconds(5000), CaptureKind.Active, productive, SecretTitle, null);
+            store.InsertCapture(Nine.AddSeconds(5000), CaptureKind.Active, onTaskApp, SecretTitle, null);
         }
         Assert.True(FilesContain(folder.Path, SecretTitle) && FilesContain(folder.Path, SecretApp));
 
@@ -448,7 +448,7 @@ public class ReclaimTests
             history.SetPendingDelete(Nine.AddSeconds(500), Nine.AddSeconds(600), pending: true);
             history.SetPendingDelete(Nine.AddSeconds(5000), Nine.AddSeconds(5001), pending: true);
             Assert.Equal(11, history.DeleteMarked(day).Captures);
-            // The productive app keeps its row (and its flag) though nothing uses it now; its name isn't private.
+            // The on-task app keeps its row (and its flag) though nothing uses it now; its name isn't private.
             Assert.Equal(["editor.exe", "work.exe"], AppNames(history.Database));
         }
 

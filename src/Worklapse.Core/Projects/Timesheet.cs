@@ -7,7 +7,7 @@ namespace Worklapse.Core.Projects;
 /// <param name="Note">What was done for the project that day; empty when nothing's written.</param>
 /// <param name="Logged">The time to bill, as typed; null until it is.</param>
 public sealed record TimesheetLine(DateOnly Day, long ProjectId, string Note,
-    TimeSpan Active, TimeSpan Productive, TimeSpan Assigned, TimeSpan? Logged);
+    TimeSpan Active, TimeSpan OnTask, TimeSpan Assigned, TimeSpan? Logged);
 
 public static class Timesheet
 {
@@ -39,7 +39,7 @@ public static class Timesheet
             var totals = time.Totals.GetValueOrDefault(project);
             yield return new TimesheetLine(day, project,
                 summary.Notes.FirstOrDefault(n => n.ProjectId == project)?.Text ?? "",
-                totals?.Active ?? TimeSpan.Zero, totals?.Productive ?? TimeSpan.Zero, totals?.Assigned ?? TimeSpan.Zero,
+                totals?.Active ?? TimeSpan.Zero, totals?.OnTask ?? TimeSpan.Zero, totals?.Assigned ?? TimeSpan.Zero,
                 logged.TryGetValue((day, project), out var value) ? value : null);
         }
     }
@@ -65,7 +65,7 @@ public static class TimesheetCsv
                 Field(project?.Name ?? ""),
                 Field(line.Note),
                 Hours(line.Active),
-                Hours(line.Productive),
+                Hours(line.OnTask),
                 Hours(line.Assigned),
                 line.Logged is { } logged ? Hours(logged) : ""));
         }

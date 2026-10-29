@@ -348,7 +348,7 @@ public sealed partial class DayReviewViewModel
         }
     }
 
-    /// <summary>Shows on the timeline what a row's control reaches (<paramref name="part"/>: "productive", "project", or the whole row).</summary>
+    /// <summary>Shows on the timeline what a row's control reaches (<paramref name="part"/>: "onTask", "project", or the whole row).</summary>
     public void ShowReach(ReachSource source, object? row, string? part)
     {
         if (row is not null && ReachOf(row, part) is { } ranges)
@@ -374,7 +374,7 @@ public sealed partial class DayReviewViewModel
 
     private IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)>? ReachOf(object row, string? part) => (row, part) switch
     {
-        (ProgramMarksRow { Program: { } program }, "productive") => MarkReach.Productive(Captures, program, _maxCaptureLength),
+        (ProgramMarksRow { Program: { } program }, "onTask") => MarkReach.OnTask(Captures, program, _maxCaptureLength),
         (DayAppRow { Program: { } program }, "project") => MarkReach.Link(Captures, _handSpans, program, _maxCaptureLength),
         (SegmentRow segment, _) => [(segment.From, segment.To)],
         (TimeLogRow log, _) => BlocksOf(log.ProjectId, null),

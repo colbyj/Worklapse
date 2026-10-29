@@ -10,8 +10,8 @@ namespace Worklapse.App.Controls;
 
 public enum TimelineKind
 {
-    Productive,
-    Other,
+    OnTask,
+    OffTask,
     Idle,
 }
 
@@ -272,8 +272,8 @@ public sealed class TimelineControl : ThemedControl
                 : new Rect(x0, track.Top + 4, x1 - x0, TrackHeight - 8);
             var brush = span.Kind switch
             {
-                TimelineKind.Productive => AppBrushes.Productive,
-                TimelineKind.Other => AppBrushes.Other,
+                TimelineKind.OnTask => AppBrushes.OnTask,
+                TimelineKind.OffTask => AppBrushes.OffTask,
                 _ => AppBrushes.Idle,
             };
             using (context.PushOpacity(span.Marked ? 0.3 : 1))

@@ -199,7 +199,7 @@ public class SuggestionStoreTests
         var presayo = projects.AddProject("Presayo", null);
         var recording = new RecordingStore(db);
         var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
         var yesterday = Nine.AddDays(-1);
         for (var s = 0; s < 600; s += 10)
         {
@@ -233,7 +233,7 @@ public class SuggestionStoreTests
         var presayo = projects.AddProject("Presayo", null);
         var recording = new RecordingStore(db);
         var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
         var yesterday = Nine.AddDays(-1);
         for (var s = 0; s < 600; s += 10)
         {
@@ -264,7 +264,7 @@ public class SuggestionStoreTests
         var presayo = projects.AddProject("Presayo", null);
         var recording = new RecordingStore(db);
         var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
         var yesterday = Nine.AddDays(-1);
         for (var s = 0; s < 600; s += 10)
         {
@@ -299,7 +299,7 @@ public class SuggestionStoreTests
         var (presayo, arduino) = (projects.AddProject("Presayo", null), projects.AddProject("Arduino", null));
         var recording = new RecordingStore(db);
         var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
         var later = Nine.AddDays(5);
         for (var s = 0; s < 600; s += 10)
         {
@@ -333,7 +333,7 @@ public class SuggestionStoreTests
         var (presayo, frankensystem) = (projects.AddProject("Presayo", null), projects.AddProject("Frankensystem", null));
         var recording = new RecordingStore(db);
         var terminal = recording.GetOrAddApp("WindowsTerminal.exe", null);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "WindowsTerminal.exe"), true);
         var yesterday = Nine.AddDays(-1);
         for (var s = 0; s < 600; s += 10)
         {

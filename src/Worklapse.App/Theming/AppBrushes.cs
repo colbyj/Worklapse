@@ -10,8 +10,8 @@ public static class AppBrushes
 {
     // What time was spent on: the same colours on every desktop (the meaning shouldn't change with the accent),
     // softer or lighter variants on dark backgrounds.
-    public static SolidColorBrush Productive { get; } = new();
-    public static SolidColorBrush Other { get; } = new();
+    public static SolidColorBrush OnTask { get; } = new();
+    public static SolidColorBrush OffTask { get; } = new();
     public static SolidColorBrush Idle { get; } = new();
     public static SolidColorBrush Marked { get; } = new();
     public static SolidColorBrush NotRecorded { get; } = new();
@@ -49,8 +49,8 @@ public static class AppBrushes
     internal static void Apply(UiPalette palette)
     {
         var dark = palette.IsDark;
-        Productive.Color = dark ? Color.Parse("#3A91D0") : Color.Parse("#2980B9");
-        Other.Color = Color.Parse("#F39C1F");
+        OnTask.Color = dark ? Color.Parse("#3A91D0") : Color.Parse("#2980B9");
+        OffTask.Color = Color.Parse("#F39C1F");
         Idle.Color = dark ? Color.Parse("#5C6166") : Color.Parse("#BDC3C7");
         Marked.Color = dark ? Color.Parse("#E35D6A") : Color.Parse("#DA4453");
         NotRecorded.Color = dark ? Color.Parse("#6E757C") : Color.Parse("#A0A4A8");

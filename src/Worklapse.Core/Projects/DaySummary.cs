@@ -7,7 +7,7 @@ namespace Worklapse.Core.Projects;
 /// From the first moment recorded or set to a project by hand to the last (captures marked for deletion left out);
 /// null for an empty day.
 /// </param>
-/// <param name="Activity">The recorded time as runs of productive, other and idle time; empty unless asked for.</param>
+/// <param name="Activity">The recorded time as runs of on-task, off-task and idle time; empty unless asked for.</param>
 /// <param name="Notes">The day's notes on projects.</param>
 public sealed record DaySummary(
     DateOnly Day,

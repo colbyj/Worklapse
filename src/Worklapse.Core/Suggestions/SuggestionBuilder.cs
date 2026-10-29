@@ -24,7 +24,7 @@ public sealed record Suggestion(DateTimeOffset Start, DateTimeOffset End, long P
 }
 
 /// <summary>
-/// Time away (idle, unproductive, nothing to go on, not recorded) between two stretches of project time, set or
+/// Time away (idle, off-task, nothing to go on, not recorded) between two stretches of project time, set or
 /// suggested: counted toward one of them only if the developer says so.
 /// </summary>
 /// <param name="Before">The project of the time just before.</param>
@@ -205,10 +205,10 @@ public static class SuggestionBuilder
         /// <summary>A project (or none) set by hand, a link or a title rule: kept as it is.</summary>
         Assigned,
 
-        /// <summary>Active and productive with nothing set: the classifier guesses.</summary>
+        /// <summary>Active and on-task with nothing set: the classifier guesses.</summary>
         Guessed,
 
-        /// <summary>Idle or unproductive with nothing set: no project, but time a break may count.</summary>
+        /// <summary>Idle or off-task with nothing set: no project, but time a break may count.</summary>
         Away,
     }
 
@@ -237,7 +237,7 @@ public static class SuggestionBuilder
                 if (capture.PendingDelete)
                     continue;
                 var state = useAssignments && assignments[i].IsAssigned ? PieceState.Assigned
-                    : capture.IsActive && capture.Productive ? PieceState.Guessed
+                    : capture.IsActive && capture.OnTask ? PieceState.Guessed
                     : PieceState.Away;
                 var words = state == PieceState.Guessed && optOuts.Learns(capture)
                     ? CaptureWords.Of(capture, screenWords?.Invoke(capture.Id))

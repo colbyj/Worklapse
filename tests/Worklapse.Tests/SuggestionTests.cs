@@ -12,16 +12,16 @@ public class SuggestionTests
     private static readonly TimeSpan Max = TimeSpan.FromSeconds(15);
     private static readonly DateTimeOffset Noon = new(2026, 6, 17, 12, 0, 0, TimeSpan.FromHours(-6));
 
-    private static CaptureRecord Capture(int seconds, string app, string title, bool productive = true, long? link = null,
+    private static CaptureRecord Capture(int seconds, string app, string title, bool onTask = true, long? link = null,
         CaptureKind kind = CaptureKind.Active, bool marked = false) =>
-        new(seconds, Noon.AddSeconds(seconds), kind, app, null, title, null, productive, null, marked, [], [], RuleProjectId: link);
+        new(seconds, Noon.AddSeconds(seconds), kind, app, null, title, null, onTask, null, marked, [], [], RuleProjectId: link);
 
     /// <summary>One capture every 10 s from <paramref name="from"/> up to (not including) <paramref name="to"/>.</summary>
-    private static IEnumerable<CaptureRecord> Run(int from, int to, string app, string title, bool productive = true, long? link = null,
+    private static IEnumerable<CaptureRecord> Run(int from, int to, string app, string title, bool onTask = true, long? link = null,
         CaptureKind kind = CaptureKind.Active)
     {
         for (var s = from; s < to; s += 10)
-            yield return Capture(s, app, title, productive, link, kind);
+            yield return Capture(s, app, title, onTask, link, kind);
     }
 
     private static ProjectSpan Span(int from, int to, long? project) => new(Noon.AddSeconds(from), Noon.AddSeconds(to), project);
@@ -83,11 +83,11 @@ public class SuggestionTests
     }
 
     [Fact]
-    public void TrainingTakesRangesByHandThenLinksAndCountsUnproductiveTimeAsNoProject()
+    public void TrainingTakesRangesByHandThenLinksAndCountsOffTaskTimeAsNoProject()
     {
         List<CaptureRecord> captures = [
             .. Run(0, 300, "rider64.exe", "Presayo – x.sql"),                                  // in the Presayo range
-            .. Run(300, 400, "firefox.exe", "Facebook", productive: false),                    // in the range, but unproductive
+            .. Run(300, 400, "firefox.exe", "Facebook", onTask: false),                    // in the range, but off-task
             .. Run(400, 600, "SourceGit.exe", "bride-of-frankensystem", link: Frankensystem),  // a short switch inside the range
             .. Run(600, 700, "SourceGit.exe", "bride-of-frankensystem", link: Frankensystem),  // outside: its link teaches
             .. Run(700, 800, "explorer.exe", "Downloads"),                                     // nothing says anything
@@ -106,7 +106,7 @@ public class SuggestionTests
     public void TimeMarkedOnTaskTeachesItsRangesProjectAndOffTaskTeachesNoProject()
     {
         List<CaptureRecord> captures = [
-            .. Run(0, 100, "firefox.exe", "A tutorial", productive: false).Select(c => c with { TaskMark = true }),
+            .. Run(0, 100, "firefox.exe", "A tutorial", onTask: false).Select(c => c with { TaskMark = true }),
             .. Run(100, 200, "rider64.exe", "Presayo – x.sql").Select(c => c with { TaskMark = false }),
             .. Run(200, 300, "rider64.exe", "Presayo – x.sql"),
         ];
@@ -175,7 +175,7 @@ public class SuggestionTests
         List<CaptureRecord> captures = [
             .. Run(0, 300, "rider64.exe", "Presayo – x.sql", link: Presayo),             // already Presayo, by its rule
             .. Run(300, 600, "WindowsTerminal.exe", "Group label presets by printer type"),
-            .. Run(600, 900, "firefox.exe", "Facebook", productive: false),             // 5 min away: a break
+            .. Run(600, 900, "firefox.exe", "Facebook", onTask: false),             // 5 min away: a break
             .. Run(900, 1200, "WindowsTerminal.exe", "Group label presets by printer type"),
             .. Run(1200, 1500, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),
             .. Run(1500, 1800, "WindowsTerminal.exe", "Group label presets by printer type"),
@@ -205,7 +205,7 @@ public class SuggestionTests
         // As on 22 October: Presayo guessed, YouTube, Frankensystem by its rule, a short Presayo guess, Frankensystem guessed.
         List<CaptureRecord> captures = [
             .. Run(0, 600, "WindowsTerminal.exe", "Group label presets by printer type"),
-            .. Run(600, 900, "firefox.exe", "YouTube", productive: false),
+            .. Run(600, 900, "firefox.exe", "YouTube", onTask: false),
             .. Run(900, 1260, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance", link: Frankensystem),
             .. Run(1260, 1380, "WindowsTerminal.exe", "Group label presets by printer type"),
             .. Run(1380, 1800, "WindowsTerminal.exe", "Improve bride-of-frankensystem performance"),

@@ -85,18 +85,18 @@ public class PeriodTests
     public void TotalsAreSummedPerColumnAndLoggedTimeAddsALine()
     {
         var october = Period.Containing(PeriodKind.Month, new DateOnly(2026, 10, 1));
-        DaySummary Day(int day, long project, int assignedMinutes, int productive = 0, int other = 0, int recorded = 0)
+        DaySummary Day(int day, long project, int assignedMinutes, int onTask = 0, int other = 0, int recorded = 0)
         {
             var date = new DateOnly(2026, 10, day);
             var time = new ProjectTime([],
                 new Dictionary<long, ProjectTotals> { [project] = new(TimeSpan.FromMinutes(assignedMinutes), TimeSpan.Zero, TimeSpan.Zero) },
-                new UnassignedTotals(TimeSpan.FromMinutes(productive), TimeSpan.FromMinutes(other), TimeSpan.Zero),
+                new UnassignedTotals(TimeSpan.FromMinutes(onTask), TimeSpan.FromMinutes(other), TimeSpan.Zero),
                 TimeSpan.FromMinutes(recorded));
             return new DaySummary(date, null, time, [], []);
         }
 
         var totals = PeriodTotals.Build(october,
-            [Day(2, 1, 60, productive: 5, recorded: 70), Day(4, 1, 30, other: 10), Day(5, 2, 45, recorded: 50), Day(31, 1, 15)],
+            [Day(2, 1, 60, onTask: 5, recorded: 70), Day(4, 1, 30, other: 10), Day(5, 2, 45, recorded: 50), Day(31, 1, 15)],
             [new LoggedTime(new DateOnly(2026, 10, 2), 1, TimeSpan.FromMinutes(90)),
              new LoggedTime(new DateOnly(2026, 10, 20), 3, TimeSpan.FromMinutes(20)),     // logged only
              new LoggedTime(new DateOnly(2026, 11, 2), 1, TimeSpan.FromMinutes(600))]);  // outside the month
@@ -108,8 +108,8 @@ public class PeriodTests
         Assert.Equal(TimeSpan.FromMinutes(90), totals.Logged[1]);
         Assert.Equal(TimeSpan.FromMinutes(20), totals.Logged[3]);
         Assert.False(totals.Logged.ContainsKey(2));
-        Assert.Equal(Minutes(5, 0, 0, 0, 0), totals.Productive);
-        Assert.Equal(Minutes(10, 0, 0, 0, 0), totals.Other);
+        Assert.Equal(Minutes(5, 0, 0, 0, 0), totals.OnTask);
+        Assert.Equal(Minutes(10, 0, 0, 0, 0), totals.OffTask);
         Assert.Equal(Minutes(70, 50, 0, 0, 0), totals.Recorded);
         Assert.Equal(Minutes(90, 45, 0, 0, 15), totals.AssignedPerColumn());
     }

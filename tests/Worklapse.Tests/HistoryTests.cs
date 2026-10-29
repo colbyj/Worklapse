@@ -9,21 +9,21 @@ public class HistoryTests
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(10);
     private static readonly DateTimeOffset Nine = new(2026, 10, 15, 9, 0, 0, TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 10, 15, 9, 0, 0)));
 
-    private static CaptureRecord Capture(int secondsAfterNine, CaptureKind kind = CaptureKind.Active, bool productive = false, bool marked = false,
-        string app = "app.exe", string? site = null, bool? siteProductive = null) =>
-        new(secondsAfterNine, Nine.AddSeconds(secondsAfterNine), kind, app, site, "Title", null, productive, siteProductive, marked, [], []);
+    private static CaptureRecord Capture(int secondsAfterNine, CaptureKind kind = CaptureKind.Active, bool onTask = false, bool marked = false,
+        string app = "app.exe", string? site = null, bool? siteOnTask = null) =>
+        new(secondsAfterNine, Nine.AddSeconds(secondsAfterNine), kind, app, site, "Title", null, onTask, siteOnTask, marked, [], []);
 
     [Theory]
-    // app productive, site (null = none), site productive → counted as productive
+    // app on-task, site (null = none), site on-task → counted as on-task
     [InlineData(false, null, false)]
     [InlineData(true, null, true)]
-    [InlineData(true, false, false)]  // a productive browser on a site that isn't
+    [InlineData(true, false, false)]  // an on-task browser on a site that isn't
     [InlineData(false, true, true)]   // a site that is, in a browser that isn't
     [InlineData(true, true, true)]
-    public void TheSiteDecidesWhenThereIsOneOtherwiseTheApp(bool appProductive, bool? siteProductive, bool expected)
+    public void TheSiteDecidesWhenThereIsOneOtherwiseTheApp(bool appOnTask, bool? siteOnTask, bool expected)
     {
-        var capture = Capture(0, productive: appProductive, app: "firefox.exe", site: siteProductive is null ? null : "github.com", siteProductive: siteProductive);
-        Assert.Equal(expected, capture.Productive);
+        var capture = Capture(0, onTask: appOnTask, app: "firefox.exe", site: siteOnTask is null ? null : "github.com", siteOnTask: siteOnTask);
+        Assert.Equal(expected, capture.OnTask);
     }
 
     [Fact]
@@ -44,26 +44,26 @@ public class HistoryTests
 
         using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
         var day = DateOnly.FromDateTime(Nine.LocalDateTime);
-        bool[] Productive() => history.LoadDay(day).Captures.Select(c => c.Productive).ToArray();
-        Assert.Equal([false, false, false, false, false], Productive());
+        bool[] OnTask() => history.LoadDay(day).Captures.Select(c => c.OnTask).ToArray();
+        Assert.Equal([false, false, false, false, false], OnTask());
 
-        history.SetProductive(new ProgramKey(ProgramKind.Site, "github.com"), true);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "RIDER64.EXE"), true); // app names ignore case
-        Assert.Equal([false, true, false, true, false], Productive());
+        history.SetOnTask(new ProgramKey(ProgramKind.Site, "github.com"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "RIDER64.EXE"), true); // app names ignore case
+        Assert.Equal([false, true, false, true, false], OnTask());
 
-        // The browser covers only its captures without a known site; youtube.com stays Other.
-        history.SetProductive(new ProgramKey(ProgramKind.App, "firefox.exe"), true);
-        Assert.Equal([true, true, false, true, true], Productive());
+        // The browser covers only its captures without a known site; youtube.com stays off-task.
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "firefox.exe"), true);
+        Assert.Equal([true, true, false, true, true], OnTask());
         var loaded = history.LoadDay(day).Captures;
         Assert.Equal([null, "github.com", "youtube.com", null, null], loaded.Select(c => c.Site));
 
         // Another copy of a marked app (another path) is marked too.
         var portable = store.GetOrAddApp("firefox.exe", @"D:\Portable\firefox.exe");
         store.InsertCapture(Nine.AddSeconds(50), CaptureKind.Active, portable, "portable", null);
-        Assert.True(history.LoadDay(day).Captures[^1].Productive);
-        history.SetProductive(new ProgramKey(ProgramKind.App, "firefox.exe"), false);
-        Assert.False(history.LoadDay(day).Captures[^1].Productive);
-        Assert.False(history.LoadDay(day).Captures[0].Productive);
+        Assert.True(history.LoadDay(day).Captures[^1].OnTask);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "firefox.exe"), false);
+        Assert.False(history.LoadDay(day).Captures[^1].OnTask);
+        Assert.False(history.LoadDay(day).Captures[0].OnTask);
     }
 
     [Fact]
@@ -80,29 +80,29 @@ public class HistoryTests
         store.InsertCapture(Nine.AddSeconds(20), CaptureKind.Active, rider, "Code", null);
 
         using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
-        history.SetProductive(new ProgramKey(ProgramKind.App, "rider64.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "rider64.exe"), true);
         var day = DateOnly.FromDateTime(Nine.LocalDateTime);
-        bool[] Productive() => history.LoadDay(day).Captures.Select(c => c.Productive).ToArray();
+        bool[] OnTask() => history.LoadDay(day).Captures.Select(c => c.OnTask).ToArray();
         // The totals for many days read the same marks.
-        bool[] Sampled() => history.LoadSamples(day, day.AddDays(1)).Select(s => s.Productive).ToArray();
-        Assert.Equal([true, false, true], Productive());
+        bool[] Sampled() => history.LoadSamples(day, day.AddDays(1)).Select(s => s.OnTask).ToArray();
+        Assert.Equal([true, false, true], OnTask());
 
         var undo = new UndoHistory(history.Database, ["captures"]);
         undo.Record("on-task", () => history.SetTaskMark(Nine.AddSeconds(10), Nine.AddSeconds(20), onTask: true));
         undo.Record("off-task", () => history.SetTaskMark(Nine.AddSeconds(20), Nine.AddSeconds(30), onTask: false));
-        Assert.Equal([true, true, false], Productive());
+        Assert.Equal([true, true, false], OnTask());
         Assert.Equal([true, true, false], Sampled());
         Assert.Equal([null, true, false], history.LoadDay(day).Captures.Select(c => c.TaskMark));
 
         // The app's own mark no longer reaches time marked by hand.
-        history.SetProductive(new ProgramKey(ProgramKind.App, "rider64.exe"), false);
-        Assert.Equal([false, true, false], Productive());
-        history.SetProductive(new ProgramKey(ProgramKind.App, "rider64.exe"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "rider64.exe"), false);
+        Assert.Equal([false, true, false], OnTask());
+        history.SetOnTask(new ProgramKey(ProgramKind.App, "rider64.exe"), true);
 
         Assert.True(undo.Undo());
-        Assert.Equal([true, true, true], Productive());
+        Assert.Equal([true, true, true], OnTask());
         history.SetTaskMark(Nine, Nine.AddMinutes(1), onTask: null);
-        Assert.Equal([true, false, true], Productive());
+        Assert.Equal([true, false, true], OnTask());
         Assert.All(history.LoadDay(day).Captures, c => Assert.Null(c.TaskMark));
     }
 
@@ -123,15 +123,15 @@ public class HistoryTests
         store.InsertCapture(Nine.AddHours(1), CaptureKind.Active, rider, "t", null);
 
         using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
-        history.SetProductive(new ProgramKey(ProgramKind.Site, "github.com"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.Site, "github.com"), true);
         var programs = history.GetPrograms(Interval * 1.5).ToDictionary(p => p.Program);
 
         Assert.Equal(3, programs.Count);
         Assert.Equal(TimeSpan.FromSeconds(20), programs[new ProgramKey(ProgramKind.App, "firefox.exe")].Recorded);
         Assert.Equal(TimeSpan.FromSeconds(20), programs[new ProgramKey(ProgramKind.Site, "github.com")].Recorded);
         Assert.Equal(TimeSpan.FromSeconds(25), programs[new ProgramKey(ProgramKind.App, "rider64.exe")].Recorded); // 10 + capped 15
-        Assert.True(programs[new ProgramKey(ProgramKind.Site, "github.com")].Productive);
-        Assert.False(programs[new ProgramKey(ProgramKind.App, "firefox.exe")].Productive);
+        Assert.True(programs[new ProgramKey(ProgramKind.Site, "github.com")].OnTask);
+        Assert.False(programs[new ProgramKey(ProgramKind.App, "firefox.exe")].OnTask);
     }
 
     [Fact]
@@ -139,9 +139,9 @@ public class HistoryTests
     {
         var captures = new List<CaptureRecord>
         {
-            Capture(0, app: "firefox.exe", site: "github.com", siteProductive: false),
-            Capture(10, app: "firefox.exe", site: "youtube.com", siteProductive: false),
-            Capture(20, app: "firefox.exe", site: "github.com", siteProductive: false),
+            Capture(0, app: "firefox.exe", site: "github.com", siteOnTask: false),
+            Capture(10, app: "firefox.exe", site: "youtube.com", siteOnTask: false),
+            Capture(20, app: "firefox.exe", site: "github.com", siteOnTask: false),
             Capture(30, app: "rider64.exe"),
             Capture(40, app: "rider64.exe", marked: true),
             Capture(50, CaptureKind.Idle),
@@ -158,7 +158,7 @@ public class HistoryTests
     }
 
     [Fact]
-    public void SitesLeftWithoutCapturesAreDeletedUnlessProductive()
+    public void SitesLeftWithoutCapturesAreDeletedUnlessOnTask()
     {
         using var folder = new TempFolder();
         using var db = WorklapseDatabase.Open(folder.Path);
@@ -169,7 +169,7 @@ public class HistoryTests
         store.InsertCapture(Nine.AddSeconds(20), CaptureKind.Active, firefox, "t", null, store.GetOrAddSite("stays.example"));
 
         using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
-        history.SetProductive(new ProgramKey(ProgramKind.Site, "github.com"), true);
+        history.SetOnTask(new ProgramKey(ProgramKind.Site, "github.com"), true);
         history.SetPendingDelete(Nine, Nine.AddSeconds(20), pending: true);
         history.DeleteMarked(DateOnly.FromDateTime(Nine.LocalDateTime));
 
@@ -182,7 +182,7 @@ public class HistoryTests
         using var folder = new TempFolder();
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
-            // Back to schema 4, with captures and a productive app recorded under it.
+            // Back to schema 4, with captures and an on-task app recorded under it.
             db.Execute("""
                 DROP INDEX ix_captures_task_mark; ALTER TABLE captures DROP COLUMN task_mark;
                 DROP TABLE suggestion_breaks; DROP TABLE suggestions; DROP TABLE screen_words;
@@ -207,7 +207,7 @@ public class HistoryTests
                 Assert.Equal(16L, version.ExecuteScalar());
             var history = new HistoryStore(db);
             var captures = history.LoadDay(DateOnly.FromDateTime(Nine.LocalDateTime)).Captures;
-            Assert.Equal([true, false], captures.Select(c => c.Productive));
+            Assert.Equal([true, false], captures.Select(c => c.OnTask));
             Assert.All(captures, c => Assert.Null(c.Site));
             Assert.All(history.GetPrograms(Interval), p => Assert.False(p.Excluded));
 
@@ -221,11 +221,11 @@ public class HistoryTests
     [Fact]
     public void SummaryCountsEachCaptureUntilTheNextAndSeparatesGaps()
     {
-        // 09:00:00–09:00:30 productive (3 captures), 09:00:30–09:00:50 other (2), then idle at 09:00:50,
+        // 09:00:00–09:00:30 on-task (3 captures), 09:00:30–09:00:50 off-task (2), then idle at 09:00:50,
         // then nothing until 09:10:00 (not recorded), one more active capture.
         var captures = new List<CaptureRecord>
         {
-            Capture(0, productive: true), Capture(10, productive: true), Capture(20, productive: true),
+            Capture(0, onTask: true), Capture(10, onTask: true), Capture(20, onTask: true),
             Capture(30), Capture(40),
             Capture(50, CaptureKind.Idle),
             Capture(600),
@@ -235,8 +235,8 @@ public class HistoryTests
 
         Assert.Equal(TimeSpan.FromSeconds(610), summary.Length);
         Assert.Equal(TimeSpan.FromSeconds(60), summary.Active);       // 50 s + the last capture's 10 s
-        Assert.Equal(TimeSpan.FromSeconds(30), summary.Productive);
-        Assert.Equal(TimeSpan.FromSeconds(30), summary.Other);
+        Assert.Equal(TimeSpan.FromSeconds(30), summary.OnTask);
+        Assert.Equal(TimeSpan.FromSeconds(30), summary.OffTask);
         Assert.Equal(TimeSpan.FromSeconds(15), summary.Idle);         // capped: the gap after it isn't idle
         Assert.Equal(TimeSpan.FromSeconds(535), summary.NotRecorded);
     }
