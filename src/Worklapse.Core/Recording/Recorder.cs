@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Imaging;
 using Worklapse.Core.Platform;
@@ -304,14 +305,9 @@ public sealed class Recorder : IAsyncDisposable
         return () => queue.Read(captureId, gray, width, height);
     }
 
-    private static void MarkIdleSince(RecordingStore store, DateTimeOffset since)
-    {
-        using var update = store.Database.Command("UPDATE captures SET kind = $idle WHERE ts_ms >= $since AND kind = $active;");
-        update.Parameters.AddWithValue("$idle", (int)CaptureKind.Idle);
-        update.Parameters.AddWithValue("$active", (int)CaptureKind.Active);
-        update.Parameters.AddWithValue("$since", since.ToUnixTimeMilliseconds());
-        update.ExecuteNonQuery();
-    }
+    private static void MarkIdleSince(RecordingStore store, DateTimeOffset since) =>
+        store.Database.Connection.Execute("UPDATE captures SET kind = $idle WHERE ts_ms >= $since AND kind = $active;",
+            new { idle = (int)CaptureKind.Idle, active = (int)CaptureKind.Active, since = since.ToUnixTimeMilliseconds() });
 
     /// <summary>
     /// Records which monitors are attached (for Day review), and finishes the open segments of those that went

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using Dapper;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
 
@@ -28,13 +28,10 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
         using var transaction = db.BeginTransaction();
         if (Forbidden($"c.id = {captureId}").Count > 0)
             return false;
-        using var command = db.Command("""
+        var kept = db.Connection.Execute("""
             INSERT OR REPLACE INTO screen_words (capture_id, words)
             SELECT $id, $words WHERE EXISTS (SELECT 1 FROM captures WHERE id = $id);
-            """);
-        command.Parameters.AddWithValue("$id", captureId);
-        command.Parameters.AddWithValue("$words", string.Join(' ', words));
-        var kept = command.ExecuteNonQuery() > 0;
+            """, new { id = captureId, words = string.Join(' ', words) }) > 0;
         transaction.Commit();
         return kept;
     }
@@ -45,28 +42,18 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
         Get(fromCaptureId) is { } words && Set(toCaptureId, words);
 
     /// <summary>A capture's words (empty when its screen showed none), or null when it wasn't read (or they weren't kept).</summary>
-    public string[]? Get(long captureId)
-    {
-        using var command = db.Command("SELECT words FROM screen_words WHERE capture_id = $id;");
-        command.Parameters.AddWithValue("$id", captureId);
-        return command.ExecuteScalar() is string words ? words.Split(' ', StringSplitOptions.RemoveEmptyEntries) : null;
-    }
+    public string[]? Get(long captureId) =>
+        db.Connection.ExecuteScalar<string?>("SELECT words FROM screen_words WHERE capture_id = $id;", new { id = captureId })
+            ?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
     /// <summary>The words of every capture from start up to (not including) end that was read, by capture id.</summary>
-    public Dictionary<long, string[]> Get(DateTimeOffset start, DateTimeOffset end)
-    {
-        using var command = db.Command("""
+    public Dictionary<long, string[]> Get(DateTimeOffset start, DateTimeOffset end) =>
+        db.Connection.Query<(long CaptureId, string Words)>("""
             SELECT w.capture_id, w.words FROM screen_words w JOIN captures c ON c.id = w.capture_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end;
-            """);
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
-        using var reader = command.ExecuteReader();
-        var words = new Dictionary<long, string[]>();
-        while (reader.Read())
-            words[reader.GetInt64(0)] = reader.GetString(1).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words;
-    }
+            """,
+            new { start = start.ToUnixTimeMilliseconds(), end = end.ToUnixTimeMilliseconds() })
+        .ToDictionary(r => r.CaptureId, r => r.Words.Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>
     /// Deletes the words of every capture they're no longer allowed for: after reading was turned off for an app, site or
@@ -81,12 +68,8 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
         $"c.id IN (SELECT capture_id FROM screen_words) AND c.ts_ms >= {start.ToUnixTimeMilliseconds()} AND c.ts_ms < {end.ToUnixTimeMilliseconds()}"));
 
     /// <summary>Whether the screen is read during a project's time; false for a project that doesn't exist.</summary>
-    public bool ReadsScreenFor(long projectId)
-    {
-        using var command = db.Command("SELECT read_screen FROM projects WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", projectId);
-        return command.ExecuteScalar() is long read && read != 0;
-    }
+    public bool ReadsScreenFor(long projectId) =>
+        db.Connection.ExecuteScalar<bool>("SELECT read_screen FROM projects WHERE id = $id;", new { id = projectId });
 
     private int Delete(List<long> captureIds)
     {
@@ -107,28 +90,26 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
 
         var forbidden = new List<long>();
         var candidates = new List<(long Id, long Ms, long? Project)>();
-        using (var command = db.Command($"""
-            SELECT c.id, c.ts_ms, a.exe_name, c.window_title, coalesce(a.read_screen, 1), coalesce(s.read_screen, 1),
-                   a.project_id, s.project_id
+        // Not buffered: a prune goes over every capture with words.
+        foreach (var row in db.Connection.Query<ReadingRow>($"""
+            SELECT c.id, c.ts_ms, a.exe_name, c.window_title, coalesce(a.read_screen, 1) AS app_reads, coalesce(s.read_screen, 1) AS site_reads,
+                   a.project_id AS app_project, s.project_id AS site_project
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE {where}
             ORDER BY c.ts_ms;
-            """))
-        using (var reader = command.ExecuteReader())
-            while (reader.Read())
+            """, buffered: false))
+        {
+            if (row.AppReads == 0 || row.SiteReads == 0)
             {
-                var id = reader.GetInt64(0);
-                if (reader.GetInt64(4) == 0 || reader.GetInt64(5) == 0)
-                {
-                    forbidden.Add(id);
-                    continue;
-                }
-                if (unread.Count == 0)
-                    continue;
-                // The project its links and title rules give it; a range set by hand may still say otherwise (below).
-                var linked = rules.ProjectOf(Text(reader, 2), Text(reader, 3)) ?? Id(reader, 7) ?? Id(reader, 6);
-                candidates.Add((id, reader.GetInt64(1), linked));
+                forbidden.Add(row.Id);
+                continue;
             }
+            if (unread.Count == 0)
+                continue;
+            // The project its links and title rules give it; a range set by hand may still say otherwise (below).
+            var linked = rules.ProjectOf(row.ExeName, row.WindowTitle) ?? row.SiteProject ?? row.AppProject;
+            candidates.Add((row.Id, row.TsMs, linked));
+        }
 
         if (candidates.Count > 0)
         {
@@ -145,8 +126,18 @@ public sealed class ScreenWordStore(WorklapseDatabase db)
             }
         }
         return forbidden;
+    }
 
-        static string? Text(SqliteDataReader reader, int i) => reader.IsDBNull(i) ? null : reader.GetString(i);
-        static long? Id(SqliteDataReader reader, int i) => reader.IsDBNull(i) ? null : reader.GetInt64(i);
+    /// <summary>A capture with what decides whether its screen may be read, as <see cref="Forbidden"/> asks for it.</summary>
+    private sealed record ReadingRow
+    {
+        public long Id { get; init; }
+        public long TsMs { get; init; }
+        public string? ExeName { get; init; }
+        public string? WindowTitle { get; init; }
+        public long AppReads { get; init; }
+        public long SiteReads { get; init; }
+        public long? AppProject { get; init; }
+        public long? SiteProject { get; init; }
     }
 }

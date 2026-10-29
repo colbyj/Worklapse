@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Settings;
@@ -170,14 +171,12 @@ public sealed class SuggestionEngine
     private static string DayStamp(HistoryStore history, DateTimeOffset start, DateTimeOffset end, WorklapseSettings settings,
         string classifierStamp)
     {
-        using var command = history.Database.Command("""
+        var captures = history.Database.Connection.ExecuteScalar<string>("""
             SELECT count(*) || ':' || coalesce(max(c.id), 0) || ':' || coalesce(sum(c.kind), 0) || ':' || coalesce(sum(c.pending_delete), 0)
                 || ':' || (SELECT count(*) FROM screen_words w JOIN captures d ON d.id = w.capture_id WHERE d.ts_ms >= $start AND d.ts_ms < $end)
             FROM captures c WHERE c.ts_ms >= $start AND c.ts_ms < $end;
-            """);
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
-        return string.Join('|', start.ToUnixTimeMilliseconds(), end.ToUnixTimeMilliseconds(), (string)command.ExecuteScalar()!,
+            """, new { start = start.ToUnixTimeMilliseconds(), end = end.ToUnixTimeMilliseconds() });
+        return string.Join('|', start.ToUnixTimeMilliseconds(), end.ToUnixTimeMilliseconds(), captures!,
             settings.GlanceMinutes, settings.SplitMinutes, settings.MinimumCertainty, settings.MaxCaptureLength.Ticks, classifierStamp);
     }
 
@@ -197,7 +196,7 @@ public sealed class SuggestionEngine
     /// <summary>A summary of everything training learns from; equal summaries mean the same classifier.</summary>
     private static string Stamp(HistoryStore history)
     {
-        using var command = history.Database.Command($"""
+        return history.Database.Connection.ExecuteScalar<string>($"""
             SELECT (SELECT count(*) || ':' || coalesce(sum(start_ms % 1000003 + end_ms % 1000033 + coalesce(project_id, 0)), 0) FROM project_spans)
                 || '|' || (SELECT coalesce(group_concat(id || ',' || project_id || ',' || text || ',' || coalesce(app, ''), ';'), '') FROM title_rules)
                 || '|' || (SELECT coalesce(group_concat(exe_name || ',' || coalesce(project_id, '') || ',' || learn || ',' || productive, ';'), '') FROM apps
@@ -207,7 +206,6 @@ public sealed class SuggestionEngine
                 || '|' || (SELECT coalesce(group_concat(id || ',' || name || ',' || archived || ',' || suggest || ',' || coalesce(starts_on, '') || ',' || coalesce(ends_on, ''), ';'), '') FROM projects)
                 || '|' || (SELECT count(*) / {WordsStep} FROM screen_words)
                 || '|' || (SELECT count(*) || ':' || coalesce(sum(id % 1000003 * (task_mark + 1)), 0) FROM captures WHERE task_mark IS NOT NULL);
-            """);
-        return (string)command.ExecuteScalar()!;
+            """)!;
     }
 }

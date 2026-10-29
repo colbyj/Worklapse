@@ -158,3 +158,10 @@ building.
     refill it there (`DayReviewView.FillWhenOpening`).
   - The `DispatcherTimer` constructor that takes a callback also starts the timer.
   - Exclusive tool-button pairs are `RadioButton.tool`, because a `ToggleButton` unchecks when clicked again.
+- **Queries** go through Dapper on `db.Connection` (`ProjectStore` shows the style); schema upgrades stay hand-written in
+  `WorklapseDatabase.MigrateFrom`. Gotchas met so far:
+  - `$name` parameters are case-sensitive: `$id` binds only to a member named `id`, so write `new { id = project.Id }`,
+    not `new { project.Id }`. A mismatch fails at run time, not at build.
+  - A record filled through its constructor maps only when every parameter is `long`, `string`, `double` or `DateOnly`
+    (SQLite gives every integer as `long`). With `int`, `bool` or enum members, give it `init` properties, or read a
+    tuple and build the record from it.

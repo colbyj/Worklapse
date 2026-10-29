@@ -1,22 +1,36 @@
-using System.Globalization;
+using Dapper;
 using Worklapse.Core.Storage;
 using Worklapse.Core.Suggestions;
 
 namespace Worklapse.Core.Projects;
 
-/// <param name="Color">0xRRGGBB.</param>
-public sealed record Category(long Id, string Name, int Color);
-
-/// <param name="CategoryId">Null when its category was deleted (or it never had one).</param>
-/// <param name="Color">0xRRGGBB, or null to use the category's.</param>
-/// <param name="Archived">Hidden from lists, kept in history.</param>
-/// <param name="Suggest">Suggested for time without a project, and its time teaches suggestions (<see cref="ProjectStore.SetSuggestionOptOuts"/>).</param>
-/// <param name="ReadScreen">The screen is read during its time, for suggestions.</param>
-/// <param name="StartsOn">Its first day; null for no limit (<see cref="ProjectStore.SetDates"/>).</param>
-/// <param name="EndsOn">Its last day; null for no limit.</param>
-public sealed record Project(long Id, string Name, long? CategoryId, int? Color, bool Archived, bool Suggest = true, bool ReadScreen = true,
-    DateOnly? StartsOn = null, DateOnly? EndsOn = null)
+public sealed record Category
 {
+    public long Id { get; init; }
+    public required string Name { get; init; }
+    /// <summary>0xRRGGBB.</summary>
+    public int Color { get; init; }
+}
+
+public sealed record Project
+{
+    public long Id { get; init; }
+    public required string Name { get; init; }
+    /// <summary>Null when its category was deleted (or it never had one).</summary>
+    public long? CategoryId { get; init; }
+    /// <summary>0xRRGGBB, or null to use the category's.</summary>
+    public int? Color { get; init; }
+    /// <summary>Hidden from lists, kept in history.</summary>
+    public bool Archived { get; init; }
+    /// <summary>Suggested for time without a project, and its time teaches suggestions (<see cref="ProjectStore.SetSuggestionOptOuts"/>).</summary>
+    public bool Suggest { get; init; } = true;
+    /// <summary>The screen is read during its time, for suggestions.</summary>
+    public bool ReadScreen { get; init; } = true;
+    /// <summary>Its first day; null for no limit (<see cref="ProjectStore.SetDates"/>).</summary>
+    public DateOnly? StartsOn { get; init; }
+    /// <summary>Its last day; null for no limit.</summary>
+    public DateOnly? EndsOn { get; init; }
+
     /// <summary>Whether a day is within its dates (both included): suggestions don't offer it on other days.</summary>
     public bool RunsOn(DateOnly day) => (StartsOn is not { } start || day >= start) && (EndsOn is not { } end || day <= end);
 }
@@ -42,109 +56,51 @@ public sealed class ProjectStore(WorklapseDatabase db)
 
     // ---- Categories ----
 
-    public List<Category> GetCategories()
-    {
-        using var command = db.Command("SELECT id, name, color FROM categories ORDER BY name COLLATE NOCASE, id;");
-        using var reader = command.ExecuteReader();
-        var categories = new List<Category>();
-        while (reader.Read())
-            categories.Add(new Category(reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2)));
-        return categories;
-    }
+    public List<Category> GetCategories() =>
+        db.Connection.Query<Category>("SELECT id, name, color FROM categories ORDER BY name COLLATE NOCASE, id;").AsList();
 
-    public long AddCategory(string name, int color)
-    {
-        using var command = db.Command("INSERT INTO categories (name, color) VALUES ($name, $color) RETURNING id;");
-        command.Parameters.AddWithValue("$name", RequireName(name));
-        command.Parameters.AddWithValue("$color", color);
-        return (long)command.ExecuteScalar()!;
-    }
+    public long AddCategory(string name, int color) =>
+        db.Connection.ExecuteScalar<long>("INSERT INTO categories (name, color) VALUES ($name, $color) RETURNING id;",
+            new { name = RequireName(name), color });
 
-    public void UpdateCategory(Category category)
-    {
-        using var command = db.Command("UPDATE categories SET name = $name, color = $color WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", category.Id);
-        command.Parameters.AddWithValue("$name", RequireName(category.Name));
-        command.Parameters.AddWithValue("$color", category.Color);
-        command.ExecuteNonQuery();
-    }
+    public void UpdateCategory(Category category) =>
+        db.Connection.Execute("UPDATE categories SET name = $name, color = $color WHERE id = $id;",
+            new { id = category.Id, name = RequireName(category.Name), color = category.Color });
 
     /// <summary>Deletes a category; its projects stay, without one.</summary>
-    public void DeleteCategory(long id)
-    {
-        using var command = db.Command("DELETE FROM categories WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", id);
-        command.ExecuteNonQuery();
-    }
+    public void DeleteCategory(long id) => db.Connection.Execute("DELETE FROM categories WHERE id = $id;", new { id });
 
     // ---- Projects ----
 
-    public List<Project> GetProjects(bool includeArchived = true)
-    {
-        using var command = db.Command($"""
+    public List<Project> GetProjects(bool includeArchived = true) =>
+        db.Connection.Query<Project>($"""
             SELECT id, name, category_id, color, archived, suggest, read_screen, starts_on, ends_on FROM projects
             {(includeArchived ? "" : "WHERE archived = 0")}
             ORDER BY name COLLATE NOCASE, id;
-            """);
-        using var reader = command.ExecuteReader();
-        var projects = new List<Project>();
-        while (reader.Read())
-            projects.Add(new Project(
-                reader.GetInt64(0),
-                reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetInt64(2),
-                reader.IsDBNull(3) ? null : reader.GetInt32(3),
-                reader.GetInt64(4) != 0,
-                Suggest: reader.GetInt64(5) != 0,
-                ReadScreen: reader.GetInt64(6) != 0,
-                StartsOn: reader.IsDBNull(7) ? null : ParseDay(reader.GetString(7)),
-                EndsOn: reader.IsDBNull(8) ? null : ParseDay(reader.GetString(8))));
-        return projects;
-    }
+            """).AsList();
 
     /// <summary>A project's first and last days (null: no limit). Suggestions don't offer it on days outside them.</summary>
-    public void SetDates(long projectId, DateOnly? startsOn, DateOnly? endsOn)
-    {
-        using var command = db.Command("UPDATE projects SET starts_on = $starts, ends_on = $ends WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", projectId);
-        command.Parameters.AddWithValue("$starts", startsOn is { } starts ? DayKey(starts) : (object)DBNull.Value);
-        command.Parameters.AddWithValue("$ends", endsOn is { } ends ? DayKey(ends) : (object)DBNull.Value);
-        command.ExecuteNonQuery();
-    }
+    public void SetDates(long projectId, DateOnly? startsOn, DateOnly? endsOn) =>
+        db.Connection.Execute("UPDATE projects SET starts_on = $startsOn, ends_on = $endsOn WHERE id = $projectId;",
+            new { projectId, startsOn, endsOn });
 
     /// <summary>Whether the project is still there (it may have been deleted in Settings meanwhile).</summary>
-    public bool ProjectExists(long id)
-    {
-        using var command = db.Command("SELECT EXISTS (SELECT 1 FROM projects WHERE id = $id);");
-        command.Parameters.AddWithValue("$id", id);
-        return (long)command.ExecuteScalar()! != 0;
-    }
+    public bool ProjectExists(long id) =>
+        db.Connection.ExecuteScalar<bool>("SELECT EXISTS (SELECT 1 FROM projects WHERE id = $id);", new { id });
 
-    public long AddProject(string name, long? categoryId, int? color = null)
-    {
-        using var command = db.Command("INSERT INTO projects (name, category_id, color) VALUES ($name, $category, $color) RETURNING id;");
-        command.Parameters.AddWithValue("$name", RequireName(name));
-        command.Parameters.AddWithValue("$category", (object?)categoryId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$color", (object?)color ?? DBNull.Value);
-        return (long)command.ExecuteScalar()!;
-    }
+    public long AddProject(string name, long? categoryId, int? color = null) =>
+        db.Connection.ExecuteScalar<long>("INSERT INTO projects (name, category_id, color) VALUES ($name, $categoryId, $color) RETURNING id;",
+            new { name = RequireName(name), categoryId, color });
 
     /// <summary>
     /// Saves a project's name, category, colour and archived state (not its opt-outs, <see cref="SetSuggestionOptOuts"/>, nor
     /// its dates, <see cref="SetDates"/>).
     /// </summary>
-    public void UpdateProject(Project project)
-    {
-        using var command = db.Command("""
-            UPDATE projects SET name = $name, category_id = $category, color = $color, archived = $archived WHERE id = $id;
-            """);
-        command.Parameters.AddWithValue("$id", project.Id);
-        command.Parameters.AddWithValue("$name", RequireName(project.Name));
-        command.Parameters.AddWithValue("$category", (object?)project.CategoryId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$color", (object?)project.Color ?? DBNull.Value);
-        command.Parameters.AddWithValue("$archived", project.Archived ? 1 : 0);
-        command.ExecuteNonQuery();
-    }
+    public void UpdateProject(Project project) =>
+        db.Connection.Execute("""
+            UPDATE projects SET name = $name, category_id = $categoryId, color = $color, archived = $archived WHERE id = $id;
+            """,
+            new { id = project.Id, name = RequireName(project.Name), categoryId = project.CategoryId, color = project.Color, archived = project.Archived });
 
     /// <summary>
     /// Whether a project is suggested (and its time teaches suggestions), and whether the screen is read during its time.
@@ -152,13 +108,8 @@ public sealed class ProjectStore(WorklapseDatabase db)
     /// </summary>
     public void SetSuggestionOptOuts(long projectId, bool suggest, bool readScreen)
     {
-        using (var command = db.Command("UPDATE projects SET suggest = $suggest, read_screen = $read WHERE id = $id;"))
-        {
-            command.Parameters.AddWithValue("$id", projectId);
-            command.Parameters.AddWithValue("$suggest", suggest ? 1 : 0);
-            command.Parameters.AddWithValue("$read", readScreen ? 1 : 0);
-            command.ExecuteNonQuery();
-        }
+        db.Connection.Execute("UPDATE projects SET suggest = $suggest, read_screen = $readScreen WHERE id = $projectId;",
+            new { projectId, suggest, readScreen });
         if (!readScreen)
             new ScreenWordStore(db).Prune();
     }
@@ -167,12 +118,7 @@ public sealed class ProjectStore(WorklapseDatabase db)
     /// Deletes a project with its ranges set by hand, notes and logged time; apps and sites linked to it are
     /// unlinked. Archiving keeps all of that.
     /// </summary>
-    public void DeleteProject(long id)
-    {
-        using var command = db.Command("DELETE FROM projects WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", id);
-        command.ExecuteNonQuery();
-    }
+    public void DeleteProject(long id) => db.Connection.Execute("DELETE FROM projects WHERE id = $id;", new { id });
 
     /// <summary>The colour a project is drawn in: its own, else its category's, else <see cref="DefaultColor"/>.</summary>
     public static int ColorOf(Project project, IReadOnlyDictionary<long, Category> categories) =>
@@ -181,15 +127,8 @@ public sealed class ProjectStore(WorklapseDatabase db)
     // ---- Window title rules ----
 
     /// <summary>Every project's window title rules, each project's in its list's order.</summary>
-    public List<TitleRule> GetTitleRules()
-    {
-        using var command = db.Command("SELECT id, project_id, text, app FROM title_rules ORDER BY project_id, position, id;");
-        using var reader = command.ExecuteReader();
-        var rules = new List<TitleRule>();
-        while (reader.Read())
-            rules.Add(new TitleRule(reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3)));
-        return rules;
-    }
+    public List<TitleRule> GetTitleRules() =>
+        db.Connection.Query<TitleRule>("SELECT id, project_id, text, app FROM title_rules ORDER BY project_id, position, id;").AsList();
 
     /// <summary>
     /// Makes <paramref name="rules"/> a project's window title rules, in that order: rules with an id are kept (so they
@@ -202,33 +141,22 @@ public sealed class ProjectStore(WorklapseDatabase db)
         if (rules.Any(r => string.IsNullOrWhiteSpace(r.Text)))
             throw new ArgumentException("A window title rule needs text to look for.", nameof(rules));
         var kept = rules.Where(r => r.Id is not null).Select(r => r.Id!.Value).Distinct().ToList();
-        using (var owned = db.Command($"SELECT count(*) FROM title_rules WHERE project_id = $project AND id IN ({string.Join(",", kept)});"))
-        {
-            owned.Parameters.AddWithValue("$project", projectId);
-            if ((long)owned.ExecuteScalar()! != kept.Count || kept.Count != rules.Count(r => r.Id is not null))
-                throw new InvalidOperationException($"Some of these window title rules aren't project {projectId}'s.");
-        }
+        var owned = db.Connection.ExecuteScalar<long>(
+            $"SELECT count(*) FROM title_rules WHERE project_id = $projectId AND id IN ({string.Join(",", kept)});", new { projectId });
+        if (owned != kept.Count || kept.Count != rules.Count(r => r.Id is not null))
+            throw new InvalidOperationException($"Some of these window title rules aren't project {projectId}'s.");
 
-        using (var delete = db.Command($"DELETE FROM title_rules WHERE project_id = $project AND id NOT IN ({string.Join(",", kept)});"))
-        {
-            delete.Parameters.AddWithValue("$project", projectId);
-            delete.ExecuteNonQuery();
-        }
+        db.Connection.Execute($"DELETE FROM title_rules WHERE project_id = $projectId AND id NOT IN ({string.Join(",", kept)});", new { projectId });
 
         var ids = new List<long>();
         for (var position = 0; position < rules.Count; position++)
         {
             var (id, text, app) = rules[position];
-            using var command = id is null
-                ? db.Command("INSERT INTO title_rules (project_id, text, app, position) VALUES ($project, $text, $app, $position) RETURNING id;")
-                : db.Command("UPDATE title_rules SET text = $text, app = $app, position = $position WHERE id = $id AND project_id = $project RETURNING id;");
-            command.Parameters.AddWithValue("$project", projectId);
-            command.Parameters.AddWithValue("$text", text.Trim());
-            command.Parameters.AddWithValue("$app", string.IsNullOrWhiteSpace(app) ? DBNull.Value : app.Trim());
-            command.Parameters.AddWithValue("$position", position);
-            if (id is { } existing)
-                command.Parameters.AddWithValue("$id", existing);
-            ids.Add((long)command.ExecuteScalar()!);
+            var sql = id is null
+                ? "INSERT INTO title_rules (project_id, text, app, position) VALUES ($projectId, $text, $app, $position) RETURNING id;"
+                : "UPDATE title_rules SET text = $text, app = $app, position = $position WHERE id = $id AND project_id = $projectId RETURNING id;";
+            ids.Add(db.Connection.ExecuteScalar<long>(sql,
+                new { id, projectId, text = text.Trim(), app = string.IsNullOrWhiteSpace(app) ? null : app.Trim(), position }));
         }
 
         // New rules of a project whose screen isn't read may take time whose words were read.
@@ -241,23 +169,14 @@ public sealed class ProjectStore(WorklapseDatabase db)
     // ---- Ranges set by hand ----
 
     /// <summary>The ranges set by hand that overlap start..end, in time order (not clipped).</summary>
-    public List<ProjectSpan> GetSpans(DateTimeOffset start, DateTimeOffset end)
-    {
-        using var command = db.Command("""
+    public List<ProjectSpan> GetSpans(DateTimeOffset start, DateTimeOffset end) =>
+        db.Connection.Query<(long Start, long End, long? Project)>("""
             SELECT start_ms, end_ms, project_id FROM project_spans
             WHERE start_ms < $end AND end_ms > $start ORDER BY start_ms;
-            """);
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
-        using var reader = command.ExecuteReader();
-        var spans = new List<ProjectSpan>();
-        while (reader.Read())
-            spans.Add(new ProjectSpan(
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0)),
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)),
-                reader.IsDBNull(2) ? null : reader.GetInt64(2)));
-        return spans;
-    }
+            """,
+            new { start = start.ToUnixTimeMilliseconds(), end = end.ToUnixTimeMilliseconds() })
+        .Select(r => new ProjectSpan(DateTimeOffset.FromUnixTimeMilliseconds(r.Start), DateTimeOffset.FromUnixTimeMilliseconds(r.End), r.Project))
+        .ToList();
 
     /// <summary>
     /// Sets start..end to a project by hand, or to "no project" (null), replacing whatever was set there before;
@@ -281,20 +200,10 @@ public sealed class ProjectStore(WorklapseDatabase db)
         CutOut(s, e);
 
         // Join the neighbours with the same project, so the table doesn't fill with fragments.
-        using (var before = db.Command("DELETE FROM project_spans WHERE end_ms = $s AND project_id IS $project RETURNING start_ms;"))
-        {
-            before.Parameters.AddWithValue("$s", s);
-            before.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
-            if (before.ExecuteScalar() is long joined)
-                s = joined;
-        }
-        using (var after = db.Command("DELETE FROM project_spans WHERE start_ms = $e AND project_id IS $project RETURNING end_ms;"))
-        {
-            after.Parameters.AddWithValue("$e", e);
-            after.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
-            if (after.ExecuteScalar() is long joined)
-                e = joined;
-        }
+        s = db.Connection.ExecuteScalar<long?>("DELETE FROM project_spans WHERE end_ms = $s AND project_id IS $projectId RETURNING start_ms;",
+            new { s, projectId }) ?? s;
+        e = db.Connection.ExecuteScalar<long?>("DELETE FROM project_spans WHERE start_ms = $e AND project_id IS $projectId RETURNING end_ms;",
+            new { e, projectId }) ?? e;
         Insert(s, e, projectId);
         // Time given to a project whose screen isn't read loses the words read during it.
         var words = new ScreenWordStore(db);
@@ -305,15 +214,8 @@ public sealed class ProjectStore(WorklapseDatabase db)
     /// <summary>Removes s..e from the ranges set by hand, keeping the parts of them outside it.</summary>
     private void CutOut(long s, long e)
     {
-        var overlapping = new List<(long Start, long End, long? Project)>();
-        using (var find = db.Command("DELETE FROM project_spans WHERE start_ms < $e AND end_ms > $s RETURNING start_ms, end_ms, project_id;"))
-        {
-            find.Parameters.AddWithValue("$s", s);
-            find.Parameters.AddWithValue("$e", e);
-            using var reader = find.ExecuteReader();
-            while (reader.Read())
-                overlapping.Add((reader.GetInt64(0), reader.GetInt64(1), reader.IsDBNull(2) ? null : reader.GetInt64(2)));
-        }
+        var overlapping = db.Connection.Query<(long Start, long End, long? Project)>(
+            "DELETE FROM project_spans WHERE start_ms < $e AND end_ms > $s RETURNING start_ms, end_ms, project_id;", new { s, e }).AsList();
         foreach (var span in overlapping)
         {
             if (span.Start < s)
@@ -323,116 +225,65 @@ public sealed class ProjectStore(WorklapseDatabase db)
         }
     }
 
-    private void Insert(long s, long e, long? projectId)
-    {
-        using var insert = db.Command("INSERT INTO project_spans (start_ms, end_ms, project_id) VALUES ($s, $e, $project);");
-        insert.Parameters.AddWithValue("$s", s);
-        insert.Parameters.AddWithValue("$e", e);
-        insert.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
-        insert.ExecuteNonQuery();
-    }
+    private void Insert(long s, long e, long? projectId) =>
+        db.Connection.Execute("INSERT INTO project_spans (start_ms, end_ms, project_id) VALUES ($s, $e, $projectId);", new { s, e, projectId });
 
     // ---- Notes ----
 
     /// <summary>The notes on projects from <paramref name="from"/> up to (not including) <paramref name="to"/>.</summary>
-    public List<ProjectNote> GetNotes(DateOnly from, DateOnly to)
-    {
-        using var command = db.Command("SELECT day, project_id, text FROM project_notes WHERE day >= $from AND day < $to ORDER BY day, project_id;");
-        command.Parameters.AddWithValue("$from", DayKey(from));
-        command.Parameters.AddWithValue("$to", DayKey(to));
-        using var reader = command.ExecuteReader();
-        var notes = new List<ProjectNote>();
-        while (reader.Read())
-            notes.Add(new ProjectNote(ParseDay(reader.GetString(0)), reader.GetInt64(1), reader.GetString(2)));
-        return notes;
-    }
+    public List<ProjectNote> GetNotes(DateOnly from, DateOnly to) =>
+        db.Connection.Query<ProjectNote>("SELECT day, project_id, text FROM project_notes WHERE day >= $from AND day < $to ORDER BY day, project_id;",
+            new { from, to }).AsList();
 
     /// <summary>Sets a project's note for a day; an empty text removes it.</summary>
-    public void SetNote(DateOnly day, long projectId, string text)
-    {
-        using var command = string.IsNullOrWhiteSpace(text)
-            ? db.Command("DELETE FROM project_notes WHERE day = $day AND project_id = $project;")
-            : db.Command("""
-                INSERT INTO project_notes (day, project_id, text) VALUES ($day, $project, $text)
-                ON CONFLICT (day, project_id) DO UPDATE SET text = excluded.text;
-                """);
-        command.Parameters.AddWithValue("$day", DayKey(day));
-        command.Parameters.AddWithValue("$project", projectId);
-        if (!string.IsNullOrWhiteSpace(text))
-            command.Parameters.AddWithValue("$text", text.Trim());
-        command.ExecuteNonQuery();
-    }
+    public void SetNote(DateOnly day, long projectId, string text) =>
+        db.Connection.Execute(string.IsNullOrWhiteSpace(text)
+            ? "DELETE FROM project_notes WHERE day = $day AND project_id = $projectId;"
+            : """
+              INSERT INTO project_notes (day, project_id, text) VALUES ($day, $projectId, $text)
+              ON CONFLICT (day, project_id) DO UPDATE SET text = excluded.text;
+              """,
+            new { day, projectId, text = text.Trim() });
 
     // ---- Day notes ----
 
-    public string GetDayNote(DateOnly day)
-    {
-        using var command = db.Command("SELECT text FROM day_notes WHERE day = $day;");
-        command.Parameters.AddWithValue("$day", DayKey(day));
-        return command.ExecuteScalar() as string ?? "";
-    }
+    public string GetDayNote(DateOnly day) =>
+        db.Connection.ExecuteScalar<string?>("SELECT text FROM day_notes WHERE day = $day;", new { day }) ?? "";
 
     /// <summary>The day notes from <paramref name="from"/> up to (not including) <paramref name="to"/>.</summary>
-    public Dictionary<DateOnly, string> GetDayNotes(DateOnly from, DateOnly to)
-    {
-        using var command = db.Command("SELECT day, text FROM day_notes WHERE day >= $from AND day < $to;");
-        command.Parameters.AddWithValue("$from", DayKey(from));
-        command.Parameters.AddWithValue("$to", DayKey(to));
-        using var reader = command.ExecuteReader();
-        var notes = new Dictionary<DateOnly, string>();
-        while (reader.Read())
-            notes[ParseDay(reader.GetString(0))] = reader.GetString(1);
-        return notes;
-    }
+    public Dictionary<DateOnly, string> GetDayNotes(DateOnly from, DateOnly to) =>
+        db.Connection.Query<(DateOnly Day, string Text)>("SELECT day, text FROM day_notes WHERE day >= $from AND day < $to;", new { from, to })
+            .ToDictionary(n => n.Day, n => n.Text);
 
     /// <summary>Sets a day's note; an empty text removes it.</summary>
-    public void SetDayNote(DateOnly day, string text)
-    {
-        using var command = string.IsNullOrWhiteSpace(text)
-            ? db.Command("DELETE FROM day_notes WHERE day = $day;")
-            : db.Command("INSERT INTO day_notes (day, text) VALUES ($day, $text) ON CONFLICT (day) DO UPDATE SET text = excluded.text;");
-        command.Parameters.AddWithValue("$day", DayKey(day));
-        if (!string.IsNullOrWhiteSpace(text))
-            command.Parameters.AddWithValue("$text", text);
-        command.ExecuteNonQuery();
-    }
+    public void SetDayNote(DateOnly day, string text) =>
+        db.Connection.Execute(string.IsNullOrWhiteSpace(text)
+            ? "DELETE FROM day_notes WHERE day = $day;"
+            : "INSERT INTO day_notes (day, text) VALUES ($day, $text) ON CONFLICT (day) DO UPDATE SET text = excluded.text;",
+            new { day, text });
 
     // ---- Timesheet ----
 
     /// <summary>Time logged from <paramref name="from"/> up to (not including) <paramref name="to"/>.</summary>
-    public List<LoggedTime> GetLogged(DateOnly from, DateOnly to)
-    {
-        using var command = db.Command("SELECT day, project_id, logged_min FROM timesheet WHERE day >= $from AND day < $to ORDER BY day, project_id;");
-        command.Parameters.AddWithValue("$from", DayKey(from));
-        command.Parameters.AddWithValue("$to", DayKey(to));
-        using var reader = command.ExecuteReader();
-        var logged = new List<LoggedTime>();
-        while (reader.Read())
-            logged.Add(new LoggedTime(ParseDay(reader.GetString(0)), reader.GetInt64(1), TimeSpan.FromMinutes(reader.GetInt64(2))));
-        return logged;
-    }
+    public List<LoggedTime> GetLogged(DateOnly from, DateOnly to) =>
+        db.Connection.Query<(DateOnly Day, long ProjectId, long Minutes)>(
+            "SELECT day, project_id, logged_min FROM timesheet WHERE day >= $from AND day < $to ORDER BY day, project_id;", new { from, to })
+        .Select(r => new LoggedTime(r.Day, r.ProjectId, TimeSpan.FromMinutes(r.Minutes)))
+        .ToList();
 
     /// <summary>Sets the time to bill for a project on a day (whole minutes), or clears it (null).</summary>
     public void SetLogged(DateOnly day, long projectId, TimeSpan? logged)
     {
         if (logged is { } value && value < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(logged), "Logged time can't be negative.");
-        using var command = logged is null
-            ? db.Command("DELETE FROM timesheet WHERE day = $day AND project_id = $project;")
-            : db.Command("""
-                INSERT INTO timesheet (day, project_id, logged_min) VALUES ($day, $project, $minutes)
-                ON CONFLICT (day, project_id) DO UPDATE SET logged_min = excluded.logged_min;
-                """);
-        command.Parameters.AddWithValue("$day", DayKey(day));
-        command.Parameters.AddWithValue("$project", projectId);
-        if (logged is { } minutes)
-            command.Parameters.AddWithValue("$minutes", (long)Math.Round(minutes.TotalMinutes));
-        command.ExecuteNonQuery();
+        db.Connection.Execute(logged is null
+            ? "DELETE FROM timesheet WHERE day = $day AND project_id = $projectId;"
+            : """
+              INSERT INTO timesheet (day, project_id, logged_min) VALUES ($day, $projectId, $minutes)
+              ON CONFLICT (day, project_id) DO UPDATE SET logged_min = excluded.logged_min;
+              """,
+            new { day, projectId, minutes = logged is { } m ? (long)Math.Round(m.TotalMinutes) : 0 });
     }
-
-    private static string DayKey(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
-    private static DateOnly ParseDay(string key) => DateOnly.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string RequireName(string name) =>
         string.IsNullOrWhiteSpace(name) ? throw new ArgumentException("A name is required.", nameof(name)) : name.Trim();

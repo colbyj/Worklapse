@@ -382,7 +382,7 @@ public sealed partial class ProjectsViewModel(TimeSpan maxCaptureLength) : Obser
             foreach (var category in _categories)
             {
                 if (category.Id is { } id)
-                    store.UpdateCategory(new Category(id, category.Name, category.Color));
+                    store.UpdateCategory(new Category { Id = id, Name = category.Name, Color = category.Color });
                 else
                     category.Id = store.AddCategory(category.Name, category.Color);
             }
@@ -390,7 +390,7 @@ public sealed partial class ProjectsViewModel(TimeSpan maxCaptureLength) : Obser
             {
                 var categoryId = project.Category.IsNone ? null : project.Category.Id;
                 project.Id ??= store.AddProject(project.Name, categoryId, project.OwnColor);
-                store.UpdateProject(new Project(project.Id.Value, project.Name, categoryId, project.OwnColor, project.Archived));
+                store.UpdateProject(new Project { Id = project.Id.Value, Name = project.Name, CategoryId = categoryId, Color = project.OwnColor, Archived = project.Archived });
                 store.SetSuggestionOptOuts(project.Id.Value, project.Suggest, project.ReadScreen);
                 store.SetDates(project.Id.Value, project.StartsOn is { } starts ? DateOnly.FromDateTime(starts) : null,
                     project.EndsOn is { } ends ? DateOnly.FromDateTime(ends) : null);

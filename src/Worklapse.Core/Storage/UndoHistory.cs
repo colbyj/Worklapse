@@ -1,3 +1,4 @@
+using Dapper;
 using Microsoft.Data.Sqlite;
 
 namespace Worklapse.Core.Storage;
@@ -85,14 +86,7 @@ public sealed class UndoHistory
         try
         {
             using var transaction = _db.BeginTransaction();
-            var reversals = new List<string>();
-            using (var read = _db.Command("SELECT sql FROM temp.undo_log WHERE step = $step ORDER BY id DESC;"))
-            {
-                read.Parameters.AddWithValue("$step", step);
-                using var reader = read.ExecuteReader();
-                while (reader.Read())
-                    reversals.Add(reader.GetString(0));
-            }
+            var reversals = _db.Connection.Query<string>("SELECT sql FROM temp.undo_log WHERE step = $step ORDER BY id DESC;", new { step }).AsList();
             foreach (var sql in reversals)
                 _db.Execute(sql);
             Forget(step);
@@ -113,27 +107,14 @@ public sealed class UndoHistory
         _db.Execute("DELETE FROM temp.undo_log;");
     }
 
-    private void SetState(bool recording, long step)
-    {
-        using var command = _db.Command("UPDATE temp.undo_state SET recording = $recording, step = $step;");
-        command.Parameters.AddWithValue("$recording", recording ? 1 : 0);
-        command.Parameters.AddWithValue("$step", step);
-        command.ExecuteNonQuery();
-    }
+    private void SetState(bool recording, long step) =>
+        _db.Connection.Execute("UPDATE temp.undo_state SET recording = $recording, step = $step;", new { recording, step });
 
-    private long Count(long step)
-    {
-        using var command = _db.Command("SELECT count(*) FROM temp.undo_log WHERE step = $step;");
-        command.Parameters.AddWithValue("$step", step);
-        return (long)command.ExecuteScalar()!;
-    }
+    private long Count(long step) =>
+        _db.Connection.ExecuteScalar<long>("SELECT count(*) FROM temp.undo_log WHERE step = $step;", new { step });
 
-    private void Forget(long step)
-    {
-        using var command = _db.Command("DELETE FROM temp.undo_log WHERE step = $step;");
-        command.Parameters.AddWithValue("$step", step);
-        command.ExecuteNonQuery();
-    }
+    private void Forget(long step) =>
+        _db.Connection.Execute("DELETE FROM temp.undo_log WHERE step = $step;", new { step });
 
     /// <summary>
     /// Triggers that log, for each row inserted, updated or deleted in <paramref name="table"/> while recording, the SQL

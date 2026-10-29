@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using Dapper;
 using Worklapse.Core.Diagnostics;
 using Worklapse.Core.History;
 using Worklapse.Core.Import;
@@ -209,13 +210,30 @@ public static class PastScreenReading
     /// <param name="Window">The active window on the frame, in its pixels.</param>
     private readonly record struct Unread(long Id, FrameRef Frame, PixelRect Window);
 
+    /// <summary>A row of <see cref="FindUnread"/>'s query: <c>X</c> and <c>Y</c> are the monitor's, <c>Width</c> and <c>Height</c> the picture's.</summary>
+    private sealed record UnreadRow
+    {
+        public long Id { get; init; }
+        public long SegmentId { get; init; }
+        public int FrameIndex { get; init; }
+        public int Width { get; init; }
+        public int Height { get; init; }
+        public required string DeviceName { get; init; }
+        public int X { get; init; }
+        public int Y { get; init; }
+        public int? WindowX { get; init; }
+        public int? WindowY { get; init; }
+        public int? WindowWidth { get; init; }
+        public int? WindowHeight { get; init; }
+    }
+
     /// <summary>
     /// The active captures from <paramref name="from"/> up to <paramref name="to"/> without words, oldest first, each with the frame of the monitor
     /// showing most of its window and the window on that frame. An imported TimeSnapper picture is the window itself.
     /// </summary>
     private static List<Unread> FindUnread(WorklapseDatabase db, DateTimeOffset from, DateTimeOffset to)
     {
-        using var command = db.Command("""
+        var rows = db.Connection.Query<UnreadRow>("""
             SELECT c.id, f.segment_id, f.frame_index, s.width, s.height, m.device_name, m.x, m.y,
                    c.window_x, c.window_y, c.window_width, c.window_height
             FROM captures c
@@ -225,27 +243,25 @@ public static class PastScreenReading
             WHERE c.kind = $active AND c.pending_delete = 0 AND c.ts_ms >= $from AND c.ts_ms < $to
               AND NOT EXISTS (SELECT 1 FROM screen_words w WHERE w.capture_id = c.id)
             ORDER BY c.ts_ms, c.id;
-            """);
-        command.Parameters.AddWithValue("$active", (int)CaptureKind.Active);
-        command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-        using var reader = command.ExecuteReader();
+            """,
+            new { active = (int)CaptureKind.Active, from = from.ToUnixTimeMilliseconds(), to = to.ToUnixTimeMilliseconds() },
+            buffered: false);
 
         var captures = new List<Unread>();
         var best = (Id: -1L, Area: -1L);
-        while (reader.Read())
+        foreach (var row in rows)
         {
-            var id = reader.GetInt64(0);
-            var frame = new FrameRef(reader.GetInt64(1), reader.GetInt32(2));
-            var picture = new PixelRect(0, 0, reader.GetInt32(3), reader.GetInt32(4));
+            var id = row.Id;
+            var frame = new FrameRef(row.SegmentId, row.FrameIndex);
+            var picture = new PixelRect(0, 0, row.Width, row.Height);
             PixelRect window;
-            if (reader.GetString(5) == TimeSnapperImport.MonitorName)
+            if (row.DeviceName == TimeSnapperImport.MonitorName)
                 window = picture;
-            else if (reader.IsDBNull(8))
+            else if (row.WindowX is not { } windowX)
                 continue; // no window recorded: nothing to read
             else
-                window = new PixelRect(reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11))
-                    .Offset(-reader.GetInt32(6), -reader.GetInt32(7)).Intersect(picture);
+                window = new PixelRect(windowX, row.WindowY!.Value, row.WindowWidth!.Value, row.WindowHeight!.Value)
+                    .Offset(-row.X, -row.Y).Intersect(picture);
 
             // One row per monitor captured: keep the one showing the most of the window.
             var area = (long)window.Width * window.Height;

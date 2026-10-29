@@ -1,4 +1,5 @@
 using System.Globalization;
+using Dapper;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Recording;
 using Worklapse.Core.Storage;
@@ -190,13 +191,8 @@ public sealed class FrameSink : IFrameSink
         if (!Directory.Exists(root))
             return;
 
-        string? newest;
-        using (var command = db.Command("SELECT max(path) FROM segments WHERE path >= $from AND path < $to;"))
-        {
-            command.Parameters.AddWithValue("$from", ImagesFolder + "/");
-            command.Parameters.AddWithValue("$to", ImagesFolder + "0"); // '0' follows '/'
-            newest = command.ExecuteScalar() as string;
-        }
+        var newest = db.Connection.ExecuteScalar<string?>("SELECT max(path) FROM segments WHERE path >= $from AND path < $to;",
+            new { from = ImagesFolder + "/", to = ImagesFolder + "0" }); // '0' follows '/'
         var fromDay = newest?.Split('/') is [_, var day, ..]
             && DateOnly.TryParseExact(day, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
             ? date.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
@@ -209,9 +205,9 @@ public sealed class FrameSink : IFrameSink
             foreach (var temp in Directory.EnumerateFiles(folder).Where(f => f.EndsWith(TempSuffix, StringComparison.OrdinalIgnoreCase)))
             {
                 var final = temp[..^TempSuffix.Length];
-                using var committed = db.Command("SELECT 1 FROM segments WHERE path = $path;");
-                committed.Parameters.AddWithValue("$path", Path.GetRelativePath(db.DataFolder, final).Replace('\\', '/'));
-                if (committed.ExecuteScalar() is not null)
+                var committed = db.Connection.ExecuteScalar<long?>("SELECT 1 FROM segments WHERE path = $path;",
+                    new { path = Path.GetRelativePath(db.DataFolder, final).Replace('\\', '/') });
+                if (committed is not null)
                     File.Move(temp, final, overwrite: true);
                 else
                     File.Delete(temp);

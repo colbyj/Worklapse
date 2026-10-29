@@ -6,6 +6,7 @@
     <PackageVersion Include="Avalonia.Controls.ColorPicker" Version="12.1.4" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageVersion Include="FluentIcons.Avalonia" Version="2.1.344" />
+    <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Win32.SystemEvents" Version="10.0.13" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.13" />

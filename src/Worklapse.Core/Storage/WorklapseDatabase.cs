@@ -1,3 +1,6 @@
+using System.Data;
+using System.Globalization;
+using Dapper;
 using Microsoft.Data.Sqlite;
 
 namespace Worklapse.Core.Storage;
@@ -10,6 +13,13 @@ public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
     private const int SchemaVersion = 16;
+
+    /// <summary>How Dapper reads and writes rows: snake_case columns fill PascalCase members, and days are yyyy-MM-dd text.</summary>
+    static WorklapseDatabase()
+    {
+        DefaultTypeMap.MatchNamesWithUnderscores = true;
+        SqlMapper.AddTypeHandler(new DayHandler());
+    }
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -452,6 +462,18 @@ public sealed class WorklapseDatabase : IDisposable
                 """);
             Execute("PRAGMA user_version = 16;");
         }
+    }
+}
+
+/// <summary>A local date as the database keeps it: yyyy-MM-dd text, which sorts and compares in day order.</summary>
+internal sealed class DayHandler : SqlMapper.TypeHandler<DateOnly>
+{
+    public override DateOnly Parse(object value) => DateOnly.ParseExact((string)value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    public override void SetValue(IDbDataParameter parameter, DateOnly value)
+    {
+        parameter.DbType = DbType.String;
+        parameter.Value = value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 }
 

@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Storage;
 
@@ -168,10 +169,8 @@ public static class TimeSnapperImport
             if (picture is not null)
                 store.InsertFrame(captureId, monitorId, new FrameRef(GetOrAddSegment(store, picture, monitorId, time), 0));
 
-            using var record = db.Command("INSERT INTO timesnapper_imports (activity_id, capture_id) VALUES ($activity, $capture);");
-            record.Parameters.AddWithValue("$activity", activity.Id);
-            record.Parameters.AddWithValue("$capture", captureId);
-            record.ExecuteNonQuery();
+            db.Connection.Execute("INSERT INTO timesnapper_imports (activity_id, capture_id) VALUES ($activity, $capture);",
+                new { activity = activity.Id, capture = captureId });
         }
         transaction.Commit();
         return batch.Count;
@@ -183,12 +182,8 @@ public static class TimeSnapperImport
     /// </summary>
     private static long GetOrAddSegment(RecordingStore store, Picture picture, long monitorId, DateTimeOffset time)
     {
-        using (var find = store.Database.Command("SELECT id FROM segments WHERE path = $path;"))
-        {
-            find.Parameters.AddWithValue("$path", picture.Path);
-            if (find.ExecuteScalar() is long existing)
-                return existing;
-        }
+        if (store.Database.Connection.ExecuteScalar<long?>("SELECT id FROM segments WHERE path = $path;", new { path = picture.Path }) is { } existing)
+            return existing;
         var segmentId = store.InsertSegment(monitorId, picture.Path, picture.Width, picture.Height, PictureQuality, time,
             SegmentState.Encoded, FrameFormat.Jpeg);
         store.InsertSegmentFrame(segmentId, 0, 0, picture.Length, isKey: true);
@@ -197,30 +192,16 @@ public static class TimeSnapperImport
 
     private static bool IsUnknown(string? program) => string.IsNullOrEmpty(program) || program == UnknownProgram;
 
-    private static HashSet<int> ImportedActivities(WorklapseDatabase db)
-    {
-        using var command = db.Command("SELECT activity_id FROM timesnapper_imports;");
-        using var reader = command.ExecuteReader();
-        var ids = new HashSet<int>();
-        while (reader.Read())
-            ids.Add(reader.GetInt32(0));
-        return ids;
-    }
+    private static HashSet<int> ImportedActivities(WorklapseDatabase db) =>
+        [.. db.Connection.Query<int>("SELECT activity_id FROM timesnapper_imports;", buffered: false)];
 
     /// <summary>When Worklapse's own captures were taken (UTC ms), ascending.</summary>
-    private static long[] OwnCaptureTimes(WorklapseDatabase db)
-    {
-        using var command = db.Command("""
+    private static long[] OwnCaptureTimes(WorklapseDatabase db) =>
+        [.. db.Connection.Query<long>("""
             SELECT ts_ms FROM captures c
             WHERE NOT EXISTS (SELECT 1 FROM timesnapper_imports t WHERE t.capture_id = c.id)
             ORDER BY ts_ms;
-            """);
-        using var reader = command.ExecuteReader();
-        var times = new List<long>();
-        while (reader.Read())
-            times.Add(reader.GetInt64(0));
-        return [.. times];
-    }
+            """, buffered: false)];
 
     /// <summary>
     /// Whether <paramref name="time"/> falls in the time one of Worklapse's own captures counts for, as Day review
@@ -327,15 +308,11 @@ public static class TimeSnapperImport
             {
                 if (SiteName(program.Name) is not { } domain)
                     continue;
-                using var command = db.Command("UPDATE sites SET productive = 1 WHERE domain = $name;");
-                command.Parameters.AddWithValue("$name", domain);
-                command.ExecuteNonQuery();
+                db.Connection.Execute("UPDATE sites SET productive = 1 WHERE domain = $name;", new { name = domain });
             }
             else
             {
-                using var command = db.Command("UPDATE apps SET productive = 1 WHERE exe_name = $name;");
-                command.Parameters.AddWithValue("$name", program.Name);
-                command.ExecuteNonQuery();
+                db.Connection.Execute("UPDATE apps SET productive = 1 WHERE exe_name = $name;", new { name = program.Name });
             }
         }
         transaction.Commit();

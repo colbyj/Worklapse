@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
@@ -71,32 +72,21 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     /// </summary>
     public StoredDay Get(DateTimeOffset start, DateTimeOffset end)
     {
-        var stretches = new List<StoredSuggestion>();
-        using (var command = db.Command("""
+        var range = new { start = start.ToUnixTimeMilliseconds(), end = end.ToUnixTimeMilliseconds() };
+        var stretches = db.Connection.Query<(long Id, long Start, long End, long Project, double Confidence, long? LeastSure, string Evidence, long State)>("""
             SELECT id, start_ms, end_ms, project_id, confidence, least_sure_ms, evidence, state FROM suggestions
             WHERE start_ms >= $start AND start_ms < $end ORDER BY start_ms, id;
-            """))
-        {
-            Bind(command, start, end);
-            using var rows = command.ExecuteReader();
-            while (rows.Read())
-                stretches.Add(new StoredSuggestion(rows.GetInt64(0), Time(rows.GetInt64(1)), Time(rows.GetInt64(2)), rows.GetInt64(3),
-                    rows.GetDouble(4), Time(rows.IsDBNull(5) ? rows.GetInt64(1) : rows.GetInt64(5)),
-                    rows.GetString(6).Split(' ', StringSplitOptions.RemoveEmptyEntries), (SuggestionState)rows.GetInt32(7)));
-        }
+            """, range)
+            .Select(r => new StoredSuggestion(r.Id, Time(r.Start), Time(r.End), r.Project, r.Confidence, Time(r.LeastSure ?? r.Start),
+                r.Evidence.Split(' ', StringSplitOptions.RemoveEmptyEntries), (SuggestionState)r.State))
+            .ToList();
 
-        var breaks = new List<StoredBreak>();
-        using (var command = db.Command("""
+        var breaks = db.Connection.Query<(long Id, long Start, long End, long Before, long After, long? CountedTo, long State)>("""
             SELECT id, start_ms, end_ms, before_project, after_project, counted_to, state FROM suggestion_breaks
             WHERE start_ms >= $start AND start_ms < $end ORDER BY start_ms, id;
-            """))
-        {
-            Bind(command, start, end);
-            using var rows = command.ExecuteReader();
-            while (rows.Read())
-                breaks.Add(new StoredBreak(rows.GetInt64(0), Time(rows.GetInt64(1)), Time(rows.GetInt64(2)), rows.GetInt64(3),
-                    rows.GetInt64(4), rows.IsDBNull(5) ? null : rows.GetInt64(5), (SuggestionState)rows.GetInt32(6)));
-        }
+            """, range)
+            .Select(r => new StoredBreak(r.Id, Time(r.Start), Time(r.End), r.Before, r.After, r.CountedTo, (SuggestionState)r.State))
+            .ToList();
         return new StoredDay(stretches, breaks);
     }
 
@@ -104,18 +94,11 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     public Dictionary<DateOnly, int> CountOpen(IEnumerable<(DateOnly Day, DateTimeOffset Start, DateTimeOffset End)> days)
     {
         var counts = new Dictionary<DateOnly, int>();
-        using var command = db.Command("""
-            SELECT (SELECT count(*) FROM suggestions WHERE state IN (0, 3) AND start_ms >= $start AND start_ms < $end)
-                 + (SELECT count(*) FROM suggestion_breaks WHERE state = 0 AND start_ms >= $start AND start_ms < $end);
-            """);
-        var start = command.Parameters.Add("$start", Microsoft.Data.Sqlite.SqliteType.Integer);
-        var end = command.Parameters.Add("$end", Microsoft.Data.Sqlite.SqliteType.Integer);
         foreach (var (day, from, to) in days)
-        {
-            start.Value = from.ToUnixTimeMilliseconds();
-            end.Value = to.ToUnixTimeMilliseconds();
-            counts[day] = Convert.ToInt32(command.ExecuteScalar());
-        }
+            counts[day] = db.Connection.ExecuteScalar<int>("""
+                SELECT (SELECT count(*) FROM suggestions WHERE state IN (0, 3) AND start_ms >= $start AND start_ms < $end)
+                     + (SELECT count(*) FROM suggestion_breaks WHERE state = 0 AND start_ms >= $start AND start_ms < $end);
+                """, new { start = from.ToUnixTimeMilliseconds(), end = to.ToUnixTimeMilliseconds() });
         return counts;
     }
 
@@ -138,26 +121,20 @@ public sealed class SuggestionStore(WorklapseDatabase db)
                     && o.ProjectId == stretch.ProjectId) is { } same)
             {
                 kept.Add(same.Id);
-                using var update = db.Command("""
+                db.Connection.Execute("""
                     UPDATE suggestions SET confidence = $confidence, least_sure_ms = $leastSure, evidence = $evidence WHERE id = $id;
-                    """);
-                update.Parameters.AddWithValue("$id", same.Id);
-                update.Parameters.AddWithValue("$confidence", stretch.Confidence);
-                update.Parameters.AddWithValue("$leastSure", stretch.LeastSure.ToUnixTimeMilliseconds());
-                update.Parameters.AddWithValue("$evidence", string.Join(' ', stretch.Evidence));
-                update.ExecuteNonQuery();
+                    """,
+                    new { id = same.Id, confidence = stretch.Confidence, leastSure = stretch.LeastSure.ToUnixTimeMilliseconds(),
+                        evidence = string.Join(' ', stretch.Evidence) });
                 continue;
             }
-            using var insert = db.Command("""
+            db.Connection.Execute("""
                 INSERT INTO suggestions (start_ms, end_ms, project_id, confidence, least_sure_ms, evidence, state)
                 VALUES ($start, $end, $project, $confidence, $leastSure, $evidence, 0);
-                """);
-            Bind(insert, stretch.Start, stretch.End);
-            insert.Parameters.AddWithValue("$project", stretch.ProjectId);
-            insert.Parameters.AddWithValue("$confidence", stretch.Confidence);
-            insert.Parameters.AddWithValue("$leastSure", stretch.LeastSure.ToUnixTimeMilliseconds());
-            insert.Parameters.AddWithValue("$evidence", string.Join(' ', stretch.Evidence));
-            insert.ExecuteNonQuery();
+                """,
+                new { start = stretch.Start.ToUnixTimeMilliseconds(), end = stretch.End.ToUnixTimeMilliseconds(), project = stretch.ProjectId,
+                    confidence = stretch.Confidence, leastSure = stretch.LeastSure.ToUnixTimeMilliseconds(),
+                    evidence = string.Join(' ', stretch.Evidence) });
         }
         Delete("suggestions", openStretches.Where(o => !kept.Contains(o.Id)).Select(o => o.Id));
 
@@ -171,14 +148,12 @@ public sealed class SuggestionStore(WorklapseDatabase db)
                 kept.Add(same.Id);
                 continue;
             }
-            using var insert = db.Command("""
+            db.Connection.Execute("""
                 INSERT INTO suggestion_breaks (start_ms, end_ms, before_project, after_project, state)
                 VALUES ($start, $end, $before, $after, 0);
-                """);
-            Bind(insert, computedBreak.Start, computedBreak.End);
-            insert.Parameters.AddWithValue("$before", computedBreak.Before);
-            insert.Parameters.AddWithValue("$after", computedBreak.After);
-            insert.ExecuteNonQuery();
+                """,
+                new { start = computedBreak.Start.ToUnixTimeMilliseconds(), end = computedBreak.End.ToUnixTimeMilliseconds(),
+                    before = computedBreak.Before, after = computedBreak.After });
         }
         Delete("suggestion_breaks", openBreaks.Where(o => !kept.Contains(o.Id)).Select(o => o.Id));
         transaction.Commit();
@@ -221,13 +196,9 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     /// Changes an open stretch's project before it's accepted. That's a decision: the stretch is kept as it is
     /// (<see cref="SuggestionState.Chosen"/>) when the day is worked out again.
     /// </summary>
-    public void SetProject(long suggestionId, long projectId)
-    {
-        using var command = db.Command("UPDATE suggestions SET project_id = $project, state = 3 WHERE id = $id AND state IN (0, 3);");
-        command.Parameters.AddWithValue("$id", suggestionId);
-        command.Parameters.AddWithValue("$project", projectId);
-        command.ExecuteNonQuery();
-    }
+    public void SetProject(long suggestionId, long projectId) =>
+        db.Connection.Execute("UPDATE suggestions SET project_id = $project, state = 3 WHERE id = $id AND state IN (0, 3);",
+            new { id = suggestionId, project = projectId });
 
     /// <summary>Rejects a stretch: it stays, so the same stretch isn't suggested again.</summary>
     public void Reject(long suggestionId) => SetState("suggestions", suggestionId, SuggestionState.Rejected);
@@ -253,10 +224,8 @@ public sealed class SuggestionStore(WorklapseDatabase db)
     {
         using var transaction = db.BeginTransaction();
         SetSpans(suggestedBreak.Start, suggestedBreak.End, projectId, captures, spans, maxCaptureLength);
-        using var command = db.Command("UPDATE suggestion_breaks SET counted_to = $project, state = 1 WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", suggestedBreak.Id);
-        command.Parameters.AddWithValue("$project", projectId);
-        command.ExecuteNonQuery();
+        db.Connection.Execute("UPDATE suggestion_breaks SET counted_to = $project, state = 1 WHERE id = $id;",
+            new { id = suggestedBreak.Id, project = projectId });
         transaction.Commit();
     }
 
@@ -346,31 +315,12 @@ public sealed class SuggestionStore(WorklapseDatabase db)
         (aEnd < bEnd ? aEnd : bEnd) - (aStart > bStart ? aStart : bStart);
 
     /// <param name="table">suggestions or suggestion_breaks.</param>
-    private void SetState(string table, long id, SuggestionState state)
-    {
-        using var command = db.Command($"UPDATE {table} SET state = $state WHERE id = $id;");
-        command.Parameters.AddWithValue("$id", id);
-        command.Parameters.AddWithValue("$state", (int)state);
-        command.ExecuteNonQuery();
-    }
+    private void SetState(string table, long id, SuggestionState state) =>
+        db.Connection.Execute($"UPDATE {table} SET state = $state WHERE id = $id;", new { id, state = (int)state });
 
     /// <param name="table">suggestions or suggestion_breaks.</param>
-    private void Delete(string table, IEnumerable<long> ids)
-    {
-        using var command = db.Command($"DELETE FROM {table} WHERE id = $id;");
-        var id = command.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Integer);
-        foreach (var each in ids)
-        {
-            id.Value = each;
-            command.ExecuteNonQuery();
-        }
-    }
-
-    private static void Bind(Microsoft.Data.Sqlite.SqliteCommand command, DateTimeOffset start, DateTimeOffset end)
-    {
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
-    }
+    private void Delete(string table, IEnumerable<long> ids) =>
+        db.Connection.Execute($"DELETE FROM {table} WHERE id = $id;", ids.Select(id => new { id }));
 
     private static DateTimeOffset Time(long ms) => DateTimeOffset.FromUnixTimeMilliseconds(ms);
 }

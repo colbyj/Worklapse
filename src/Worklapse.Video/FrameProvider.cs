@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.Imaging;
 using Worklapse.Core.Storage;
 
@@ -243,13 +244,9 @@ public sealed class FrameProvider : IDisposable
         /// <summary>The segment; null if it doesn't exist (any more).</summary>
         public static SegmentRow? Load(WorklapseDatabase db, long id)
         {
-            using var command = db.Command("SELECT monitor_id, path, state, format, width, height FROM segments WHERE id = $id;");
-            command.Parameters.AddWithValue("$id", id);
-            using var reader = command.ExecuteReader();
-            return reader.Read()
-                ? new SegmentRow(id, reader.GetInt64(0), reader.GetString(1), (SegmentState)reader.GetInt32(2), (FrameFormat)reader.GetInt32(3),
-                    reader.GetInt32(4), reader.GetInt32(5))
-                : null;
+            var row = db.Connection.Query<(long MonitorId, string Path, long State, long Format, int Width, int Height)>(
+                "SELECT monitor_id, path, state, format, width, height FROM segments WHERE id = $id;", new { id }).AsList();
+            return row is [var r] ? new SegmentRow(id, r.MonitorId, r.Path, (SegmentState)r.State, (FrameFormat)r.Format, r.Width, r.Height) : null;
         }
     }
 
@@ -394,20 +391,14 @@ public sealed class FrameProvider : IDisposable
             // Encoding a staged segment rewrites its offsets to point into the AV1 file; offsets for one
             // format must never be used with the other, so a change of state (or the segment's removal)
             // reopens the cursor.
-            using (var state = _db.Command("SELECT state FROM segments WHERE id = $id;"))
-            {
-                state.Parameters.AddWithValue("$id", SegmentId);
-                if (state.ExecuteScalar() is not long current || (SegmentState)current != _state)
-                    throw new InvalidOperationException($"Segment {SegmentId} changed state; reopen it.");
-            }
+            var segmentId = SegmentId;
+            if (_db.Connection.ExecuteScalar<long?>("SELECT state FROM segments WHERE id = $segmentId;", new { segmentId }) is not { } current
+                || (SegmentState)current != _state)
+                throw new InvalidOperationException($"Segment {SegmentId} changed state; reopen it.");
 
-            using var command = _db.Command("SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;");
-            command.Parameters.AddWithValue("$id", SegmentId);
-            using var reader = command.ExecuteReader();
-            var frames = new List<(int, long, int)>();
-            while (reader.Read())
-                frames.Add((reader.GetInt32(0), reader.GetInt64(1), reader.GetInt32(2)));
-            _frames = frames;
+            _frames = _db.Connection.Query<(int Index, long Offset, int Length)>(
+                "SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $segmentId ORDER BY frame_index;",
+                new { segmentId }).AsList();
         }
 
         private int PositionOf(int frameIndex)

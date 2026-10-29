@@ -149,7 +149,7 @@ public class SuggestionTests
     public void StartersTeachEachProjectsNameLinksAndRules()
     {
         var examples = TrainingSet.Starters(
-            [new Project(Presayo, "Presayo", null, null, false), new Project(9, "Old", null, null, Archived: true)],
+            [new Project { Id = Presayo, Name = "Presayo" }, new Project { Id = 9, Name = "Old", Archived = true }],
             [new TitleRule(1, Presayo, "Label tools", null)],
             [new ProgramUsage(new ProgramKey(ProgramKind.App, "Presayo.exe"), true, false, TimeSpan.Zero, Presayo)],
             SuggestionOptOuts.None).ToList();

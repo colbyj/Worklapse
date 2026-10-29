@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.History;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
@@ -20,15 +21,7 @@ public sealed record SuggestionOptOuts(IReadOnlySet<long> UnsuggestedProjects, I
         return new SuggestionOptOuts(projects, Names("SELECT DISTINCT exe_name FROM apps WHERE learn = 0;"),
             Names("SELECT domain FROM sites WHERE learn = 0;"));
 
-        HashSet<string> Names(string sql)
-        {
-            using var command = db.Command(sql);
-            using var reader = command.ExecuteReader();
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            while (reader.Read())
-                names.Add(reader.GetString(0));
-            return names;
-        }
+        HashSet<string> Names(string sql) => new(db.Connection.Query<string>(sql), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Whether a capture's window counts: its site decides when it has one, else its app (as for On-task).</summary>

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Dapper;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Settings;
 using Worklapse.Core.Storage;
@@ -366,12 +367,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     private static string LearnsFrom(string dataFolder)
     {
         using var db = WorklapseDatabase.Open(dataFolder);
-        using var command = db.Command("""
+        var (blocks, days) = db.Connection.QuerySingle<(long Blocks, long Days)>("""
             SELECT count(*), count(DISTINCT date(start_ms / 1000, 'unixepoch', 'localtime')) FROM project_spans WHERE project_id IS NOT NULL;
             """);
-        using var reader = command.ExecuteReader();
-        reader.Read();
-        var (blocks, days) = (reader.GetInt64(0), reader.GetInt64(1));
         return blocks == 0 ? "Nothing yet: it learns from time you set to a project by hand"
             : $"Time you set by hand: {blocks:N0} {(blocks == 1 ? "block" : "blocks")} over {days:N0} {(days == 1 ? "day" : "days")}";
     }

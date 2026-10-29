@@ -1,3 +1,4 @@
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Worklapse.Core.Platform;
 
@@ -52,74 +53,63 @@ public sealed class RecordingStore(WorklapseDatabase db)
     public long GetOrAddApp(string exeName, string? exePath)
     {
         // exe_path can be NULL, which UNIQUE treats as distinct, so look up before inserting.
-        using (var find = db.Command("SELECT id FROM apps WHERE exe_name = $name AND exe_path IS $path;"))
-        {
-            find.Parameters.AddWithValue("$name", exeName);
-            find.Parameters.AddWithValue("$path", (object?)exePath ?? DBNull.Value);
-            if (find.ExecuteScalar() is long existing)
-                return existing;
-        }
+        if (db.Connection.ExecuteScalar<long?>("SELECT id FROM apps WHERE exe_name = $name AND exe_path IS $path;",
+                new { name = exeName, path = exePath }) is { } existing)
+            return existing;
 
         // Apps are classified and linked by name, so another copy of one already marked or linked (another path) is
         // marked and linked too, and opted out of suggestions alike.
-        using var insert = db.Command("""
+        return db.Connection.ExecuteScalar<long>("""
             INSERT INTO apps (exe_name, exe_path, productive, project_id, read_screen, learn)
             VALUES ($name, $path, coalesce((SELECT max(productive) FROM apps WHERE exe_name = $name), 0),
                     (SELECT max(project_id) FROM apps WHERE exe_name = $name),
                     coalesce((SELECT min(read_screen) FROM apps WHERE exe_name = $name), 1),
                     coalesce((SELECT min(learn) FROM apps WHERE exe_name = $name), 1))
             RETURNING id;
-            """);
-        insert.Parameters.AddWithValue("$name", exeName);
-        insert.Parameters.AddWithValue("$path", (object?)exePath ?? DBNull.Value);
-        return (long)insert.ExecuteScalar()!;
+            """,
+            new { name = exeName, path = exePath });
     }
 
     /// <summary>The site's id, adding it if new. Not cached, for the same reason as apps.</summary>
-    public long GetOrAddSite(string domain)
-    {
-        using var upsert = db.Command("""
+    public long GetOrAddSite(string domain) =>
+        db.Connection.ExecuteScalar<long>("""
             INSERT INTO sites (domain) VALUES ($domain)
             ON CONFLICT (domain) DO UPDATE SET domain = domain
             RETURNING id;
-            """);
-        upsert.Parameters.AddWithValue("$domain", domain);
-        return (long)upsert.ExecuteScalar()!;
-    }
+            """,
+            new { domain });
 
     /// <summary>
     /// Whether the app (any copy with that exe name) or the site is excluded from recording. Looked up every
     /// tick, so a change on the Applications page applies from the next capture.
     /// </summary>
-    public bool IsExcluded(string exeName, string? domain)
-    {
-        using var find = db.Command("""
+    public bool IsExcluded(string exeName, string? domain) =>
+        db.Connection.ExecuteScalar<bool>("""
             SELECT EXISTS (SELECT 1 FROM apps WHERE exe_name = $name AND excluded = 1)
                 OR EXISTS (SELECT 1 FROM sites WHERE domain = $domain AND excluded = 1);
-            """);
-        find.Parameters.AddWithValue("$name", exeName);
-        find.Parameters.AddWithValue("$domain", (object?)domain ?? DBNull.Value);
-        return (long)find.ExecuteScalar()! != 0;
-    }
+            """,
+            new { name = exeName, domain });
 
     public long GetOrAddMonitor(MonitorInfo monitor)
     {
         if (_monitors.TryGetValue(monitor, out var id))
             return id;
 
-        using var upsert = db.Command("""
+        return _monitors[monitor] = db.Connection.ExecuteScalar<long>("""
             INSERT INTO monitors (device_name, x, y, width, height, is_primary)
             VALUES ($name, $x, $y, $w, $h, $primary)
             ON CONFLICT DO UPDATE SET device_name = excluded.device_name
             RETURNING id;
-            """);
-        upsert.Parameters.AddWithValue("$name", monitor.DeviceName);
-        upsert.Parameters.AddWithValue("$x", monitor.Bounds.X);
-        upsert.Parameters.AddWithValue("$y", monitor.Bounds.Y);
-        upsert.Parameters.AddWithValue("$w", monitor.Bounds.Width);
-        upsert.Parameters.AddWithValue("$h", monitor.Bounds.Height);
-        upsert.Parameters.AddWithValue("$primary", monitor.IsPrimary ? 1 : 0);
-        return _monitors[monitor] = (long)upsert.ExecuteScalar()!;
+            """,
+            new
+            {
+                name = monitor.DeviceName,
+                x = monitor.Bounds.X,
+                y = monitor.Bounds.Y,
+                w = monitor.Bounds.Width,
+                h = monitor.Bounds.Height,
+                primary = monitor.IsPrimary,
+            });
     }
 
     /// <summary>The id of the layout made of these monitors (attached at the same time), adding it if new.</summary>
@@ -129,82 +119,68 @@ public sealed class RecordingStore(WorklapseDatabase db)
         if (_layouts.TryGetValue(key, out var id))
             return id;
 
-        using var upsert = db.Command("""
+        return _layouts[key] = db.Connection.ExecuteScalar<long>("""
             INSERT INTO layouts (monitors) VALUES ($monitors)
             ON CONFLICT (monitors) DO UPDATE SET monitors = monitors
             RETURNING id;
-            """);
-        upsert.Parameters.AddWithValue("$monitors", key);
-        return _layouts[key] = (long)upsert.ExecuteScalar()!;
+            """,
+            new { monitors = key });
     }
 
     public long InsertCapture(DateTimeOffset timestamp, CaptureKind kind, long? appId, string? title, PixelRect? window, long? siteId = null,
-        long? layoutId = null)
-    {
-        using var insert = db.Command("""
+        long? layoutId = null) =>
+        db.Connection.ExecuteScalar<long>("""
             INSERT INTO captures (ts_ms, utc_offset_min, kind, app_id, window_title, window_x, window_y, window_width, window_height, site_id, layout_id)
             VALUES ($ts, $offset, $kind, $app, $title, $wx, $wy, $ww, $wh, $site, $layout)
             RETURNING id;
-            """);
-        insert.Parameters.AddWithValue("$ts", timestamp.ToUnixTimeMilliseconds());
-        insert.Parameters.AddWithValue("$offset", (int)timestamp.Offset.TotalMinutes);
-        insert.Parameters.AddWithValue("$kind", (int)kind);
-        insert.Parameters.AddWithValue("$app", (object?)appId ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$site", (object?)siteId ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$layout", (object?)layoutId ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$title", (object?)title ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$wx", (object?)window?.X ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$wy", (object?)window?.Y ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$ww", (object?)window?.Width ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$wh", (object?)window?.Height ?? DBNull.Value);
-        return (long)insert.ExecuteScalar()!;
-    }
+            """,
+            new
+            {
+                ts = timestamp.ToUnixTimeMilliseconds(),
+                offset = (int)timestamp.Offset.TotalMinutes,
+                kind = (int)kind,
+                app = appId,
+                site = siteId,
+                layout = layoutId,
+                title,
+                wx = window?.X,
+                wy = window?.Y,
+                ww = window?.Width,
+                wh = window?.Height,
+            });
 
     public long InsertSegment(long monitorId, string relativePath, int width, int height, int quality, DateTimeOffset created,
-        SegmentState state = SegmentState.Encoded, FrameFormat format = FrameFormat.Video)
-    {
-        using var insert = db.Command("""
+        SegmentState state = SegmentState.Encoded, FrameFormat format = FrameFormat.Video) =>
+        db.Connection.ExecuteScalar<long>("""
             INSERT INTO segments (monitor_id, path, width, height, quality, created_ms, state, format)
             VALUES ($monitor, $path, $w, $h, $q, $created, $state, $format)
             RETURNING id;
-            """);
-        insert.Parameters.AddWithValue("$state", (int)state);
-        insert.Parameters.AddWithValue("$format", (int)format);
-        insert.Parameters.AddWithValue("$monitor", monitorId);
-        insert.Parameters.AddWithValue("$path", relativePath);
-        insert.Parameters.AddWithValue("$w", width);
-        insert.Parameters.AddWithValue("$h", height);
-        insert.Parameters.AddWithValue("$q", quality);
-        insert.Parameters.AddWithValue("$created", created.ToUnixTimeMilliseconds());
-        return (long)insert.ExecuteScalar()!;
-    }
+            """,
+            new
+            {
+                state = (int)state,
+                format = (int)format,
+                monitor = monitorId,
+                path = relativePath,
+                w = width,
+                h = height,
+                q = quality,
+                created = created.ToUnixTimeMilliseconds(),
+            });
 
-    public void InsertSegmentFrame(long segmentId, int frameIndex, long fileOffset, int length, bool isKey)
-    {
-        using var insert = db.Command("""
+    public void InsertSegmentFrame(long segmentId, int frameIndex, long fileOffset, int length, bool isKey) =>
+        db.Connection.Execute("""
             INSERT INTO segment_frames (segment_id, frame_index, file_offset, length, is_key)
             VALUES ($segment, $index, $offset, $length, $key);
-            """);
-        insert.Parameters.AddWithValue("$segment", segmentId);
-        insert.Parameters.AddWithValue("$index", frameIndex);
-        insert.Parameters.AddWithValue("$offset", fileOffset);
-        insert.Parameters.AddWithValue("$length", length);
-        insert.Parameters.AddWithValue("$key", isKey ? 1 : 0);
-        insert.ExecuteNonQuery();
-    }
+            """,
+            new { segment = segmentId, index = frameIndex, offset = fileOffset, length, key = isKey });
 
-    public void InsertFrame(long captureId, long monitorId, FrameRef frame)
-    {
-        using var insert = db.Command("""
+    public void InsertFrame(long captureId, long monitorId, FrameRef frame) =>
+        db.Connection.Execute("""
             INSERT INTO frames (capture_id, monitor_id, segment_id, frame_index)
             VALUES ($capture, $monitor, $segment, $index);
-            """);
-        insert.Parameters.AddWithValue("$capture", captureId);
-        insert.Parameters.AddWithValue("$monitor", monitorId);
-        insert.Parameters.AddWithValue("$segment", frame.SegmentId);
-        insert.Parameters.AddWithValue("$index", frame.FrameIndex);
-        insert.ExecuteNonQuery();
-    }
+            """,
+            new { capture = captureId, monitor = monitorId, segment = frame.SegmentId, index = frame.FrameIndex });
 
     public SqliteTransaction BeginTransaction() => db.BeginTransaction();
 }

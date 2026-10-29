@@ -1,3 +1,4 @@
+using Dapper;
 using Worklapse.Core.Platform;
 using Worklapse.Core.Projects;
 using Worklapse.Core.Storage;
@@ -26,19 +27,11 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     public DateOnly Today => LocalDay.Today(dayStart);
 
     /// <summary>Local days that have at least one capture, oldest first.</summary>
-    public IReadOnlyList<DateOnly> GetDays()
-    {
+    public IReadOnlyList<DateOnly> GetDays() =>
         // Local day of each capture, using the offset recorded with it.
-        using var command = db.Command("""
+        db.Connection.Query<DateOnly>("""
             SELECT DISTINCT date((ts_ms / 1000) + utc_offset_min * 60 - $dayStart, 'unixepoch') FROM captures ORDER BY 1;
-            """);
-        command.Parameters.AddWithValue("$dayStart", (long)dayStart.ToTimeSpan().TotalSeconds);
-        using var reader = command.ExecuteReader();
-        var days = new List<DateOnly>();
-        while (reader.Read())
-            days.Add(DateOnly.ParseExact(reader.GetString(0), "yyyy-MM-dd"));
-        return days;
-    }
+            """, new { dayStart = (long)dayStart.ToTimeSpan().TotalSeconds }).AsList();
 
     public DayHistory LoadDay(DateOnly day)
     {
@@ -46,99 +39,75 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
 
         var frames = new Dictionary<long, List<MonitorFrame>>();
         var monitorIds = new HashSet<long>();
-        using (var command = db.Command("""
+        var frameRows = db.Connection.Query<(long CaptureId, long MonitorId, long SegmentId, int FrameIndex)>("""
             SELECT f.capture_id, f.monitor_id, f.segment_id, f.frame_index
             FROM frames f JOIN captures c ON c.id = f.capture_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end;
-            """))
+            """, new { start = startMs, end = endMs });
+        foreach (var row in frameRows)
         {
-            command.Parameters.AddWithValue("$start", startMs);
-            command.Parameters.AddWithValue("$end", endMs);
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                var captureId = reader.GetInt64(0);
-                if (!frames.TryGetValue(captureId, out var list))
-                    frames[captureId] = list = [];
-                var monitorId = reader.GetInt64(1);
-                list.Add(new MonitorFrame(monitorId, new FrameRef(reader.GetInt64(2), reader.GetInt32(3))));
-                monitorIds.Add(monitorId);
-            }
+            if (!frames.TryGetValue(row.CaptureId, out var list))
+                frames[row.CaptureId] = list = [];
+            list.Add(new MonitorFrame(row.MonitorId, new FrameRef(row.SegmentId, row.FrameIndex)));
+            monitorIds.Add(row.MonitorId);
         }
 
         // Layouts are shared: captures with the same monitors attached get the same list.
         var layouts = new Dictionary<long, IReadOnlyList<long>>();
-        using (var command = db.Command("""
+        var layoutRows = db.Connection.Query<(long Id, string Monitors)>("""
             SELECT id, monitors FROM layouts
             WHERE id IN (SELECT layout_id FROM captures WHERE ts_ms >= $start AND ts_ms < $end);
-            """))
+            """, new { start = startMs, end = endMs });
+        foreach (var row in layoutRows)
         {
-            command.Parameters.AddWithValue("$start", startMs);
-            command.Parameters.AddWithValue("$end", endMs);
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                var ids = reader.GetString(1).Split(',', StringSplitOptions.RemoveEmptyEntries).Select(long.Parse).ToArray();
-                layouts[reader.GetInt64(0)] = ids;
-                monitorIds.UnionWith(ids);
-            }
+            var ids = row.Monitors.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(long.Parse).ToArray();
+            layouts[row.Id] = ids;
+            monitorIds.UnionWith(ids);
         }
 
         var rules = new TitleRuleSet(new ProjectStore(db).GetTitleRules());
         var captures = new List<CaptureRecord>();
         var unrecorded = new List<int>(); // captures from before layouts were recorded
-        using (var command = db.Command("""
+        var captureRows = db.Connection.Query<CaptureRow>("""
             SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, c.window_title,
-                   c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0), c.pending_delete,
-                   s.domain, s.productive, c.layout_id, a.project_id, s.project_id, c.task_mark
+                   c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0) AS app_on_task, c.pending_delete,
+                   s.domain AS site, s.productive AS site_on_task, c.layout_id, a.project_id AS app_project_id, s.project_id AS site_project_id, c.task_mark
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
-            """))
+            """, new { start = startMs, end = endMs });
+        foreach (var row in captureRows)
         {
-            command.Parameters.AddWithValue("$start", startMs);
-            command.Parameters.AddWithValue("$end", endMs);
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                var id = reader.GetInt64(0);
-                var time = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(2)));
-                PixelRect? window = reader.IsDBNull(6) ? null
-                    : new PixelRect(reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9));
-                IReadOnlyList<long>? layout = reader.IsDBNull(14) ? null : layouts[reader.GetInt64(14)];
-                if (layout is null)
-                    unrecorded.Add(captures.Count);
-                var appName = reader.IsDBNull(4) ? null : reader.GetString(4);
-                var title = reader.IsDBNull(5) ? null : reader.GetString(5);
-                captures.Add(new CaptureRecord(
-                    id,
-                    time,
-                    (CaptureKind)reader.GetInt32(3),
-                    AppName: appName,
-                    Site: reader.IsDBNull(12) ? null : reader.GetString(12),
-                    WindowTitle: title,
-                    window,
-                    AppOnTask: reader.GetInt64(10) != 0,
-                    SiteOnTask: reader.IsDBNull(13) ? null : reader.GetInt64(13) != 0,
-                    PendingDelete: reader.GetInt64(11) != 0,
-                    frames.TryGetValue(id, out var list) ? list : [],
-                    MonitorIds: layout ?? [],
-                    AppProjectId: reader.IsDBNull(15) ? null : reader.GetInt64(15),
-                    SiteProjectId: reader.IsDBNull(16) ? null : reader.GetInt64(16),
-                    RuleProjectId: rules.ProjectOf(appName, title),
-                    TaskMark: reader.IsDBNull(17) ? null : reader.GetInt64(17) != 0));
-            }
+            var time = DateTimeOffset.FromUnixTimeMilliseconds(row.TsMs).ToOffset(TimeSpan.FromMinutes(row.UtcOffsetMin));
+            PixelRect? window = row.WindowX is { } x
+                ? new PixelRect(x, row.WindowY!.Value, row.WindowWidth!.Value, row.WindowHeight!.Value)
+                : null;
+            IReadOnlyList<long>? layout = row.LayoutId is { } layoutId ? layouts[layoutId] : null;
+            if (layout is null)
+                unrecorded.Add(captures.Count);
+            captures.Add(new CaptureRecord(
+                row.Id,
+                time,
+                row.Kind,
+                AppName: row.ExeName,
+                Site: row.Site,
+                WindowTitle: row.WindowTitle,
+                window,
+                AppOnTask: row.AppOnTask,
+                SiteOnTask: row.SiteOnTask,
+                PendingDelete: row.PendingDelete,
+                frames.TryGetValue(row.Id, out var list) ? list : [],
+                MonitorIds: layout ?? [],
+                AppProjectId: row.AppProjectId,
+                SiteProjectId: row.SiteProjectId,
+                RuleProjectId: rules.ProjectOf(row.ExeName, row.WindowTitle),
+                TaskMark: row.TaskMark));
         }
 
-        var monitors = new List<MonitorRecord>();
-        if (monitorIds.Count > 0)
-        {
-            using var command = db.Command($"SELECT id, device_name, x, y, width, height, is_primary FROM monitors WHERE id IN ({string.Join(",", monitorIds)}) ORDER BY id;");
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-                monitors.Add(new MonitorRecord(reader.GetInt64(0), reader.GetString(1),
-                    new PixelRect(reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5)), reader.GetInt64(6) != 0));
-        }
+        var monitors = monitorIds.Count == 0 ? [] : db.Connection.Query<(long Id, string DeviceName, int X, int Y, int Width, int Height, bool IsPrimary)>(
+                $"SELECT id, device_name, x, y, width, height, is_primary FROM monitors WHERE id IN ({string.Join(",", monitorIds)}) ORDER BY id;")
+            .Select(m => new MonitorRecord(m.Id, m.DeviceName, new PixelRect(m.X, m.Y, m.Width, m.Height), m.IsPrimary))
+            .ToList();
 
         if (unrecorded.Count > 0)
         {
@@ -162,51 +131,35 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         var endMs = DayBounds(to).Start; // the end of the day before
         var rules = new TitleRuleSet(new ProjectStore(db).GetTitleRules());
         // Names and titles only when there are rules to match them against.
-        using var command = db.Command($"""
+        return db.Connection.Query<SampleRow>($"""
             SELECT c.ts_ms, c.utc_offset_min, c.kind, c.pending_delete,
-                   coalesce(c.task_mark, s.productive, a.productive, 0), coalesce(s.project_id, a.project_id),
-                   {(rules.IsEmpty ? "NULL, NULL" : "a.exe_name, c.window_title")}
+                   coalesce(c.task_mark, s.productive, a.productive, 0) AS on_task, coalesce(s.project_id, a.project_id) AS project_id,
+                   {(rules.IsEmpty ? "NULL AS exe_name, NULL AS window_title" : "a.exe_name, c.window_title")}
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
-            """);
-        command.Parameters.AddWithValue("$start", startMs);
-        command.Parameters.AddWithValue("$end", endMs);
-        using var reader = command.ExecuteReader();
-        var samples = new List<ActivitySample>();
-        while (reader.Read())
-            samples.Add(new ActivitySample(
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0)).ToOffset(TimeSpan.FromMinutes(reader.GetInt32(1))),
-                (CaptureKind)reader.GetInt32(2),
-                OnTask: reader.GetInt64(4) != 0,
-                PendingDelete: reader.GetInt64(3) != 0,
-                LinkedProjectId: rules.ProjectOf(reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))
-                    ?? (reader.IsDBNull(5) ? null : reader.GetInt64(5))));
-        return samples;
+            """, new { start = startMs, end = endMs })
+            .Select(r => new ActivitySample(
+                DateTimeOffset.FromUnixTimeMilliseconds(r.TsMs).ToOffset(TimeSpan.FromMinutes(r.UtcOffsetMin)),
+                r.Kind,
+                OnTask: r.OnTask,
+                PendingDelete: r.PendingDelete,
+                LinkedProjectId: rules.ProjectOf(r.ExeName, r.WindowTitle) ?? r.ProjectId))
+            .ToList();
     }
 
     /// <summary>Marks (or unmarks) every capture with start ≤ time &lt; end for deletion.</summary>
-    public int SetPendingDelete(DateTimeOffset start, DateTimeOffset end, bool pending)
-    {
-        using var command = db.Command("UPDATE captures SET pending_delete = $pending WHERE ts_ms >= $start AND ts_ms < $end;");
-        command.Parameters.AddWithValue("$pending", pending ? 1 : 0);
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
-        return command.ExecuteNonQuery();
-    }
+    public int SetPendingDelete(DateTimeOffset start, DateTimeOffset end, bool pending) =>
+        db.Connection.Execute("UPDATE captures SET pending_delete = $pending WHERE ts_ms >= $start AND ts_ms < $end;",
+            new { pending, start = start.ToUnixTimeMilliseconds(), end = end.ToUnixTimeMilliseconds() });
 
     /// <summary>
     /// Marks every capture with start ≤ time &lt; end on-task (true) or off-task (false), over what its app or site says,
     /// or leaves it to them again (null).
     /// </summary>
-    public int SetTaskMark(DateTimeOffset start, DateTimeOffset end, bool? onTask)
-    {
-        using var command = db.Command("UPDATE captures SET task_mark = $mark WHERE ts_ms >= $start AND ts_ms < $end;");
-        command.Parameters.AddWithValue("$mark", onTask is { } on ? on ? 1 : 0 : DBNull.Value);
-        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
-        return command.ExecuteNonQuery();
-    }
+    public int SetTaskMark(DateTimeOffset start, DateTimeOffset end, bool? onTask) =>
+        db.Connection.Execute("UPDATE captures SET task_mark = $mark WHERE ts_ms >= $start AND ts_ms < $end;",
+            new { mark = onTask, start = start.ToUnixTimeMilliseconds(), end = end.ToUnixTimeMilliseconds() });
 
     /// <summary>
     /// Deletes the captures marked on <paramref name="day"/> (their frame references and screen words go with them), and the
@@ -220,35 +173,21 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         var (startMs, endMs) = DayBounds(day);
         using var transaction = db.BeginTransaction();
 
-        bool staged;
-        using (var touched = db.Command("""
+        var staged = db.Connection.ExecuteScalar<bool>("""
             SELECT EXISTS (
                 SELECT 1 FROM frames f JOIN captures c ON c.id = f.capture_id JOIN segments s ON s.id = f.segment_id
                 WHERE c.pending_delete = 1 AND c.ts_ms >= $start AND c.ts_ms < $end AND s.state = $staged);
-            """))
-        {
-            touched.Parameters.AddWithValue("$start", startMs);
-            touched.Parameters.AddWithValue("$end", endMs);
-            touched.Parameters.AddWithValue("$staged", (int)SegmentState.Staged);
-            staged = (long)touched.ExecuteScalar()! != 0;
-        }
+            """, new { start = startMs, end = endMs, staged = (int)SegmentState.Staged });
 
-        using (var queue = db.Command("""
+        db.Connection.Execute("""
             INSERT INTO reclaim_queue (segment_id)
             SELECT DISTINCT f.segment_id FROM frames f JOIN captures c ON c.id = f.capture_id
             WHERE c.pending_delete = 1 AND c.ts_ms >= $start AND c.ts_ms < $end
             ON CONFLICT (segment_id) DO UPDATE SET generation = generation + 1;
-            """))
-        {
-            queue.Parameters.AddWithValue("$start", startMs);
-            queue.Parameters.AddWithValue("$end", endMs);
-            queue.ExecuteNonQuery();
-        }
+            """, new { start = startMs, end = endMs });
 
-        using var command = db.Command("DELETE FROM captures WHERE pending_delete = 1 AND ts_ms >= $start AND ts_ms < $end;");
-        command.Parameters.AddWithValue("$start", startMs);
-        command.Parameters.AddWithValue("$end", endMs);
-        var deleted = command.ExecuteNonQuery();
+        var deleted = db.Connection.Execute("DELETE FROM captures WHERE pending_delete = 1 AND ts_ms >= $start AND ts_ms < $end;",
+            new { start = startMs, end = endMs });
 
         db.Execute("""
             DELETE FROM apps WHERE productive = 0 AND excluded = 0 AND project_id IS NULL AND read_screen = 1 AND learn = 1
@@ -264,29 +203,21 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     /// Marks an app (every copy with that exe name) or a site on-task or not. Classification is looked up
     /// when a day is read, so this applies to all history at once.
     /// </summary>
-    public void SetOnTask(ProgramKey program, bool onTask)
-    {
-        using var command = db.Command(program.Kind == ProgramKind.App
+    public void SetOnTask(ProgramKey program, bool onTask) =>
+        db.Connection.Execute(program.Kind == ProgramKind.App
             ? "UPDATE apps SET productive = $productive WHERE exe_name = $name;"
-            : "UPDATE sites SET productive = $productive WHERE domain = $name;");
-        command.Parameters.AddWithValue("$productive", onTask ? 1 : 0);
-        command.Parameters.AddWithValue("$name", program.Name);
-        command.ExecuteNonQuery();
-    }
+            : "UPDATE sites SET productive = $productive WHERE domain = $name;",
+            new { productive = onTask, name = program.Name });
 
     /// <summary>
     /// Excludes an app (every copy with that exe name) or a site from recording, or includes it again. The
     /// recorder looks it up every tick; history already recorded stays as it is.
     /// </summary>
-    public void SetExcluded(ProgramKey program, bool excluded)
-    {
-        using var command = db.Command(program.Kind == ProgramKind.App
+    public void SetExcluded(ProgramKey program, bool excluded) =>
+        db.Connection.Execute(program.Kind == ProgramKind.App
             ? "UPDATE apps SET excluded = $excluded WHERE exe_name = $name;"
-            : "UPDATE sites SET excluded = $excluded WHERE domain = $name;");
-        command.Parameters.AddWithValue("$excluded", excluded ? 1 : 0);
-        command.Parameters.AddWithValue("$name", program.Name);
-        command.ExecuteNonQuery();
-    }
+            : "UPDATE sites SET excluded = $excluded WHERE domain = $name;",
+            new { excluded, name = program.Name });
 
     /// <summary>
     /// Whether the text in an app's (every copy with that exe name) or a site's windows is read, for suggestions. Turning it
@@ -302,15 +233,11 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     /// <summary>Whether an app's (every copy) or a site's windows teach and sway suggestions.</summary>
     public void SetLearn(ProgramKey program, bool learn) => SetFlag(program, "learn", learn);
 
-    private void SetFlag(ProgramKey program, string column, bool on)
-    {
-        using var command = db.Command(program.Kind == ProgramKind.App
+    private void SetFlag(ProgramKey program, string column, bool on) =>
+        db.Connection.Execute(program.Kind == ProgramKind.App
             ? $"UPDATE apps SET {column} = $on WHERE exe_name = $name;"
-            : $"UPDATE sites SET {column} = $on WHERE domain = $name;");
-        command.Parameters.AddWithValue("$on", on ? 1 : 0);
-        command.Parameters.AddWithValue("$name", program.Name);
-        command.ExecuteNonQuery();
-    }
+            : $"UPDATE sites SET {column} = $on WHERE domain = $name;",
+            new { on, name = program.Name });
 
     /// <summary>
     /// Links an app (every copy with that exe name) or a site to a project, or unlinks it (null). Its active time is
@@ -319,12 +246,10 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     /// </summary>
     public void SetProject(ProgramKey program, long? projectId)
     {
-        using var command = db.Command(program.Kind == ProgramKind.App
+        db.Connection.Execute(program.Kind == ProgramKind.App
             ? "UPDATE apps SET project_id = $project WHERE exe_name = $name;"
-            : "UPDATE sites SET project_id = $project WHERE domain = $name;");
-        command.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$name", program.Name);
-        command.ExecuteNonQuery();
+            : "UPDATE sites SET project_id = $project WHERE domain = $name;",
+            new { project = projectId, name = program.Name });
 
         // Its time now belongs to the project: if the screen isn't read during that project's time, its words go.
         var words = new ScreenWordStore(db);
@@ -337,44 +262,38 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     /// captures left out), counted as in <see cref="SpanSummary"/>: each capture until the next, at most
     /// <paramref name="maxCaptureLength"/>.
     /// </summary>
-    public List<ProgramUsage> GetPrograms(TimeSpan maxCaptureLength)
-    {
-        using var command = db.Command("""
+    public List<ProgramUsage> GetPrograms(TimeSpan maxCaptureLength) =>
+        db.Connection.Query<ProgramRow>("""
             WITH spans AS (
                 SELECT app_id, site_id,
                        CASE WHEN kind = 0 AND pending_delete = 0
                             THEN min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) ELSE 0 END AS ms
                 FROM captures)
-            SELECT 0, a.exe_name, max(a.productive), max(a.excluded), coalesce(sum(s.ms), 0), max(a.project_id), min(a.read_screen), min(a.learn)
+            SELECT 0 AS kind, a.exe_name AS name, max(a.productive) AS on_task, max(a.excluded) AS excluded, coalesce(sum(s.ms), 0) AS ms,
+                   max(a.project_id) AS project_id, min(a.read_screen) AS read_screen, min(a.learn) AS learn
             FROM apps a LEFT JOIN spans s ON s.app_id = a.id
             GROUP BY a.exe_name
             UNION ALL
             SELECT 1, t.domain, t.productive, t.excluded, coalesce(sum(s.ms), 0), t.project_id, t.read_screen, t.learn
             FROM sites t LEFT JOIN spans s ON s.site_id = t.id
             GROUP BY t.id;
-            """);
-        command.Parameters.AddWithValue("$max", (long)maxCaptureLength.TotalMilliseconds);
-        using var reader = command.ExecuteReader();
-        var programs = new List<ProgramUsage>();
-        while (reader.Read())
-            programs.Add(new ProgramUsage(
-                new ProgramKey(reader.GetInt32(0) == 0 ? ProgramKind.App : ProgramKind.Site, reader.GetString(1)),
-                OnTask: reader.GetInt64(2) != 0,
-                Excluded: reader.GetInt64(3) != 0,
-                TimeSpan.FromMilliseconds(reader.GetInt64(4)),
-                ProjectId: reader.IsDBNull(5) ? null : reader.GetInt64(5),
-                ReadScreen: reader.GetInt64(6) != 0,
-                Learn: reader.GetInt64(7) != 0));
-        return programs;
-    }
+            """, new { max = (long)maxCaptureLength.TotalMilliseconds })
+            .Select(r => new ProgramUsage(
+                new ProgramKey(r.Kind == 0 ? ProgramKind.App : ProgramKind.Site, r.Name),
+                OnTask: r.OnTask,
+                Excluded: r.Excluded,
+                TimeSpan.FromMilliseconds(r.Ms),
+                ProjectId: r.ProjectId,
+                ReadScreen: r.ReadScreen,
+                Learn: r.Learn))
+            .ToList();
 
     /// <summary>
     /// Every window title recorded with active time, per app (exe name), with that time (marked captures left out),
     /// counted as in <see cref="GetPrograms"/>: what window title rules can match.
     /// </summary>
-    public List<TitleUsage> GetTitles(TimeSpan maxCaptureLength)
-    {
-        using var command = db.Command("""
+    public List<TitleUsage> GetTitles(TimeSpan maxCaptureLength) =>
+        db.Connection.Query<(string App, string Title, long Ms)>("""
             WITH spans AS (
                 SELECT app_id, window_title, kind, pending_delete,
                        min(coalesce(lead(ts_ms) OVER (ORDER BY ts_ms, id) - ts_ms, $max), $max) AS ms
@@ -383,14 +302,9 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
             FROM spans s JOIN apps a ON a.id = s.app_id
             WHERE s.kind = 0 AND s.pending_delete = 0 AND s.window_title <> ''
             GROUP BY a.exe_name, s.window_title;
-            """);
-        command.Parameters.AddWithValue("$max", (long)maxCaptureLength.TotalMilliseconds);
-        using var reader = command.ExecuteReader();
-        var titles = new List<TitleUsage>();
-        while (reader.Read())
-            titles.Add(new TitleUsage(reader.GetString(0), reader.GetString(1), TimeSpan.FromMilliseconds(reader.GetInt64(2))));
-        return titles;
-    }
+            """, new { max = (long)maxCaptureLength.TotalMilliseconds })
+            .Select(r => new TitleUsage(r.App, r.Title, TimeSpan.FromMilliseconds(r.Ms)))
+            .ToList();
 
     public void Dispose() => db.Dispose();
 
@@ -402,5 +316,52 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     {
         var (start, end) = DayRange(day);
         return (start.ToUnixTimeMilliseconds(), end.ToUnixTimeMilliseconds());
+    }
+
+    // Rows as the queries above return them; Dapper fills these by column name.
+    private sealed record CaptureRow
+    {
+        public long Id { get; init; }
+        public long TsMs { get; init; }
+        public int UtcOffsetMin { get; init; }
+        public CaptureKind Kind { get; init; }
+        public string? ExeName { get; init; }
+        public string? WindowTitle { get; init; }
+        public int? WindowX { get; init; }
+        public int? WindowY { get; init; }
+        public int? WindowWidth { get; init; }
+        public int? WindowHeight { get; init; }
+        public bool AppOnTask { get; init; }
+        public bool PendingDelete { get; init; }
+        public string? Site { get; init; }
+        public bool? SiteOnTask { get; init; }
+        public long? LayoutId { get; init; }
+        public long? AppProjectId { get; init; }
+        public long? SiteProjectId { get; init; }
+        public bool? TaskMark { get; init; }
+    }
+
+    private sealed record SampleRow
+    {
+        public long TsMs { get; init; }
+        public int UtcOffsetMin { get; init; }
+        public CaptureKind Kind { get; init; }
+        public bool PendingDelete { get; init; }
+        public bool OnTask { get; init; }
+        public long? ProjectId { get; init; }
+        public string? ExeName { get; init; }
+        public string? WindowTitle { get; init; }
+    }
+
+    private sealed record ProgramRow
+    {
+        public int Kind { get; init; }
+        public required string Name { get; init; }
+        public bool OnTask { get; init; }
+        public bool Excluded { get; init; }
+        public long Ms { get; init; }
+        public long? ProjectId { get; init; }
+        public bool ReadScreen { get; init; }
+        public bool Learn { get; init; }
     }
 }

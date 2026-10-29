@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Dapper;
 using Worklapse.Core.Imaging;
 using Worklapse.Core.Storage;
 
@@ -23,13 +24,11 @@ internal static partial class SpaceReclaimer
     /// <summary>The queued segment to look at next, leaving out <paramref name="skip"/>; null when there is none.</summary>
     public static (long SegmentId, long Generation)? NextQueued(WorklapseDatabase db, IReadOnlySet<long> skip)
     {
-        using var command = db.Command("SELECT segment_id, generation FROM reclaim_queue ORDER BY segment_id;");
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        foreach (var queued in db.Connection.Query<(long SegmentId, long Generation)>(
+                     "SELECT segment_id, generation FROM reclaim_queue ORDER BY segment_id;", buffered: false))
         {
-            var id = reader.GetInt64(0);
-            if (!skip.Contains(id))
-                return (id, reader.GetInt64(1));
+            if (!skip.Contains(queued.SegmentId))
+                return queued;
         }
         return null;
     }
@@ -69,30 +68,19 @@ internal static partial class SpaceReclaimer
     }
 
     /// <summary>The frame indexes of a segment that some capture still shows.</summary>
-    public static HashSet<int> ReferencedFrames(WorklapseDatabase db, long segmentId)
-    {
-        using var command = db.Command("SELECT DISTINCT frame_index FROM frames WHERE segment_id = $id;");
-        command.Parameters.AddWithValue("$id", segmentId);
-        using var reader = command.ExecuteReader();
-        var indexes = new HashSet<int>();
-        while (reader.Read())
-            indexes.Add(reader.GetInt32(0));
-        return indexes;
-    }
+    public static HashSet<int> ReferencedFrames(WorklapseDatabase db, long segmentId) =>
+        db.Connection.Query<int>("SELECT DISTINCT frame_index FROM frames WHERE segment_id = $id;", new { id = segmentId }).ToHashSet();
 
     /// <summary>Deletes a segment nothing refers to, with its files.</summary>
     public static void Remove(WorklapseDatabase db, long segmentId, string relativePath)
     {
         using (var transaction = db.BeginTransaction())
         {
-            using var dead = db.Command("INSERT OR IGNORE INTO dead_segment_files (path) VALUES ($path);");
-            dead.Parameters.AddWithValue("$path", relativePath);
-            dead.ExecuteNonQuery();
+            db.Connection.Execute("INSERT OR IGNORE INTO dead_segment_files (path) VALUES ($path);", new { path = relativePath });
 
             // The foreign key from frames makes this fail, rather than lose anything, if a frame is still in use.
-            using var delete = db.Command("DELETE FROM segment_frames WHERE segment_id = $id; DELETE FROM segments WHERE id = $id;");
-            delete.Parameters.AddWithValue("$id", segmentId);
-            delete.ExecuteNonQuery();
+            db.Connection.Execute("DELETE FROM segment_frames WHERE segment_id = $id; DELETE FROM segments WHERE id = $id;",
+                new { id = segmentId });
             transaction.Commit();
         }
         DeleteDeadFiles(db);
@@ -105,30 +93,17 @@ internal static partial class SpaceReclaimer
     public static List<string> DeleteDeadFiles(WorklapseDatabase db)
     {
         var failed = new List<string>();
-        var paths = new List<string>();
-        using (var list = db.Command("SELECT path FROM dead_segment_files;"))
-        using (var reader = list.ExecuteReader())
-        {
-            while (reader.Read())
-                paths.Add(reader.GetString(0));
-        }
-
-        foreach (var relative in paths)
+        foreach (var relative in db.Connection.Query<string>("SELECT path FROM dead_segment_files;").AsList())
         {
             // Never delete the files of a segment in use, whatever the list says.
-            using (var live = db.Command("SELECT 1 FROM segments WHERE path = $path;"))
+            if (db.Connection.ExecuteScalar<long?>("SELECT 1 FROM segments WHERE path = $path;", new { path = relative }) is null
+                && !TryDeleteFiles(Path.Combine(db.DataFolder, relative)))
             {
-                live.Parameters.AddWithValue("$path", relative);
-                if (live.ExecuteScalar() is null && !TryDeleteFiles(Path.Combine(db.DataFolder, relative)))
-                {
-                    failed.Add(relative);
-                    continue;
-                }
+                failed.Add(relative);
+                continue;
             }
 
-            using var done = db.Command("DELETE FROM dead_segment_files WHERE path = $path;");
-            done.Parameters.AddWithValue("$path", relative);
-            done.ExecuteNonQuery();
+            db.Connection.Execute("DELETE FROM dead_segment_files WHERE path = $path;", new { path = relative });
         }
         return failed;
     }
@@ -138,23 +113,15 @@ internal static partial class SpaceReclaimer
     /// secure_delete the database file no longer holds what was deleted, but the log still has the pages
     /// as they were before. Returns false if another connection was in the way (try again later).
     /// </summary>
-    public static bool TruncateLog(WorklapseDatabase db)
-    {
-        using var command = db.Command("PRAGMA wal_checkpoint(TRUNCATE);");
-        using var reader = command.ExecuteReader();
-        return reader.Read() && reader.GetInt32(0) == 0; // the first column is 1 when it couldn't finish
-    }
+    public static bool TruncateLog(WorklapseDatabase db) =>
+        db.Connection.ExecuteScalar<long?>("PRAGMA wal_checkpoint(TRUNCATE);") == 0; // the first column is 1 when it couldn't finish
 
     private static long Rebuild(WorklapseDatabase db, Segment segment, List<SegmentFrame> frames, HashSet<int> referenced,
         long generation, CancellationToken cancel, Action<string>? afterStep)
     {
         // Listed as dead until the switch below, so a crash while it's being written leaves nothing behind.
         var relative = RebuiltPath(db, segment.Path);
-        using (var dead = db.Command("INSERT OR IGNORE INTO dead_segment_files (path) VALUES ($path);"))
-        {
-            dead.Parameters.AddWithValue("$path", relative);
-            dead.ExecuteNonQuery();
-        }
+        db.Connection.Execute("INSERT OR IGNORE INTO dead_segment_files (path) VALUES ($path);", new { path = relative });
 
         // Decode into a staging file first and encode it afterwards, so the decoder (up to ~145 MB) and the
         // encoder (~200 MB) are never open at the same time. Staging is lossless: the one re-encode is the only loss.
@@ -193,7 +160,7 @@ internal static partial class SpaceReclaimer
             for (var i = 0; i < written.Count; i++)
                 store.InsertSegmentFrame(rebuiltId, written[i].Index, written[i].Offset, written[i].Length, isKey: i == 0);
 
-            using var switchOver = db.Command("""
+            db.Connection.Execute("""
                 UPDATE frames SET segment_id = $new WHERE segment_id = $old;
                 -- Queued again while this ran (more of it deleted): the rebuilt one may have frames to drop too.
                 INSERT INTO reclaim_queue (segment_id)
@@ -202,13 +169,8 @@ internal static partial class SpaceReclaimer
                 DELETE FROM segments WHERE id = $old;
                 DELETE FROM dead_segment_files WHERE path = $newPath;
                 INSERT OR IGNORE INTO dead_segment_files (path) VALUES ($oldPath);
-                """);
-            switchOver.Parameters.AddWithValue("$new", rebuiltId);
-            switchOver.Parameters.AddWithValue("$old", segment.Id);
-            switchOver.Parameters.AddWithValue("$generation", generation);
-            switchOver.Parameters.AddWithValue("$newPath", relative);
-            switchOver.Parameters.AddWithValue("$oldPath", segment.Path);
-            switchOver.ExecuteNonQuery();
+                """,
+                new { @new = rebuiltId, old = segment.Id, generation, newPath = relative, oldPath = segment.Path });
             transaction.Commit();
         }
         afterStep?.Invoke("switched");
@@ -217,13 +179,9 @@ internal static partial class SpaceReclaimer
         return rebuiltId;
     }
 
-    private static void Dequeue(WorklapseDatabase db, long segmentId, long generation)
-    {
-        using var command = db.Command("DELETE FROM reclaim_queue WHERE segment_id = $id AND generation = $generation;");
-        command.Parameters.AddWithValue("$id", segmentId);
-        command.Parameters.AddWithValue("$generation", generation);
-        command.ExecuteNonQuery();
-    }
+    private static void Dequeue(WorklapseDatabase db, long segmentId, long generation) =>
+        db.Connection.Execute("DELETE FROM reclaim_queue WHERE segment_id = $id AND generation = $generation;",
+            new { id = segmentId, generation });
 
     /// <summary>
     /// A name for the rebuild of a segment, next to it: "153000-m3.ivf" → "153000-m3-r1.ivf" (and a rebuild of
@@ -238,9 +196,8 @@ internal static partial class SpaceReclaimer
             var full = Path.Combine(db.DataFolder, candidate);
             if (File.Exists(full) || File.Exists(StagingFile.PathFor(full)) || File.Exists(full + ".tmp"))
                 continue;
-            using var taken = db.Command("SELECT 1 FROM segments WHERE path = $path UNION ALL SELECT 1 FROM dead_segment_files WHERE path = $path;");
-            taken.Parameters.AddWithValue("$path", candidate);
-            if (taken.ExecuteScalar() is null)
+            if (db.Connection.ExecuteScalar<long?>("SELECT 1 FROM segments WHERE path = $path UNION ALL SELECT 1 FROM dead_segment_files WHERE path = $path;",
+                    new { path = candidate }) is null)
                 return candidate;
         }
     }
@@ -270,24 +227,16 @@ internal static partial class SpaceReclaimer
     {
         public static Segment? Load(WorklapseDatabase db, long id)
         {
-            using var command = db.Command("SELECT monitor_id, path, width, height, quality, created_ms, state FROM segments WHERE id = $id;");
-            command.Parameters.AddWithValue("$id", id);
-            using var reader = command.ExecuteReader();
-            return reader.Read()
-                ? new Segment(id, reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4),
-                    reader.GetInt64(5), (SegmentState)reader.GetInt32(6))
+            var row = db.Connection.Query<(long MonitorId, string Path, int Width, int Height, int Quality, long CreatedMs, long State)>(
+                "SELECT monitor_id, path, width, height, quality, created_ms, state FROM segments WHERE id = $id;", new { id }).AsList();
+            return row is [var r]
+                ? new Segment(id, r.MonitorId, r.Path, r.Width, r.Height, r.Quality, r.CreatedMs, (SegmentState)r.State)
                 : null;
         }
 
-        public List<SegmentFrame> LoadFrames(WorklapseDatabase db)
-        {
-            using var command = db.Command("SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;");
-            command.Parameters.AddWithValue("$id", Id);
-            using var reader = command.ExecuteReader();
-            var frames = new List<SegmentFrame>();
-            while (reader.Read())
-                frames.Add(new SegmentFrame(reader.GetInt32(0), reader.GetInt64(1), reader.GetInt32(2)));
-            return frames;
-        }
+        public List<SegmentFrame> LoadFrames(WorklapseDatabase db) =>
+            db.Connection.Query<(int Index, long Offset, int Length)>(
+                "SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;", new { id = Id })
+            .Select(f => new SegmentFrame(f.Index, f.Offset, f.Length)).ToList();
     }
 }

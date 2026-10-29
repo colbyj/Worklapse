@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Dapper;
 using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Storage;
 
@@ -55,11 +56,9 @@ public sealed class BatchEncoder : IDisposable
         var db = WorklapseDatabase.Open(dataFolder);
         try
         {
-            using var pending = db.Command("SELECT id FROM segments WHERE state = $staged ORDER BY id;");
-            pending.Parameters.AddWithValue("$staged", (int)SegmentState.Staged);
-            using var reader = pending.ExecuteReader();
-            while (reader.Read())
-                Add(new Job(JobKind.Encode, reader.GetInt64(0)));
+            foreach (var id in db.Connection.Query<long>("SELECT id FROM segments WHERE state = $staged ORDER BY id;",
+                         new { staged = (int)SegmentState.Staged }))
+                Add(new Job(JobKind.Encode, id));
         }
         catch
         {
@@ -299,9 +298,8 @@ public sealed class BatchEncoder : IDisposable
     {
         try
         {
-            using var command = db.Command("SELECT path FROM segments WHERE id = $id;");
-            command.Parameters.AddWithValue("$id", segmentId);
-            return command.ExecuteScalar() as string ?? $"segment {segmentId}";
+            return db.Connection.ExecuteScalar<string?>("SELECT path FROM segments WHERE id = $id;", new { id = segmentId })
+                ?? $"segment {segmentId}";
         }
         catch (Microsoft.Data.Sqlite.SqliteException)
         {
@@ -315,41 +313,24 @@ public sealed class BatchEncoder : IDisposable
     /// </summary>
     internal static bool Encode(WorklapseDatabase db, long segmentId, CancellationToken cancel)
     {
-        string relative;
-        int width, height, quality;
-        FrameFormat format;
-        using (var segment = db.Command("SELECT path, width, height, quality, state, format FROM segments WHERE id = $id;"))
-        {
-            segment.Parameters.AddWithValue("$id", segmentId);
-            using var reader = segment.ExecuteReader();
-            if (!reader.Read())
-                return false; // deleted meanwhile
-            if (reader.GetInt32(4) != (int)SegmentState.Staged)
-                return false;
-            (relative, width, height, quality, format) =
-                (reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), (FrameFormat)reader.GetInt32(5));
-        }
+        var segment = db.Connection.Query<(string Path, int Width, int Height, int Quality, long State, long Format)>(
+            "SELECT path, width, height, quality, state, format FROM segments WHERE id = $id;", new { id = segmentId }).AsList();
+        if (segment is not [var (relative, width, height, quality, state, formatNumber)])
+            return false; // deleted meanwhile
+        if (state != (int)SegmentState.Staged)
+            return false;
+        var format = (FrameFormat)formatNumber;
         if (format != FrameFormat.Video)
             return FinishImage(db, segmentId, relative);
 
-        var frames = new List<(int Index, long Offset, int Length)>();
-        using (var list = db.Command("SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;"))
-        {
-            list.Parameters.AddWithValue("$id", segmentId);
-            using var reader = list.ExecuteReader();
-            while (reader.Read())
-                frames.Add((reader.GetInt32(0), reader.GetInt64(1), reader.GetInt32(2)));
-        }
+        var frames = db.Connection.Query<(int Index, long Offset, int Length)>(
+            "SELECT frame_index, file_offset, length FROM segment_frames WHERE segment_id = $id ORDER BY frame_index;",
+            new { id = segmentId }).AsList();
 
         // The recorder only adds references to the segment it is writing, and a segment is encoded once it is
         // closed, so frames unreferenced now stay that way and can be left out. Deletes queued it for that;
         // the queue entry is read first, so one made after the references are read keeps it queued.
-        long? queued;
-        using (var generation = db.Command("SELECT generation FROM reclaim_queue WHERE segment_id = $id;"))
-        {
-            generation.Parameters.AddWithValue("$id", segmentId);
-            queued = generation.ExecuteScalar() as long?;
-        }
+        var queued = db.Connection.ExecuteScalar<long?>("SELECT generation FROM reclaim_queue WHERE segment_id = $id;", new { id = segmentId });
         var referenced = SpaceReclaimer.ReferencedFrames(db, segmentId);
         if (referenced.Count == 0)
         {
@@ -395,6 +376,7 @@ public sealed class BatchEncoder : IDisposable
 
         using (var transaction = db.BeginTransaction())
         {
+            // One command prepared once for every frame of the segment, so these loops stay hand-written.
             using var update = db.Command("""
                 UPDATE segment_frames SET file_offset = $offset, length = $length, is_key = $key
                 WHERE segment_id = $id AND frame_index = $index;
@@ -426,14 +408,11 @@ public sealed class BatchEncoder : IDisposable
                 drop.ExecuteNonQuery();
             }
 
-            using var done = db.Command("""
+            db.Connection.Execute("""
                 UPDATE segments SET state = $encoded WHERE id = $id;
                 DELETE FROM reclaim_queue WHERE segment_id = $id AND generation = $generation;
-                """);
-            done.Parameters.AddWithValue("$encoded", (int)SegmentState.Encoded);
-            done.Parameters.AddWithValue("$id", segmentId);
-            done.Parameters.AddWithValue("$generation", (object?)queued ?? DBNull.Value);
-            done.ExecuteNonQuery();
+                """,
+                new { encoded = (int)SegmentState.Encoded, id = segmentId, generation = queued });
             transaction.Commit();
         }
 
@@ -449,12 +428,7 @@ public sealed class BatchEncoder : IDisposable
     private static bool FinishImage(WorklapseDatabase db, long segmentId, string relative)
     {
         // As for video: the queue entry is read before the references.
-        long? queued;
-        using (var generation = db.Command("SELECT generation FROM reclaim_queue WHERE segment_id = $id;"))
-        {
-            generation.Parameters.AddWithValue("$id", segmentId);
-            queued = generation.ExecuteScalar() as long?;
-        }
+        var queued = db.Connection.ExecuteScalar<long?>("SELECT generation FROM reclaim_queue WHERE segment_id = $id;", new { id = segmentId });
         if (SpaceReclaimer.ReferencedFrames(db, segmentId).Count == 0)
         {
             SpaceReclaimer.Remove(db, segmentId, relative);
@@ -462,14 +436,11 @@ public sealed class BatchEncoder : IDisposable
         }
 
         using var transaction = db.BeginTransaction();
-        using var done = db.Command("""
+        db.Connection.Execute("""
             UPDATE segments SET state = $encoded WHERE id = $id;
             DELETE FROM reclaim_queue WHERE segment_id = $id AND generation = $generation;
-            """);
-        done.Parameters.AddWithValue("$encoded", (int)SegmentState.Encoded);
-        done.Parameters.AddWithValue("$id", segmentId);
-        done.Parameters.AddWithValue("$generation", (object?)queued ?? DBNull.Value);
-        done.ExecuteNonQuery();
+            """,
+            new { encoded = (int)SegmentState.Encoded, id = segmentId, generation = queued });
         transaction.Commit();
         return true;
     }
