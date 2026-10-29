@@ -986,10 +986,15 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
    needed. Velopack installer, updates and signing set up 2026-10-29 (see *Releases and updates*); a GitHub
    page/website later. PRIVACY.md is written.
    **License: GPLv3** (developer's choice 2026-10-20, `LICENSE`): it can still be relicensed more permissively later
-   while the developer holds all the copyright (outside contributions would need a CLA). Still to do when packaging: a
-   THIRD-PARTY-NOTICES file made from what the publish actually ships (libaom with the AOM patent license,
-   libjpeg-turbo, libwebp, Avalonia, SkiaSharp/HarfBuzzSharp, SQLite/SQLitePCLRaw, CommunityToolkit, FluentIcons,
-   Tmds.DBus, the .NET runtime). The app icon is a placeholder, per the developer (its black frame nearly vanishes on a
+   while the developer holds all the copyright (outside contributions would need a CLA). `THIRD-PARTY-NOTICES.txt`
+   (2026-10-29) is made from what the Windows publish ships: the vcpkg `share/<port>/copyright` files of the three
+   libraries linked into worklapse_native (libaom with the AOM patent license, libjpeg-turbo, libwebp with its patent
+   grant; zlib and libspng are installed but not linked), the license and notices files inside the NuGet packages
+   (.NET runtime pack, SkiaSharp/HarfBuzzSharp, ANGLE, CommunityToolkit), and the upstream license files for packages
+   that carry none (Avalonia, FluentIcons and Fluent UI System Icons, Tmds.DBus, MicroCom, Velopack, Dapper,
+   SQLitePCLRaw, Microsoft.Data.Sqlite). It names each one's version: after a package, runtime or vcpkg update, update
+   it. The IJG sentence at its top is a condition of libjpeg's license. A publish puts it and `LICENSE` (as LICENSE.txt)
+   beside Worklapse.exe. The app icon is a placeholder, per the developer (its black frame nearly vanishes on a
    dark task bar); the tray badges are drawn from whatever `.ico` is there.
 
 ### 1b. Memory: split the recorder from the UI (proposed, not yet agreed)

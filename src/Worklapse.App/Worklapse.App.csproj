@@ -45,6 +45,13 @@
                       ExcludeFromSingleFile="true" />
   </ItemGroup>
 
+  <!-- A publish carries Worklapse's license and the third-party notices (which the licenses of what it ships require),
+       beside Worklapse.exe rather than in its bundle. -->
+  <ItemGroup>
+    <None Include="../../LICENSE" Link="LICENSE.txt" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="../../THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
   <!-- A publish leaves out the debug symbols NuGet packages ship for their native libraries (libSkiaSharp.pdb and
        libHarfBuzzSharp.pdb: ~105 MB). Worklapse's own .pdb files stay, for line numbers in crash reports. -->
   <Target Name="RemoveNativePackageSymbolsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
