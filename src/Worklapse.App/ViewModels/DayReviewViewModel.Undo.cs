@@ -7,8 +7,8 @@ namespace Worklapse.App.ViewModels;
 
 /// <summary>
 /// Undo for Day review's edits: projects set on time, suggestions decided, apps and sites marked or linked, time marked
-/// for deletion or restored, notes and logged time. Kept for the day shown while Day review is; cleared when another
-/// day is opened, another view is shown, Settings open, or marked time is deleted for good.
+/// for deletion or restored, time marked on- or off-task, notes and logged time. Kept for the day shown while Day review
+/// is; cleared when another day is opened, another view is shown, Settings open, or marked time is deleted for good.
 /// </summary>
 public sealed partial class DayReviewViewModel
 {

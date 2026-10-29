@@ -68,7 +68,7 @@
         <StackPanel Orientation="Horizontal" Margin="8,0" Height="22">
           <views:RecordingIndicator x:Name="Indicator" DataContext="{x:Null}" />
           <TextBlock Classes="secondary" VerticalAlignment="Center" Margin="4,0,0,0"
-                     Text="Active: input recorded · Productive: active in productive apps · Assigned: all time marked as the project, idle or not · Logged: what you bill" />
+                     Text="Active: input recorded · On-task: active in on-task apps or time marked so · Assigned: all time marked as the project, idle or not · Logged: what you bill" />
         </StackPanel>
       </Border>
 
@@ -80,7 +80,7 @@
               <TextBlock Text="Project" />
               <TextBlock Grid.Column="1" Text="Notes" />
               <TextBlock Grid.Column="2" Text="Active" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="3" Text="Productive" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="3" Text="On-task" HorizontalAlignment="Right" />
               <TextBlock Grid.Column="4" Text="Assigned" HorizontalAlignment="Right" />
               <TextBlock Grid.Column="5" Text="Logged" HorizontalAlignment="Right" />
             </Grid>

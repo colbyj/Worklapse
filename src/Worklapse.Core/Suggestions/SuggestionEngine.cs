@@ -205,7 +205,8 @@ public sealed class SuggestionEngine
                 || '|' || (SELECT coalesce(group_concat(domain || ',' || coalesce(project_id, '') || ',' || learn || ',' || productive, ';'), '') FROM sites
                            WHERE project_id IS NOT NULL OR learn = 0 OR productive = 1)
                 || '|' || (SELECT coalesce(group_concat(id || ',' || name || ',' || archived || ',' || suggest || ',' || coalesce(starts_on, '') || ',' || coalesce(ends_on, ''), ';'), '') FROM projects)
-                || '|' || (SELECT count(*) / {WordsStep} FROM screen_words);
+                || '|' || (SELECT count(*) / {WordsStep} FROM screen_words)
+                || '|' || (SELECT count(*) || ':' || coalesce(sum(id % 1000003 * (task_mark + 1)), 0) FROM captures WHERE task_mark IS NOT NULL);
             """);
         return (string)command.ExecuteScalar()!;
     }

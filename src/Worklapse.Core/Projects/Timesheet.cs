@@ -54,7 +54,7 @@ public static class TimesheetCsv
     public static void Write(TextWriter writer, IEnumerable<TimesheetLine> lines,
         IReadOnlyDictionary<long, Project> projects, IReadOnlyDictionary<long, Category> categories)
     {
-        writer.WriteLine("Date,Category,Project,Notes,Active,Productive,Assigned,Logged");
+        writer.WriteLine("Date,Category,Project,Notes,Active,On-task,Assigned,Logged");
         foreach (var line in lines)
         {
             var project = projects.GetValueOrDefault(line.ProjectId);

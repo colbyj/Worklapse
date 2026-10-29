@@ -21,6 +21,7 @@ public readonly record struct MonitorFrame(long MonitorId, FrameRef Frame);
 /// <param name="AppProjectId">The project the app is linked to, if any.</param>
 /// <param name="SiteProjectId">The project the site is linked to, if any.</param>
 /// <param name="RuleProjectId">The project of the window title rule that decides for its title, if any (<see cref="Projects.TitleRuleSet"/>).</param>
+/// <param name="TaskMark">On-task (true) or off-task (false) as set by hand on its time; null when its app or site decides.</param>
 public sealed record CaptureRecord(
     long Id,
     DateTimeOffset Time,
@@ -36,15 +37,17 @@ public sealed record CaptureRecord(
     IReadOnlyList<long> MonitorIds,
     long? AppProjectId = null,
     long? SiteProjectId = null,
-    long? RuleProjectId = null)
+    long? RuleProjectId = null,
+    bool? TaskMark = null)
 {
     public bool IsActive => Kind == CaptureKind.Active;
 
     /// <summary>
-    /// The more specific classification decides: the site's when there is one, otherwise the app's. So a
-    /// browser marked productive counts only for pages without a known site.
+    /// On-task (shown as such; "productive" in the code and the database): a mark set by hand on its time decides, then
+    /// the more specific classification: the site's when there is one, otherwise the app's. So a browser marked on-task
+    /// counts only for pages without a known site.
     /// </summary>
-    public bool Productive => SiteProductive ?? AppProductive;
+    public bool Productive => TaskMark ?? SiteProductive ?? AppProductive;
 
     /// <summary>
     /// The project this capture's rules and links point to: a window title rule's when one matches, otherwise the site's

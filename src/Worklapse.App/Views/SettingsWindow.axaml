@@ -353,7 +353,7 @@
             <TextBox Text="{Binding Filter}" PlaceholderText="Filter by name" Width="240" HorizontalAlignment="Left" />
           </DockPanel>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" TextWrapping="Wrap" Margin="0,8,0,0"
-                     Text="A project's window titles decide first, then a website, then its browser. Productive and Project apply to all history; Excluded stops recording while it has the focus." />
+                     Text="A project's window titles decide first, then a website, then its browser. On-task (a default) and Project apply to all history; Excluded stops recording while it has the focus." />
           <Border BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource UiViewBrush}" ClipToBounds="True">
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="{DynamicResource UiHeaderBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
@@ -374,7 +374,7 @@
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:ProgramRow">
                     <Grid ColumnDefinitions="82,76,92,62,*,64,140,78">
-                      <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}"
+                      <CheckBox IsChecked="{Binding Productive}" AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}"
                                 HorizontalAlignment="Center" Margin="-6,-3,0,-3" Padding="0" />
                       <CheckBox Grid.Column="1" IsChecked="{Binding Excluded}" AutomationProperties.Name="{Binding Name, StringFormat='Excluded: {0}'}"
                                 HorizontalAlignment="Center" Margin="0,-3,0,-3" Padding="0" />

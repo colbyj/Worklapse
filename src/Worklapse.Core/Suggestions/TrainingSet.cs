@@ -76,8 +76,9 @@ public static class TrainingSet
 
     /// <summary>
     /// The examples one day gives: every active capture with a project set by hand, link or title rule (or set to none by
-    /// hand), counted for as long as it lasted. An unproductive capture counts as no project whatever its range says:
-    /// a glance at email inside a billed block isn't that project's work. Left out: captures nothing says anything about,
+    /// hand), counted for as long as it lasted. An off-task capture (its app's or site's mark, or one set by hand on its
+    /// time) counts as no project whatever its range says: a glance at email inside a billed block isn't that project's
+    /// work. Left out: captures nothing says anything about,
     /// marked for deletion, of projects never suggested or of apps and sites that don't teach, and short switches
     /// (<see cref="ShortSwitch"/>).
     /// </summary>

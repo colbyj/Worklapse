@@ -119,6 +119,9 @@ public class ProjectTests
         Assert.Equal([(0, 10), (50, 60), (70, 85)], Seconds(MarkReach.Productive(captures, code, Max)));
         Assert.Equal([(10, 20)], Seconds(MarkReach.Productive(captures, firefox, Max)));
         Assert.Equal([(20, 30)], Seconds(MarkReach.Productive(captures, github, Max)));
+        // Time marked on- or off-task by hand isn't the app's to decide.
+        var withMark = captures.Select((c, i) => i == 0 ? c with { TaskMark = true } : c).ToArray();
+        Assert.Equal([(50, 60), (70, 85)], Seconds(MarkReach.Productive(withMark, code, Max)));
 
         // A link: not where time is set by hand; a browser's also reaches sites without a link of their own.
         Assert.Equal([(10, 12), (15, 20), (30, 40)], Seconds(MarkReach.Link(captures, [Span(12, 15, null)], firefox, Max)));
@@ -300,7 +303,7 @@ public class ProjectTests
         TimesheetCsv.Write(csv, lines, projects.GetProjects().ToDictionary(p => p.Id), projects.GetCategories().ToDictionary(c => c.Id));
         var date = Day.ToString("yyyy-MM-dd");
         Assert.Equal(
-            "Date,Category,Project,Notes,Active,Productive,Assigned,Logged\n" +
+            "Date,Category,Project,Notes,Active,On-task,Assigned,Logged\n" +
             $"{date},,Worklapse,Panning; replug fix,0.75,0.00,0.75,0.75\n" +
             $"{date},Clients,\"Northwind, Inc.\",\"Call about the \"\"header\"\"\",0.00,0.00,0.50,\n" +
             $"{date},,Docs,README,0.00,0.00,0.00,\n" +

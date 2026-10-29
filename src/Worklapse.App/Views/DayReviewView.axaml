@@ -32,7 +32,7 @@
           <TextBlock Grid.Column="1" Text="{Binding ActiveText}" HorizontalAlignment="Right" Margin="6,0" />
           <CheckBox Grid.Column="2" Classes="cell" IsChecked="{Binding Productive}" Tag="productive"
                     PointerEntered="OnReachEnter" PointerExited="OnReachExit" GotFocus="OnReachFocus" LostFocus="OnReachBlur"
-                    AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}" />
+                    AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}" />
           <ComboBox Grid.Column="3" Classes="cell" Margin="0,1,4,1" Tag="project"
                     ItemsSource="{Binding $parent[UserControl].((vm:DayReviewViewModel)DataContext).ProjectOptions}"
                     SelectedItem="{Binding Project}" ItemTemplate="{StaticResource ProjectOptionTemplate}"
@@ -44,7 +44,7 @@
 
     <!--
       A recorded segment, on the day's list (click to select it, Shift or Ctrl+click to extend) and in a selection.
-      Project sets that stretch only; Productive is the app's or site's on every day. Right-click for the row's menu.
+      Project sets that stretch only; On-task is the app's or site's default on every day. Right-click for the row's menu.
     -->
     <DataTemplate x:Key="SegmentTemplate" x:DataType="vm:SegmentRow">
       <Border Classes="row segment" Classes.picked="{Binding IsPicked}" PointerPressed="OnSegmentPressed"
@@ -63,7 +63,7 @@
           <TextBlock Grid.Column="2" Text="{Binding LengthText}" HorizontalAlignment="Right" Margin="4,0" />
           <CheckBox Grid.Column="3" Classes="cell" IsChecked="{Binding Productive}" IsVisible="{Binding HasProgram}" Tag="productive"
                     PointerEntered="OnReachEnter" PointerExited="OnReachExit" GotFocus="OnReachFocus" LostFocus="OnReachBlur"
-                    AutomationProperties.Name="{Binding Name, StringFormat='Productive: {0}'}" />
+                    AutomationProperties.Name="{Binding Name, StringFormat='On-task: {0}'}" />
           <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" Margin="7,0,4,0" IsVisible="{Binding ShowsProjectName}">
             <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2" Fill="{Binding ProjectBrush}" VerticalAlignment="Center" />
             <TextBlock Text="{Binding ProjectName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="Set by hand" />
@@ -334,7 +334,7 @@
                                 DropDownClosed="OnReachDropDownClosed" AutomationProperties.Name="Project of this segment"
                                 ToolTip.Tip="This segment only" />
                       <TextBlock DockPanel.Dock="Right" Text="Project" VerticalAlignment="Center" Margin="0,0,8,0" />
-                      <CheckBox Content="Productive" IsChecked="{Binding Productive}" Tag="productive" VerticalAlignment="Center"
+                      <CheckBox Content="On-task" IsChecked="{Binding Productive}" Tag="productive" VerticalAlignment="Center"
                                 PointerEntered="OnReachEnter" PointerExited="OnReachExit" GotFocus="OnReachFocus" LostFocus="OnReachBlur"
                                 ToolTip.Tip="{Binding Name, StringFormat='{}{0} on every day'}" />
                     </DockPanel>
@@ -423,11 +423,11 @@
                   <TextBlock Text="Time" />
                   <TextBlock Grid.Column="1" Text="Application or site" />
                   <TextBlock Grid.Column="2" Text="Len." HorizontalAlignment="Right" ToolTip.Tip="Length" />
-                  <TextBlock Grid.Column="3" Text="Pr." ToolTip.Tip="Productive" />
+                  <TextBlock Grid.Column="3" Text="On" ToolTip.Tip="On-task (the app's or site's default)" />
                   <TextBlock Grid.Column="4" Text="Project" />
                 </Grid>
                 <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">
-                  <TextBlock Text="Project: that stretch only · Productive: the app on every day" Classes="hint" />
+                  <TextBlock Text="Project: that stretch only · On-task: the app's default, every day" Classes="hint" />
                 </Border>
                 <Panel>
                   <ScrollViewer IsVisible="{Binding ShowsDay}">
@@ -478,7 +478,7 @@
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="Application or site" />
                   <TextBlock Grid.Column="1" Text="Active" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="2" Text="Productive" />
+                  <TextBlock Grid.Column="2" Text="On-task" />
                   <TextBlock Grid.Column="3" Text="Project" />
                 </Grid>
                 <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0" Padding="6,3">

@@ -9,14 +9,15 @@ namespace Worklapse.Core.Projects;
 public static class MarkReach
 {
     /// <summary>
-    /// Where the app's or site's Productive mark decides: a site's pages; an app's time on pages without a known site
-    /// (a site always decides for its own pages, so a browser's mark doesn't reach them).
+    /// Where the app's or site's Productive (on-task) mark decides: a site's pages; an app's time on pages without a known
+    /// site (a site always decides for its own pages, so a browser's mark doesn't reach them). Time marked on- or off-task
+    /// by hand isn't reached either.
     /// </summary>
     public static List<(DateTimeOffset Start, DateTimeOffset End)> Productive(IReadOnlyList<CaptureRecord> captures,
         ProgramKey program, TimeSpan maxCaptureLength) =>
-        Ranges(captures, maxCaptureLength, c => program.Kind == ProgramKind.Site
+        Ranges(captures, maxCaptureLength, c => c.TaskMark is null && (program.Kind == ProgramKind.Site
             ? Same(c.Site, program.Name)
-            : c.Site is null && Same(c.AppName, program.Name));
+            : c.Site is null && Same(c.AppName, program.Name)));
 
     /// <summary>
     /// Where the app's or site's project link decides: its time outside the ranges set by hand and without a window

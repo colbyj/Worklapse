@@ -76,7 +76,7 @@ public partial class DayReviewView : UserControl
         DayCalendar.AddHandler(PointerReleasedEvent, OnDayCalendarPointerReleased, handledEventsToo: true);
         DayCalendar.AddHandler(KeyDownEvent, OnDayCalendarKeyDown, RoutingStrategies.Tunnel);
 
-        // Right-click: mark what the frame shows (its site and app) productive or not; on the timeline, set the
+        // Right-click: mark what the frame shows (its site and app) on-task or off-task; on the timeline, set the
         // selection's project or mark it for deletion, and mark what it contains (or the frame's, without one).
         Frames.ContextMenu = ClassificationMenu(forSelection: false);
         Timeline.ContextMenu = ClassificationMenu(forSelection: true);
@@ -328,6 +328,7 @@ public partial class DayReviewView : UserControl
                 items.Add(ReplaceProjectItem(SelectionRanges()));
                 items.Add(new MenuItem { Header = "Clear Project", Command = _viewModel.ClearSelectionProjectCommand });
                 items.Add(new MenuItem { Header = "Mark for Deletion", Command = _viewModel.MarkSelectionCommand });
+                items.Add(TaskMarkItem(SelectionRanges()));
                 if (choices.Count > 0)
                     items.Add(new Separator());
             }
@@ -495,10 +496,11 @@ public partial class DayReviewView : UserControl
             SetUnassignedItem([target]),
             MenuEntry("Clear Project", () => _viewModel.SetProject(target, null)),
             MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(target)),
+            TaskMarkItem([target]),
             new Separator(),
         };
         if (row.Program is { } program)
-            items.Add(MenuEntry($"Mark {program.Name} as {(row.Productive ? "Other" : "Productive")}",
+            items.Add(MenuEntry($"Mark {program.Name} as {(row.Productive ? "Off-task" : "On-task")}",
                 () => _viewModel.SetProductive(program, !row.Productive)));
         items.Add(MenuEntry("Go To", () => _viewModel.GoTo(row.From)));
         OpenRowMenu(control, items, [target]);
@@ -522,8 +524,9 @@ public partial class DayReviewView : UserControl
             SetUnassignedItem(time),
             MenuEntry("Clear Project", () => _viewModel.SetProject(time, null)),
             MenuEntry("Mark for Deletion", () => _viewModel.MarkForDeletion(time)),
+            TaskMarkItem(time),
             new Separator(),
-            MenuEntry($"Mark {program.Name} as {(row.Productive ? "Other" : "Productive")}", () => _viewModel.SetProductive(program, !row.Productive)),
+            MenuEntry($"Mark {program.Name} as {(row.Productive ? "Off-task" : "On-task")}", () => _viewModel.SetProductive(program, !row.Productive)),
             MenuEntry("Go To", () => _viewModel.GoTo(time[0].Start)),
         ];
         OpenRowMenu(control, items, time);
@@ -572,6 +575,22 @@ public partial class DayReviewView : UserControl
             }).ToList(),
         };
     }
+
+    /// <summary>
+    /// "Mark Time as ▸ On-task / Off-task / App or Site Default": a mark by hand on some time, over what its apps and
+    /// sites say; the default is off when none of it has a mark.
+    /// </summary>
+    private MenuItem TaskMarkItem(IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> ranges) => new()
+    {
+        Header = "Mark Time as",
+        IsEnabled = ranges.Count > 0,
+        ItemsSource = new List<Control>
+        {
+            MenuEntry("On-task", () => _viewModel.SetTaskMark(ranges, onTask: true)),
+            MenuEntry("Off-task", () => _viewModel.SetTaskMark(ranges, onTask: false)),
+            MenuEntry("App or Site Default", () => _viewModel.SetTaskMark(ranges, onTask: null), _viewModel.HasTaskMark(ranges)),
+        },
+    };
 
     /// <summary>Opens a row's menu, showing on the timeline what it acts on until it closes.</summary>
     private void OpenRowMenu(Control row, List<Control> items, IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> actsOn)

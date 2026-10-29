@@ -67,6 +67,46 @@ public class HistoryTests
     }
 
     [Fact]
+    public void TimeMarkedByHandDecidesOverItsAppAndSiteAndCanBeUndone()
+    {
+        using var folder = new TempFolder();
+        using var db = WorklapseDatabase.Open(folder.Path);
+        var store = new RecordingStore(db);
+        var firefox = store.GetOrAddApp("firefox.exe", null);
+        var rider = store.GetOrAddApp("rider64.exe", null);
+        var youtube = store.GetOrAddSite("youtube.com");
+        store.InsertCapture(Nine, CaptureKind.Active, rider, "Code", null);
+        store.InsertCapture(Nine.AddSeconds(10), CaptureKind.Active, firefox, "A tutorial", null, youtube);
+        store.InsertCapture(Nine.AddSeconds(20), CaptureKind.Active, rider, "Code", null);
+
+        using var history = new HistoryStore(WorklapseDatabase.Open(folder.Path));
+        history.SetProductive(new ProgramKey(ProgramKind.App, "rider64.exe"), true);
+        var day = DateOnly.FromDateTime(Nine.LocalDateTime);
+        bool[] Productive() => history.LoadDay(day).Captures.Select(c => c.Productive).ToArray();
+        // The totals for many days read the same marks.
+        bool[] Sampled() => history.LoadSamples(day, day.AddDays(1)).Select(s => s.Productive).ToArray();
+        Assert.Equal([true, false, true], Productive());
+
+        var undo = new UndoHistory(history.Database, ["captures"]);
+        undo.Record("on-task", () => history.SetTaskMark(Nine.AddSeconds(10), Nine.AddSeconds(20), onTask: true));
+        undo.Record("off-task", () => history.SetTaskMark(Nine.AddSeconds(20), Nine.AddSeconds(30), onTask: false));
+        Assert.Equal([true, true, false], Productive());
+        Assert.Equal([true, true, false], Sampled());
+        Assert.Equal([null, true, false], history.LoadDay(day).Captures.Select(c => c.TaskMark));
+
+        // The app's own mark no longer reaches time marked by hand.
+        history.SetProductive(new ProgramKey(ProgramKind.App, "rider64.exe"), false);
+        Assert.Equal([false, true, false], Productive());
+        history.SetProductive(new ProgramKey(ProgramKind.App, "rider64.exe"), true);
+
+        Assert.True(undo.Undo());
+        Assert.Equal([true, true, true], Productive());
+        history.SetTaskMark(Nine, Nine.AddMinutes(1), onTask: null);
+        Assert.Equal([true, false, true], Productive());
+        Assert.All(history.LoadDay(day).Captures, c => Assert.Null(c.TaskMark));
+    }
+
+    [Fact]
     public void ProgramsListEveryAppAndSiteWithItsActiveTime()
     {
         using var folder = new TempFolder();
@@ -144,6 +184,7 @@ public class HistoryTests
         {
             // Back to schema 4, with captures and a productive app recorded under it.
             db.Execute("""
+                DROP INDEX ix_captures_task_mark; ALTER TABLE captures DROP COLUMN task_mark;
                 DROP TABLE suggestion_breaks; DROP TABLE suggestions; DROP TABLE screen_words;
                 ALTER TABLE apps DROP COLUMN read_screen; ALTER TABLE apps DROP COLUMN learn;
                 DROP TABLE timesnapper_imports; DROP TABLE title_rules; DROP TABLE timesheet; DROP TABLE day_notes; DROP TABLE project_notes; DROP TABLE project_spans;
@@ -163,7 +204,7 @@ public class HistoryTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using (var version = db.Command("PRAGMA user_version;"))
-                Assert.Equal(15L, version.ExecuteScalar());
+                Assert.Equal(16L, version.ExecuteScalar());
             var history = new HistoryStore(db);
             var captures = history.LoadDay(DateOnly.FromDateTime(Nine.LocalDateTime)).Captures;
             Assert.Equal([true, false], captures.Select(c => c.Productive));

@@ -90,7 +90,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         using (var command = db.Command("""
             SELECT c.id, c.ts_ms, c.utc_offset_min, c.kind, a.exe_name, c.window_title,
                    c.window_x, c.window_y, c.window_width, c.window_height, coalesce(a.productive, 0), c.pending_delete,
-                   s.domain, s.productive, c.layout_id, a.project_id, s.project_id
+                   s.domain, s.productive, c.layout_id, a.project_id, s.project_id, c.task_mark
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
             ORDER BY c.ts_ms, c.id;
@@ -125,7 +125,8 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
                     MonitorIds: layout ?? [],
                     AppProjectId: reader.IsDBNull(15) ? null : reader.GetInt64(15),
                     SiteProjectId: reader.IsDBNull(16) ? null : reader.GetInt64(16),
-                    RuleProjectId: rules.ProjectOf(appName, title)));
+                    RuleProjectId: rules.ProjectOf(appName, title),
+                    TaskMark: reader.IsDBNull(17) ? null : reader.GetInt64(17) != 0));
             }
         }
 
@@ -163,7 +164,7 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
         // Names and titles only when there are rules to match them against.
         using var command = db.Command($"""
             SELECT c.ts_ms, c.utc_offset_min, c.kind, c.pending_delete,
-                   coalesce(s.productive, a.productive, 0), coalesce(s.project_id, a.project_id),
+                   coalesce(c.task_mark, s.productive, a.productive, 0), coalesce(s.project_id, a.project_id),
                    {(rules.IsEmpty ? "NULL, NULL" : "a.exe_name, c.window_title")}
             FROM captures c LEFT JOIN apps a ON a.id = c.app_id LEFT JOIN sites s ON s.id = c.site_id
             WHERE c.ts_ms >= $start AND c.ts_ms < $end
@@ -189,6 +190,19 @@ public sealed class HistoryStore(WorklapseDatabase db, TimeOnly dayStart = defau
     {
         using var command = db.Command("UPDATE captures SET pending_delete = $pending WHERE ts_ms >= $start AND ts_ms < $end;");
         command.Parameters.AddWithValue("$pending", pending ? 1 : 0);
+        command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
+        return command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Marks every capture with start ≤ time &lt; end on-task (true) or off-task (false), over what its app or site says,
+    /// or leaves it to them again (null).
+    /// </summary>
+    public int SetTaskMark(DateTimeOffset start, DateTimeOffset end, bool? onTask)
+    {
+        using var command = db.Command("UPDATE captures SET task_mark = $mark WHERE ts_ms >= $start AND ts_ms < $end;");
+        command.Parameters.AddWithValue("$mark", onTask is { } on ? on ? 1 : 0 : DBNull.Value);
         command.Parameters.AddWithValue("$start", start.ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("$end", end.ToUnixTimeMilliseconds());
         return command.ExecuteNonQuery();

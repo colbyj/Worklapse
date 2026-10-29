@@ -328,8 +328,8 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
         AddGroup(NoProjectKey, "No project", null, noProject, "–");
         if (!_collapsed.Contains(NoProjectKey))
         {
-            Tree.Add(new OverviewTreeRow("Productive", AppBrushes.Productive, false, false, null, Cells(totals.Productive), Hm(totals.Productive.SumTime(t => t)), "–"));
-            Tree.Add(new OverviewTreeRow("Other", AppBrushes.Other, false, false, null, Cells(totals.Other), Hm(totals.Other.SumTime(t => t)), "–"));
+            Tree.Add(new OverviewTreeRow("On-task", AppBrushes.Productive, false, false, null, Cells(totals.Productive), Hm(totals.Productive.SumTime(t => t)), "–"));
+            Tree.Add(new OverviewTreeRow("Off-task", AppBrushes.Other, false, false, null, Cells(totals.Other), Hm(totals.Other.SumTime(t => t)), "–"));
         }
 
         var assigned = totals.AssignedPerColumn();

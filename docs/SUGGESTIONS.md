@@ -42,6 +42,8 @@ figure understates it; June 17 is the only like-for-like day.
   the ones not decided. Breaks include idle time (often waiting for a build), time in other apps and time not recorded.
 - **Unproductive time is not project time**, even inside a hand-set range. For training and scoring, a capture whose Productive
   mark is off (the site's when it has one, else the app's) counts as no project. Between project time it is a break.
+  Since 2026-10-29 (schema 16) time marked On-task or Off-task by hand in Day review decides over the app's and site's
+  mark, for training, suggestions and totals alike.
 - **Short switches to another project.** Inside a hand-set range, the developer sometimes labels a short stretch of another
   project's work as that project and sometimes leaves it in. So training leaves out a short stretch that clearly belongs to
   another project (its links or title rules) instead of learning it as the surrounding project, and scoring doesn't count

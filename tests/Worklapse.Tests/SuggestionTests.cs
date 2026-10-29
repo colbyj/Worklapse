@@ -103,6 +103,22 @@ public class SuggestionTests
     }
 
     [Fact]
+    public void TimeMarkedOnTaskTeachesItsRangesProjectAndOffTaskTeachesNoProject()
+    {
+        List<CaptureRecord> captures = [
+            .. Run(0, 100, "firefox.exe", "A tutorial", productive: false).Select(c => c with { TaskMark = true }),
+            .. Run(100, 200, "rider64.exe", "Presayo – x.sql").Select(c => c with { TaskMark = false }),
+            .. Run(200, 300, "rider64.exe", "Presayo – x.sql"),
+        ];
+
+        var examples = TrainingSet.FromDay(captures, [Span(0, 300, Presayo)], Max, SuggestionOptOuts.None).ToList();
+
+        Assert.Equal(100, examples.Where(e => e.ProjectId == Presayo && e.Words.Contains("app:firefox.exe")).Sum(e => e.Seconds));
+        Assert.Equal(100, examples.Where(e => e.ProjectId is null).Sum(e => e.Seconds));
+        Assert.Equal(205, examples.Where(e => e.ProjectId == Presayo).Sum(e => e.Seconds));
+    }
+
+    [Fact]
     public void ALongSwitchInsideARangeTeachesTheRangesProject()
     {
         var captures = Run(0, 900, "SourceGit.exe", "bride-of-frankensystem", link: Frankensystem).ToList(); // 15 min

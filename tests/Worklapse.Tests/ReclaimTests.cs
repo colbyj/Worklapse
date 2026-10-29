@@ -333,6 +333,7 @@ public class ReclaimTests
         {
             // Schema 3, as left by deletes made before space was reclaimed.
             db.Execute("""
+                DROP INDEX ix_captures_task_mark; ALTER TABLE captures DROP COLUMN task_mark;
                 DROP TABLE suggestion_breaks; DROP TABLE suggestions; DROP TABLE screen_words;
                 ALTER TABLE apps DROP COLUMN read_screen; ALTER TABLE apps DROP COLUMN learn;
                 DROP TABLE timesnapper_imports; DROP TABLE title_rules; DROP TABLE timesheet; DROP TABLE day_notes; DROP TABLE project_notes; DROP TABLE project_spans;
@@ -369,7 +370,7 @@ public class ReclaimTests
         using (var db = WorklapseDatabase.Open(folder.Path))
         {
             using var version = db.Command("PRAGMA user_version;");
-            Assert.Equal(15L, version.ExecuteScalar());
+            Assert.Equal(16L, version.ExecuteScalar());
             using var queued = db.Command("SELECT group_concat(segment_id) FROM reclaim_queue;");
             Assert.Equal(partlyDeleted.ToString(), queued.ExecuteScalar());
         }

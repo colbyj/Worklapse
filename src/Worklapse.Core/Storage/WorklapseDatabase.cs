@@ -9,7 +9,7 @@ namespace Worklapse.Core.Storage;
 public sealed class WorklapseDatabase : IDisposable
 {
     public const string FileName = "worklapse.db";
-    private const int SchemaVersion = 15;
+    private const int SchemaVersion = 16;
 
     private WorklapseDatabase(string dataFolder, SqliteConnection connection)
     {
@@ -450,6 +450,18 @@ public sealed class WorklapseDatabase : IDisposable
                 CREATE INDEX ix_suggestion_breaks_start ON suggestion_breaks (start_ms);
                 """);
             Execute("PRAGMA user_version = 15;");
+            transaction.Commit();
+        }
+
+        if (version < 16)
+        {
+            // On-task or off-task set by hand on stretches of time, over what the app or site says.
+            using var transaction = BeginTransaction();
+            Execute("""
+                ALTER TABLE captures ADD COLUMN task_mark INTEGER;   -- 1 = on-task, 0 = off-task, NULL = as its app or site
+                CREATE INDEX ix_captures_task_mark ON captures (task_mark) WHERE task_mark IS NOT NULL;
+                """);
+            Execute("PRAGMA user_version = 16;");
             transaction.Commit();
         }
     }

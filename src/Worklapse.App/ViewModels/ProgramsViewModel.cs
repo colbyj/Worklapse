@@ -107,7 +107,7 @@ public sealed partial class ProgramsViewModel : ObservableObject
     [ObservableProperty] private ProgramSort _sort = ProgramSort.Recorded;
     [ObservableProperty] private bool _descending = true;
 
-    public string ProductiveHeader => Header("Productive", ProgramSort.Productive);
+    public string ProductiveHeader => Header("On-task", ProgramSort.Productive);
     public string ExcludedHeader => Header("Excluded", ProgramSort.Excluded);
     public string ReadScreenHeader => Header("Read screen", ProgramSort.ReadScreen);
     public string LearnHeader => Header("Learn", ProgramSort.Learn);
