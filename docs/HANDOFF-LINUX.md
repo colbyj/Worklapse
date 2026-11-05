@@ -142,7 +142,8 @@ libwayland), `ScreenSaverSessionMonitor`, `DesktopEntry`, `DBusCalls`, `Libc` (p
 
 Useful facts from KWin 6.7's source: ScreenShot2 is version 5; the reply (type `raw`, format = QImage format, width,
 height, stride as uint32, scale as double) is sent **before** the pixels are written, from KWin's own copy of the fd;
-screenshots come as `ARGB32_Premultiplied`; "Cancelled" means no OpenGL context. Scripts see `workspace.screens`
+screenshots come as `ARGB32_Premultiplied`; "Cancelled" means no OpenGL context; `hide-caller-windows` defaults to
+true (KWin 6.6 too), leaving the caller's own windows out, so Worklapse passes false or it never records itself. Scripts see `workspace.screens`
 (LogicalOutput: name, geometry, devicePixelRatio, manufacturer, model, serialNumber), `windowActivated`,
 `screensChanged`, `virtualScreenGeometryChanged`; no output order or mode size.
 

@@ -101,6 +101,11 @@ internal sealed class KWinScreenSource(KWinSession session) : IScreenSource
                 w.WriteDictionaryEntryStart();
                 w.WriteString("include-cursor");
                 w.WriteVariantBool(false);
+                // KWin leaves the caller's own windows out of screenshots unless told otherwise (it's for Spectacle,
+                // which mustn't capture itself). Worklapse is part of the day's work, so it belongs in the recording.
+                w.WriteDictionaryEntryStart();
+                w.WriteString("hide-caller-windows");
+                w.WriteVariantBool(false);
                 w.WriteDictionaryEnd(options);
                 w.WriteHandle(pipe);
             },
