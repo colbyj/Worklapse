@@ -104,7 +104,7 @@ cmake --build &quot;$(WorklapseNativeBuildDir)&quot; || exit /b 1
       <Output TaskParameter="ConsoleOutput" PropertyName="_Vcpkg" />
     </Exec>
     <Error Condition="'$(_Vcpkg)' == ''"
-           Text="Building worklapse_native.so needs vcpkg (git clone https://github.com/microsoft/vcpkg ~/vcpkg, run ~/vcpkg/bootstrap-vcpkg.sh, then set VCPKG_ROOT=~/vcpkg); see native/README.md." />
+           Text="Building worklapse_native.so needs vcpkg (git clone https://github.com/microsoft/vcpkg ~/vcpkg, run ~/vcpkg/bootstrap-vcpkg.sh, then set VCPKG_ROOT=~/vcpkg in ~/.config/environment.d so IDEs started from the desktop see it too); see native/README.md." />
 
     <Message Importance="high" Text="Building worklapse_native.so (the first time, vcpkg builds libaom, libjpeg-turbo and libwebp: several minutes)" />
 

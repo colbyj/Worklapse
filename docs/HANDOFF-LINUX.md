@@ -24,8 +24,12 @@ sudo apt install build-essential git curl zip unzip tar pkg-config nasm
 # .NET 10 SDK: from Ubuntu's archive if 26.04 has it (apt search dotnet-sdk-10), otherwise
 # https://learn.microsoft.com/dotnet/core/install/linux-scripted-manual
 git clone https://github.com/microsoft/vcpkg ~/vcpkg && ~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-echo 'export VCPKG_ROOT=~/vcpkg' >> ~/.bashrc     # new terminal afterwards
+mkdir -p ~/.config/environment.d
+echo "VCPKG_ROOT=$HOME/vcpkg" > ~/.config/environment.d/vcpkg.conf   # log out and back in afterwards
 ```
+
+`environment.d` rather than `~/.bashrc`, so Rider started from the KDE menu also sees `VCPKG_ROOT` (see
+native/README.md).
 
 Then from the repository root:
 

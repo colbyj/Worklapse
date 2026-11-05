@@ -33,8 +33,14 @@ and needs nothing beyond libc and libm. Install once (Kubuntu / Ubuntu):
 sudo apt install build-essential git curl zip unzip tar pkg-config nasm
 git clone https://github.com/microsoft/vcpkg ~/vcpkg
 ~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-echo 'export VCPKG_ROOT=~/vcpkg' >> ~/.bashrc   # then open a new terminal
+mkdir -p ~/.config/environment.d
+echo "VCPKG_ROOT=$HOME/vcpkg" > ~/.config/environment.d/vcpkg.conf   # then log out and back in
 ```
+
+Set `VCPKG_ROOT` in `~/.config/environment.d`, not `~/.bashrc`. Plasma reads that folder at login, so every program
+started from the desktop gets it, IDEs included. Only shells read `~/.bashrc`, so Rider started from the KDE menu
+would not have the variable and the build would stop with "needs vcpkg", even though `dotnet build` works in a
+terminal. If you'd rather not log out yet, start the IDE from a terminal that has `VCPKG_ROOT` set.
 
 Then `dotnet build` works as on Windows: `worklapse_native.targets` runs `vcpkg install --triplet x64-linux` into
 `vcpkg_installed-linux/` (its own folder: vcpkg removes whatever an install folder holds that the current build
