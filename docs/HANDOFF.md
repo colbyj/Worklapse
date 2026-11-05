@@ -22,7 +22,7 @@ before changing any code. (The previous handoff, for the Timesheet and Overview,
    tab*, *· Time Log tab* and *· selection across two projects*. Add the new work there as a **Round 5** page and keep the
    earlier rounds as they are.
 3. Look at what's actually built. Screenshots of the current panel, headless, on a scratch day, light theme, 1440×900:
-   `C:\Users\colby\AppData\Local\Temp\claude\C--Users-colby-Desktop-TimeSnapperClone\868eee90-d3e5-4a9b-8c31-ed087dc64752\scratchpad\sidebar-shots\`
+   `<previous session scratchpad, on Windows>\sidebar-shots\`
    - `day-applications-tab.png`, `day-segments-tab.png`, `day-projects-tab.png` and `day-timelog-tab.png`: the four tabs
      shown with no selection.
    - `day-selection.png`: a selection that spans two projects.
@@ -132,7 +132,7 @@ building.
 
 ## Seeing the current UI (headless, nothing on the developer's screen, no real data)
 
-- The last session's harness: `C:\Users\colby\AppData\Local\Temp\claude\C--Users-colby-Desktop-TimeSnapperClone\868eee90-d3e5-4a9b-8c31-ed087dc64752\scratchpad\shots\`.
+- The last session's harness: `<previous session scratchpad, on Windows>\shots\`.
   - It's a console project in `proj/` that references `src/Worklapse.App`, plus `Avalonia.Headless`, `Avalonia.Skia` and
     `Avalonia.Desktop` 12.1.4. Beside it sit empty `Directory.Build.props` and `Directory.Packages.props`, and
     `ManagePackageVersionsCentrally=false`.

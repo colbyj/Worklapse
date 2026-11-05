@@ -37,7 +37,7 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 | Plugging monitors in and out | Each capture records which monitors were attached (its *layout*), captured or not; Day review shows only those, and its Monitor list only those. Captures from before (schema < 6) get a layout worked out from their frames. *Selected monitors* are kept by the monitor's stable identity (Windows: device interface path, EDID model + connector), not `\\.\DISPLAYn`. Agreed 2026-10-17. | A replug on 2026-10-17 made Windows move and rename the monitors three times in 20 s; each arrangement became new `monitors` rows, and Day review drew all seven at once, on top of each other ("impossible to use"). |
 | When a day starts | Settings → General → Days: *Day starts at*, any minute 00:00–23:59 typed as a 24-hour time (`DayStart` in `settings.json`, default midnight). A day is named by the date it starts on, so with 04:00 the hours after midnight belong to the day before, and with 22:00 Monday 21:00 is Sunday's. Applies to every view at once (Day review, Overview, Timesheet, "today"); nothing stored changes, and notes and logged time stay with their date. Timelines measure from the date's midnight, so a late night runs past 24 h (12 AM, 1 AM …). `Core/History/LocalDay`; `HistoryStore` takes the day start. | Developer, 2026-10-20: works into the early hours and wants them in the day before; asked for any time, not whole hours. |
 | TimeSnapper history | Import it and play the old JPEGs back in place (referenced, not converted). | The goal is reviewing old days. |
-| Shared history across OSes | Wanted eventually (likely on D:, BitLocker-unlocked under Linux, with Fast Startup off). Not started. | — |
+| Shared history across OSes | **Works without app changes** (2026-11-05): point each OS's `DataFolder` (each OS has its own `settings.json`) at the same folder on a drive both can mount, for example the Windows data folder on an NTFS drive that Linux mounts with ntfs3 (a BitLocker drive is unlocked with `cryptsetup` `bitlk`, which can go in `/etc/crypttab`). Only one OS runs at a time, so SQLite's locking is enough. Windows Fast Startup must be off, or Linux sees a half-closed NTFS volume. If the drive isn't mounted when recording starts, the data folder can't be created and recording fails. Still open: program names differ by OS (`firefox` / `firefox.exe`, see HANDOFF-LINUX), so marks and links made on one OS don't cover the other. | The developer dual-boots. |
 
 ### Benchmarks behind these choices (4 monitors: 3440×1440, 2560×1600, 2×1920×1080)
 
@@ -1022,7 +1022,7 @@ the active window, idle, lock and the screenshot permission all work and the app
 couldn't be taken there (no GPU). The C code was also rewritten for readability, with output checked byte-identical.
 
 Later: X11 (XFCE, Mint, MATE) is simpler: `_NET_ACTIVE_WINDOW`, `XGetImage`/XShm, XScreenSaver idle. Shared history
-with Windows needs a decision on where the data lives.
+with Windows: works by sharing the data folder (see the decisions table); program names still differ by OS.
 
 ### 3. Experiments (after the app is usable)
 
