@@ -21,7 +21,9 @@ public sealed class AboutViewModel(AppUpdates updates)
     public bool HasLicense => File.Exists(LicensePath);
     public bool HasNotices => File.Exists(NoticesPath);
 
-    /// <summary>The list at the top of THIRD-PARTY-NOTICES.txt, without the versions; keep the two alike.</summary>
+    /// <summary>
+    /// The list at the top of THIRD-PARTY-NOTICES.txt, without the versions, for the OS this runs on; keep the two alike.
+    /// </summary>
     public IReadOnlyList<ThirdPartyComponent> Components { get; } =
     [
         new("libaom", "BSD-2-Clause, AOM Patent License 1.0"),
@@ -29,7 +31,7 @@ public sealed class AboutViewModel(AppUpdates updates)
         new("libwebp", "BSD-3-Clause, Google patent grant"),
         new(".NET runtime", "MIT"),
         new("Avalonia", "MIT"),
-        new("ANGLE", "BSD-3-Clause"),
+        .. OperatingSystem.IsWindows() ? WindowsOnly : [],
         new("SkiaSharp and HarfBuzzSharp", "MIT"),
         new("SQLite", "Public domain"),
         new("SQLitePCLRaw", "Apache-2.0"),
@@ -40,5 +42,19 @@ public sealed class AboutViewModel(AppUpdates updates)
         new("Tmds.DBus.Protocol", "MIT"),
         new("MicroCom.Runtime", "MIT"),
         new("Velopack", "MIT"),
+        .. OperatingSystem.IsLinux() ? LinuxOnly : [],
+    ];
+
+    private static readonly ThirdPartyComponent[] WindowsOnly = [new("ANGLE", "BSD-3-Clause")];
+
+    /// <summary>The AppImage's runtime and what's linked into it.</summary>
+    private static readonly ThirdPartyComponent[] LinuxOnly =
+    [
+        new("AppImage type2-runtime", "MIT"),
+        new("musl libc", "MIT"),
+        new("libfuse", "LGPL-2.1"),
+        new("squashfuse", "BSD-2-Clause"),
+        new("zstd", "BSD-3-Clause"),
+        new("zlib", "zlib"),
     ];
 }

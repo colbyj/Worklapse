@@ -431,7 +431,8 @@ profile as Presayo; no secrets), and uploads it as GitHub release `v<Version>` o
 publishes with the Linux profile and `vpk pack`s an AppImage into `src/Worklapse.App/bin/velopack-linux`. Velopack
 makes only AppImages on Linux, no installer: the user downloads `WorklapseApp.AppImage`, makes it executable and runs
 it from where they keep it (somewhere they can write, such as `~/Applications`, since an update replaces that file).
-The AppImage runtime needs `libfuse.so.2` (Ubuntu's `libfuse2t64`).
+The AppImage runtime (AppImage's type2-runtime, which vpk 1.2.0 ships) is static: it carries libfuse 3 and needs
+only `fusermount3` (Ubuntu's `fuse3`), not `libfuse2`.
 
 - **One GitHub release holds both OSes**, in Velopack's channels: `win` (`releases.win.json`, `RELEASES`, `Setup.exe`)
   and `linux` (`releases.linux.json`, `RELEASES-linux`, the AppImage). Each client reads its own OS's channel and skips
@@ -1013,12 +1014,16 @@ Items 1 and 2 were handed off on 2026-10-16 (that HANDOFF.md is in git history);
    page/website later. PRIVACY.md is written.
    **License: GPLv3** (developer's choice 2026-10-20, `LICENSE`): it can still be relicensed more permissively later
    while the developer holds all the copyright (outside contributions would need a CLA). `THIRD-PARTY-NOTICES.txt`
-   (2026-10-29) is made from what the Windows publish ships: the vcpkg `share/<port>/copyright` files of the three
+   (2026-10-29; Linux added 2026-11-05) is made from what the Windows publish ships: the vcpkg `share/<port>/copyright` files of the three
    libraries linked into worklapse_native (libaom with the AOM patent license, libjpeg-turbo, libwebp with its patent
    grant; zlib and libspng are installed but not linked), the license and notices files inside the NuGet packages
    (.NET runtime pack, SkiaSharp/HarfBuzzSharp, ANGLE, CommunityToolkit), and the upstream license files for packages
    that carry none (Avalonia, FluentIcons and Fluent UI System Icons, Tmds.DBus, MicroCom, Velopack, Dapper,
-   SQLitePCLRaw, Microsoft.Data.Sqlite). It names each one's version: after a package, runtime or vcpkg update, update
+   SQLitePCLRaw, Microsoft.Data.Sqlite). The Linux publish ships the same packages' Linux files (their license and
+   notices files are the same as Windows', and so are the vcpkg copyright files apart from line endings); ANGLE is
+   Windows-only, and the AppImage adds Velopack's type2-runtime with musl, libfuse 3 (LGPL-2.1), squashfuse, zstd and
+   zlib linked in (the list is printed by `WorklapseApp.AppImage --appimage-help`; versions read from its strings).
+   The About page lists ANGLE on Windows and the AppImage's parts on Linux. It names each one's version: after a package, runtime or vcpkg update, update
    it. The IJG sentence at its top is a condition of libjpeg's license. A publish puts it and `LICENSE` (as LICENSE.txt)
    beside Worklapse.exe. The app icon is a placeholder, per the developer (its black frame nearly vanishes on a
    dark task bar); the tray badges are drawn from whatever `.ico` is there.
