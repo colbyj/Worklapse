@@ -23,9 +23,17 @@ internal static class DesktopEntry
     }
 
     /// <summary>
+    /// The desktop file KWin checks when Worklapse runs from an AppImage (worklapse-kwin.desktop, hidden from the menu).
+    /// The AppImage runs Worklapse from a folder it mounts, a new one each run, and KWin looks for that executable: the
+    /// menu entry starts the AppImage instead, so this file names the executable of the current run.
+    /// </summary>
+    public static string PermissionFilePath => Path.Combine(Path.GetDirectoryName(FilePath)!, "worklapse-kwin.desktop");
+
+    /// <summary>
     /// Writes the desktop file for the running executable, unless it is already there as it should be, and has KDE
     /// read it again. Does nothing when Worklapse runs through the dotnet host (dotnet Worklapse.dll), which KWin
-    /// would see as the executable: run the Worklapse executable instead.
+    /// would see as the executable: run the Worklapse executable instead. From an AppImage, the menu entry starts the
+    /// AppImage and a hidden second file (<see cref="PermissionFilePath"/>) names this run's executable for KWin.
     /// </summary>
     /// <param name="iconPath">An image file for the menu; null for none.</param>
     public static void Install(string? iconPath)
@@ -33,12 +41,25 @@ internal static class DesktopEntry
         if (Executable is not { } executable)
             return;
 
-        var contents = Contents(executable, iconPath);
-        var path = FilePath;
+        var changed = Write(FilePath, Contents(LaunchCommand!, MenuIcon(iconPath)));
+        if (AppImage is not null)
+            changed |= Write(PermissionFilePath, Contents(executable, null, hidden: true));
+        else if (File.Exists(PermissionFilePath))
+        {
+            File.Delete(PermissionFilePath);
+            changed = true;
+        }
+        if (changed)
+            RebuildServiceCache();
+    }
+
+    /// <summary>Writes the file unless it already holds these contents; whether it wrote.</summary>
+    private static bool Write(string path, string contents)
+    {
         try
         {
             if (File.Exists(path) && File.ReadAllText(path) == contents)
-                return;
+                return false;
         }
         catch (IOException)
         {
@@ -46,15 +67,44 @@ internal static class DesktopEntry
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, contents);
-        RebuildServiceCache();
+        return true;
     }
 
     /// <summary>The running executable, unless Worklapse runs through the dotnet host (dotnet Worklapse.dll).</summary>
     internal static string? Executable =>
         Environment.ProcessPath is { } path && Path.GetFileNameWithoutExtension(path) != "dotnet" ? path : null;
 
+    /// <summary>The AppImage file Worklapse runs from (Velopack's Linux release), or null.</summary>
+    internal static string? AppImage =>
+        Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } path && File.Exists(path) ? path : null;
+
+    /// <summary>What a menu or autostart entry starts: the AppImage when Worklapse runs from one, else the executable.</summary>
+    internal static string? LaunchCommand => Executable is null ? null : AppImage ?? Executable;
+
+    /// <summary>
+    /// The icon for a menu or autostart entry. From an AppImage, a copy in ~/.local/share/icons, since the one beside
+    /// the executable is gone once Worklapse exits; null when there's none.
+    /// </summary>
+    internal static string? MenuIcon(string? iconPath)
+    {
+        if (iconPath is null || AppImage is null)
+            return iconPath;
+        var copy = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(FilePath)!)!, "icons", "worklapse.png");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(iconPath, copy, overwrite: true);
+            return copy;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return File.Exists(copy) ? copy : null;
+        }
+    }
+
     /// <param name="argument">Added to the command line; null for none.</param>
-    internal static string Contents(string executable, string? iconPath, string? argument = null)
+    /// <param name="hidden">Left out of the application menu (NoDisplay), for KWin's check only.</param>
+    internal static string Contents(string executable, string? iconPath, string? argument = null, bool hidden = false)
     {
         var text = new StringBuilder();
         text.Append("[Desktop Entry]\n");
@@ -68,6 +118,8 @@ internal static class DesktopEntry
         if (iconPath is not null)
             text.Append("Icon=").Append(iconPath).Append('\n');
         text.Append("Terminal=false\n");
+        if (hidden)
+            text.Append("NoDisplay=true\n");
         text.Append("Categories=Utility;\n");
         text.Append("X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2\n");
         return text.ToString();

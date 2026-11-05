@@ -40,10 +40,10 @@ public static class AutostartEntry
     /// <param name="argument">Added to the command line, so Worklapse knows it was started at login.</param>
     public static void Enable(string? iconPath, string argument)
     {
-        var executable = DesktopEntry.Executable
+        var executable = DesktopEntry.LaunchCommand
             ?? throw new InvalidOperationException("Worklapse runs through the dotnet host; there's no executable to start at login.");
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        File.WriteAllText(FilePath, DesktopEntry.Contents(executable, iconPath, argument));
+        File.WriteAllText(FilePath, DesktopEntry.Contents(executable, DesktopEntry.MenuIcon(iconPath), argument));
     }
 
     public static void Disable() => File.Delete(FilePath);

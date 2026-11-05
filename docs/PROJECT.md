@@ -418,7 +418,7 @@ running through the dotnet host (no executable to start). The entry names the ex
 from a debug build points login at that build. With `--autostart` the main window isn't opened; the *recording*
 notification says Worklapse is running (with *Record when Worklapse starts* off it starts silently, paused).
 
-### Releases and updates (Velopack, set up 2026-10-29; Windows only)
+### Releases and updates (Velopack, set up 2026-10-29 for Windows, 2026-11-05 for Linux)
 
 `release/release.ps1` makes a release: checks first (vpk 1.2.0 to match the Velopack package, `WORKLAPSE_GITHUB_TOKEN`,
 a clean working tree, a `<Version>` above the latest GitHub release, `az login` and the .NET 8 runtime for signing),
@@ -427,11 +427,30 @@ then downloads the latest release (for the delta), publishes with FolderProfile,
 profile as Presayo; no secrets), and uploads it as GitHub release `v<Version>` on the current commit. `-Unsigned` and
 `-NoUpload` skip those steps. The version is `<Version>` in `Worklapse.App.csproj`, raised by hand before a release.
 
+`release/release-linux.sh` (run on Linux; `--no-upload` stops after packing) does the same for Linux, unsigned: it
+publishes with the Linux profile and `vpk pack`s an AppImage into `src/Worklapse.App/bin/velopack-linux`. Velopack
+makes only AppImages on Linux, no installer: the user downloads `WorklapseApp.AppImage`, makes it executable and runs
+it from where they keep it (somewhere they can write, such as `~/Applications`, since an update replaces that file).
+The AppImage runtime needs `libfuse.so.2` (Ubuntu's `libfuse2t64`).
+
+- **One GitHub release holds both OSes**, in Velopack's channels: `win` (`releases.win.json`, `RELEASES`, `Setup.exe`)
+  and `linux` (`releases.linux.json`, `RELEASES-linux`, the AppImage). Each client reads its own OS's channel and skips
+  releases without it, so `AppUpdates` needs nothing per OS. Either script may go first: the first needs a `<Version>`
+  above the latest release and makes it; the second finds the latest release at the same version without its OS's
+  files, checks it is tagged on HEAD (both OSes ship the same commit), and adds to it (`vpk upload github --merge`).
+
 - The release is tagged on HEAD, which must be pushed: the script checks GitHub has it (otherwise vpk's upload fails
   with a bare "Validation Failed").
 - **packId `WorklapseApp`, not `Worklapse`:** Velopack installs to `%LocalAppData%\<packId>` and deletes that folder
   on uninstall, and `%LocalAppData%\Worklapse` is the default data folder. Changing the packId later orphans installs.
-- vpk's default `--exclude` drops every `.pdb`; the script overrides it so Worklapse's own stay for crash reports.
+- vpk's default `--exclude` drops every `.pdb`; the scripts override it so Worklapse's own stay for crash reports.
+- **KWin and the AppImage:** KWin grants screenshots to a process whose executable (`/proc/<pid>/exe`) is the first
+  word of `Exec=` in an installed desktop file with `X-KDE-DBUS-Restricted-Interfaces`. An AppImage runs Worklapse from
+  a folder it mounts, a new one each run (`/tmp/.mount_…/usr/bin/Worklapse`). So when `$APPIMAGE` is set,
+  `DesktopEntry` writes the menu entry (and `AutostartEntry` the autostart entry) to start the AppImage, copies the icon
+  to `~/.local/share/icons/worklapse.png`, and writes a second, hidden (`NoDisplay=true`; KDE's lookup still finds it)
+  `worklapse-kwin.desktop` naming this run's executable, rewritten each start. A run not from an AppImage deletes it.
+  Tested on the developer's Plasma session 2026-11-05: screenshots record.
 - `Program.Main` runs `VelopackApp` before the single-instance mutex (the installer's hooks start Worklapse.exe while
   it may be running). Uninstalling removes the Run key (`LoginStartup.Disable`). An update downloaded by a run that
   ended without quitting (a crash, logging off) is applied by Velopack at the next start.

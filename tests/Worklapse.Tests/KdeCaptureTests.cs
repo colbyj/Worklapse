@@ -180,6 +180,16 @@ public class KdeCaptureTests
     }
 
     [Fact]
+    public void TheEntryForKWinFromAnAppImageIsLeftOutOfTheMenu()
+    {
+        var contents = DesktopEntry.Contents("/tmp/.mount_WorklaAbC123/usr/bin/Worklapse", null, hidden: true);
+        Assert.Contains("\nExec=/tmp/.mount_WorklaAbC123/usr/bin/Worklapse\n", contents);
+        Assert.Contains("\nNoDisplay=true\n", contents);
+        Assert.Contains("\nX-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2\n", contents);
+        Assert.DoesNotContain("NoDisplay", DesktopEntry.Contents("/home/me/Worklapse/bin/Worklapse", null));
+    }
+
+    [Fact]
     public void TheAutostartEntryPassesItsArgument()
     {
         var contents = DesktopEntry.Contents("/home/me/My Apps/Worklapse", null, "--autostart");

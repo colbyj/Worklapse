@@ -4,8 +4,10 @@ Builds a Worklapse release and publishes it on GitHub, where installed copies fi
 
 .DESCRIPTION
 Publishes the app with the FolderProfile publish profile, packs it with Velopack (Setup.exe, the full package, and a
-delta from the latest release on GitHub), signs it with Azure Trusted Signing, and uploads it as release v<Version>.
-The version is the <Version> in src/Worklapse.App/Worklapse.App.csproj; raise it before each release.
+delta from the latest Windows release on GitHub), signs it with Azure Trusted Signing, and uploads it to release
+v<Version>. The version is the <Version> in src/Worklapse.App/Worklapse.App.csproj; raise it before each release.
+Either OS's script may go first (release-linux.sh is Linux's): the first makes the release (the version must be above
+the latest), the second adds its files to it (the same version, from the same commit).
 
 Needs: vpk 1.2.0 (dotnet tool install -g vpk --version 1.2.0, the same version as the Velopack package), `az login`
 with the Trusted Signing Certificate Profile Signer role, the .NET 8 runtime (for vpk's signing library), and a GitHub
@@ -68,16 +70,30 @@ if (-not $NoUpload) {
     }
 }
 
-# Clients take only a release newer than theirs, so one that isn't would upload and reach nobody.
+# Clients take only a release newer than theirs, so one that isn't would upload and reach nobody. The same version as
+# the latest is the other OS's release, which this one joins.
 $headers = @{ 'User-Agent' = 'Worklapse-release' }
 if ($token) { $headers['Authorization'] = "Bearer $token" }
-$latest = $null
+$latestRelease = $null
 try {
-    $latest = (Invoke-RestMethod "https://api.github.com/repos/colbyj/Worklapse/releases/latest" -Headers $headers).tag_name.TrimStart('v')
+    $latestRelease = Invoke-RestMethod "https://api.github.com/repos/colbyj/Worklapse/releases/latest" -Headers $headers
 } catch {
     if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }  # 404: no release yet
 }
-if ($latest -and [version]$version -le [version]$latest) {
+$latest = if ($latestRelease) { $latestRelease.tag_name.TrimStart('v') }
+$merge = $false
+if ($latest -and [version]$version -eq [version]$latest) {
+    if ($latestRelease.assets.name -contains 'releases.win.json') {
+        throw "Release $latest already has the Windows build. Raise <Version> in $project."
+    }
+    if (-not $NoUpload) {
+        $tagCommit = (Invoke-RestMethod "https://api.github.com/repos/colbyj/Worklapse/commits/v$version" -Headers $headers).sha
+        if ($tagCommit -ne $commit) {
+            throw "Release $latest is of commit $($tagCommit.Substring(0, 7)), not $($commit.Substring(0, 7)): release from that commit, or raise <Version> in $project."
+        }
+    }
+    $merge = $true
+} elseif ($latest -and [version]$version -lt [version]$latest) {
     throw "Version $version isn't above the latest release ($latest). Raise <Version> in $project."
 }
 
@@ -90,14 +106,14 @@ if (-not $Unsigned) {
     if ($LASTEXITCODE -ne 0) { throw 'No Azure credential for signing: az login (or pass -Unsigned).' }
 }
 
-Write-Host "Releasing Worklapse $version$(if ($latest) { " (latest on GitHub: $latest)" })$(if ($Unsigned) { ', unsigned' })"
+Write-Host "Releasing Worklapse $version$(if ($latest) { " (latest on GitHub: $latest)" })$(if ($merge) { ', joining its release' })$(if ($Unsigned) { ', unsigned' })"
 
 # --- Build and pack ------------------------------------------------------------------------------------------------
 
 if (Test-Path $releaseFolder) { Remove-Item $releaseFolder -Recurse -Force }
 New-Item -ItemType Directory $releaseFolder | Out-Null
 if ($latest) {
-    # The latest release's full package, for the delta from it to this one.
+    # The latest Windows release's full package, for the delta from it to this one.
     Invoke-Checked vpk @('download', 'github', '--repoUrl', $Repository, '--outputDir', $releaseFolder)
 }
 
@@ -127,6 +143,8 @@ if ($NoUpload) {
 
 # --- Upload --------------------------------------------------------------------------------------------------------
 
-Invoke-Checked vpk @('upload', 'github', '--repoUrl', $Repository, '--token', $token, '--outputDir', $releaseFolder,
+$upload = @('upload', 'github', '--repoUrl', $Repository, '--token', $token, '--outputDir', $releaseFolder,
     '--tag', "v$version", '--releaseName', "Worklapse $version", '--targetCommitish', $commit, '--publish')
+if ($merge) { $upload += '--merge' }
+Invoke-Checked vpk $upload
 Write-Host "Released: $Repository/releases/tag/v$version"
