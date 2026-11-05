@@ -1,0 +1,3 @@
+# One line ending everywhere, so a checkout on Windows and one on Linux agree (and nothing shows
+# as modified for its line endings alone).
+* text=auto eol=lf
