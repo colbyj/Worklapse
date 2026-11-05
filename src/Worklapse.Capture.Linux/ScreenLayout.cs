@@ -13,9 +13,10 @@ namespace Worklapse.Capture.Linux;
 /// window can be cut out of a capture.
 /// </para>
 /// <para>
-/// Each screen is placed at its logical position times the largest scale of any screen, and keeps its own pixel
-/// size. With mixed scales that leaves gaps between screens, but they never overlap, and within one screen a
-/// window's position is exact: it is converted with the scale of the screen showing most of it.
+/// Each screen keeps its own pixel size and is placed right after the screens it touches on its left and above, so
+/// screens at different scales still meet edge to edge, as they do on the desk. If that would make two overlap (an
+/// unusual layout), every screen goes at its logical position times the largest scale instead: gaps, but no overlap.
+/// Within one screen a window's position is exact: it is converted with the scale of the screen showing most of it.
 /// </para>
 /// </remarks>
 internal sealed class ScreenLayout
@@ -37,24 +38,73 @@ internal sealed class ScreenLayout
         if (report.Screens.Count == 0)
             return Empty;
 
-        var spread = report.Screens.Max(s => s.Scale);
+        var all = report.Screens;
+        var sizes = all.ToDictionary(s => s, s => capturedSize(s) ?? PixelSize(s));
+        var spread = all.Max(s => s.Scale);
+
+        // Each screen starts where the screens touching it on the left (or above) end, in pixels.
+        var lefts = Place(all, s => s.X, s => s.Width, s => s.Y, s => s.Height, s => sizes[s].Width, spread);
+        var tops = Place(all, s => s.Y, s => s.Height, s => s.X, s => s.Width, s => sizes[s].Height, spread);
+        var bounds = all.ToDictionary(s => s, s => new PixelRect(lefts[s], tops[s], sizes[s].Width, sizes[s].Height));
+
+        // Placing by neighbours can't overlap side by side or stacked layouts, but an unusual one (screens offset
+        // diagonally, say) might. Then every screen at its logical position times the largest scale, which never does.
+        if (AnyOverlap(bounds.Values.ToList()))
+            bounds = all.ToDictionary(s => s, s => new PixelRect(
+                (int)Math.Round(s.X * spread), (int)Math.Round(s.Y * spread), sizes[s].Width, sizes[s].Height));
 
         var screens = new List<(KWinScreen, MonitorInfo)>();
-        foreach (var screen in report.Screens)
+        foreach (var screen in all)
         {
-            var (width, height) = capturedSize(screen) ?? PixelSize(screen);
-            var bounds = new PixelRect(
-                (int)Math.Round(screen.X * spread),
-                (int)Math.Round(screen.Y * spread),
-                width,
-                height);
             // None is primary: KWin doesn't tell scripts which one is (see PlatformServices.KnowsPrimaryMonitor).
-            screens.Add((screen, new MonitorInfo(screen.Name, bounds, IsPrimary: false)
+            screens.Add((screen, new MonitorInfo(screen.Name, bounds[screen], IsPrimary: false)
             {
                 StableId = StableId(screen),
             }));
         }
         return new ScreenLayout(screens.OrderBy(s => s.Item2.Bounds.X).ThenBy(s => s.Item2.Bounds.Y).ToList());
+    }
+
+    /// <summary>
+    /// Each screen's pixel position along one axis: right after the pixel end of the nearest screens before it on that
+    /// axis that share some of its extent on the other (the screens it touches, in a usual layout), plus any logical
+    /// gap to them at the largest scale. A screen with none before it keeps its logical position at that scale.
+    /// </summary>
+    private static Dictionary<KWinScreen, int> Place(IReadOnlyList<KWinScreen> screens,
+        Func<KWinScreen, double> start, Func<KWinScreen, double> length,
+        Func<KWinScreen, double> crossStart, Func<KWinScreen, double> crossLength,
+        Func<KWinScreen, int> pixelLength, double spread)
+    {
+        var placed = new Dictionary<KWinScreen, int>();
+        foreach (var screen in screens.OrderBy(start))
+        {
+            var before = placed.Keys
+                .Where(other => start(other) + length(other) <= start(screen)
+                    && crossStart(other) < crossStart(screen) + crossLength(screen)
+                    && crossStart(screen) < crossStart(other) + crossLength(other))
+                .ToList();
+            if (before.Count == 0)
+            {
+                placed[screen] = (int)Math.Round(start(screen) * spread);
+                continue;
+            }
+            // The nearest of them: those further away have these between, already counted in their pixel ends.
+            var end = before.Max(other => start(other) + length(other));
+            var gap = (int)Math.Round((start(screen) - end) * spread);
+            placed[screen] = before
+                .Where(other => start(other) + length(other) == end)
+                .Max(other => placed[other] + pixelLength(other)) + gap;
+        }
+        return placed;
+    }
+
+    private static bool AnyOverlap(IReadOnlyList<PixelRect> rects)
+    {
+        for (var i = 0; i < rects.Count; i++)
+            for (var j = i + 1; j < rects.Count; j++)
+                if (!rects[i].Intersect(rects[j]).IsEmpty)
+                    return true;
+        return false;
     }
 
     /// <summary>

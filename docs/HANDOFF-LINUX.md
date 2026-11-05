@@ -110,8 +110,10 @@ with OpenGL", check System Settings → Display and Monitor → Compositor. The 
 3. **The desktop file** is written, and the application menu updated, at every start where it differs. A packaged
    install would ship its own instead.
 4. **HDR**: KWin may send 10-bit screenshots with HDR on; Worklapse then reports an unsupported format.
-5. **Mixed scales** leave gaps between monitors in Worklapse's coordinates (see `ScreenLayout`), which Day review
-   shows as space between them, if it shows the layout.
+5. **Mixed scales**: `ScreenLayout` places each monitor right after the ones it touches, in pixels, so they meet edge
+   to edge as on the desk. Only a layout where that would overlap falls back to logical position × largest scale,
+   which leaves gaps (Day review shows them as space between monitors). Fixed 2026-11-04: before, every layout got
+   the gaps.
 
 ## What changed outside the port
 
