@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -42,6 +43,7 @@ public partial class App : Application
     private bool _announceRecording; // recording started by itself at startup, and nobody has been told yet
     private bool _toldInTray;        // the "still running in the tray" notification was shown in this run
     private bool _quitting;
+    private readonly List<PosixSignalRegistration> _signals = []; // kept, or they would be unregistered when collected
 
     public override void Initialize()
     {
@@ -59,10 +61,55 @@ public partial class App : Application
         {
             // Closing windows hides them; the app keeps recording until Quit is chosen from the tray.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            QuitOnTerminationSignals(desktop);
+            desktop.ShutdownRequested += OnShutdownRequested;
             StartOrReportSettingsError(desktop);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// On Linux, logging out or shutting down stops Worklapse with SIGTERM (systemd runs it as a unit of the session). By
+    /// default .NET exits at once, and the database was left open: its WAL not folded back in, the -wal and -shm files left
+    /// behind on a data folder Windows then opens. Quitting as the tray's Quit does closes it properly; systemd waits for that.
+    /// </summary>
+    private void QuitOnTerminationSignals(IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        foreach (var signal in new[] { PosixSignal.SIGTERM, PosixSignal.SIGINT, PosixSignal.SIGHUP })
+            _signals.Add(PosixSignalRegistration.Create(signal, context =>
+            {
+                context.Cancel = true; // the process ends once QuitAsync shuts the app down
+                Log.Info($"Quitting on {context.Signal}.");
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_desktop is null)
+                        desktop.Shutdown(); // not started (the settings error is showing): nothing to close
+                    else
+                        _ = QuitAsync();
+                });
+            }));
+    }
+
+    /// <summary>
+    /// The desktop session ending: on Windows, signing out or shutting down (WM_QUERYENDSESSION, which Avalonia turns into
+    /// this). Avalonia then shuts the app
+    /// down without going through <see cref="QuitAsync"/>, and Windows ends the process soon after, the database still open.
+    /// So Worklapse closes down here, before saying yes: the UI thread keeps running what that waits for in the meantime.
+    /// </summary>
+    private void OnShutdownRequested(object? sender, ShutdownRequestedEventArgs e)
+    {
+        if (_quitting || _desktop is null) // QuitAsync's own Shutdown, or not started (nothing to close)
+            return;
+        Log.Info("Quitting as the session ends.");
+        var frame = new DispatcherFrame();
+        var closing = CloseDownAsync();
+        closing.ContinueWith(_ => Dispatcher.UIThread.Post(() => frame.Continue = false), TaskScheduler.Default);
+        Dispatcher.UIThread.PushFrame(frame);
+        if (closing.Exception is { } ex)
+            Log.Error("Closing down for the end of the session failed.", ex);
     }
 
     /// <summary>
@@ -368,6 +415,15 @@ public partial class App : Application
     {
         if (_quitting)
             return;
+        await CloseDownAsync();
+        // A downloaded update installs once this process has gone.
+        _updates?.InstallAfterExit(restartForUpdate);
+        _desktop?.Shutdown();
+    }
+
+    /// <summary>Stops recording and lets go of everything that holds the database open, then the tray icon.</summary>
+    private async Task CloseDownAsync()
+    {
         _quitting = true;
         _pastReadingWindow?.Close();
         _mainWindow?.Close();
@@ -377,9 +433,7 @@ public partial class App : Application
             await _recorder.DisposeAsync();
         _platform?.Dispose();
         _tray?.Dispose();
+        _signals.ForEach(signal => signal.Dispose());
         Log.Info("Worklapse quit.");
-        // A downloaded update installs once this process has gone.
-        _updates?.InstallAfterExit(restartForUpdate);
-        _desktop?.Shutdown();
     }
 }
