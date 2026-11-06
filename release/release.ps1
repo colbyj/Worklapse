@@ -18,10 +18,17 @@ Packs without signing (Windows SmartScreen then warns whoever runs Setup.exe).
 
 .PARAMETER NoUpload
 Stops after packing, leaving the release in src/Worklapse.App/bin/velopack to try out.
+
+.PARAMETER Test
+Packs an unsigned build to try out (release/test.ps1), in src/Worklapse.App/bin/velopack-test: in channel win-test,
+which GitHub has no releases in, so it never updates itself to the latest release. Doesn't look at GitHub at all (no
+version check, no delta) and never uploads. Its Setup.exe installs over an installed Worklapse (the same packId), which
+then stays in win-test, without updates, until a release's Setup.exe is run.
 #>
 param(
     [switch]$Unsigned,
-    [switch]$NoUpload
+    [switch]$NoUpload,
+    [switch]$Test
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,6 +45,13 @@ $project = Join-Path $appFolder 'Worklapse.App.csproj'
 $publishFolder = Join-Path $appFolder 'bin\publish\worklapse-win-x64'
 $releaseFolder = Join-Path $appFolder 'bin\velopack'
 $signingFile = Join-Path $PSScriptRoot 'azure-signing.json'
+$channel = 'win'
+if ($Test) {
+    $Unsigned = $true
+    $NoUpload = $true
+    $releaseFolder = Join-Path $appFolder 'bin\velopack-test'
+    $channel = 'win-test'
+}
 
 function Invoke-Checked([string]$command, [string[]]$arguments) {
     & $command @arguments
@@ -75,10 +89,12 @@ if (-not $NoUpload) {
 $headers = @{ 'User-Agent' = 'Worklapse-release' }
 if ($token) { $headers['Authorization'] = "Bearer $token" }
 $latestRelease = $null
-try {
-    $latestRelease = Invoke-RestMethod "https://api.github.com/repos/colbyj/Worklapse/releases/latest" -Headers $headers
-} catch {
-    if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }  # 404: no release yet
+if (-not $Test) {
+    try {
+        $latestRelease = Invoke-RestMethod "https://api.github.com/repos/colbyj/Worklapse/releases/latest" -Headers $headers
+    } catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }  # 404: no release yet
+    }
 }
 $latest = if ($latestRelease) { $latestRelease.tag_name.TrimStart('v') }
 $merge = $false
@@ -106,7 +122,8 @@ if (-not $Unsigned) {
     if ($LASTEXITCODE -ne 0) { throw 'No Azure credential for signing: az login (or pass -Unsigned).' }
 }
 
-Write-Host "Releasing Worklapse $version$(if ($latest) { " (latest on GitHub: $latest)" })$(if ($merge) { ', joining its release' })$(if ($Unsigned) { ', unsigned' })"
+if ($Test) { Write-Host "Packing a test build of Worklapse $version (channel $channel, unsigned)" }
+else { Write-Host "Releasing Worklapse $version$(if ($latest) { " (latest on GitHub: $latest)" })$(if ($merge) { ', joining its release' })$(if ($Unsigned) { ', unsigned' })" }
 
 # --- Build and pack ------------------------------------------------------------------------------------------------
 
@@ -128,6 +145,7 @@ $pack = @(
     '--mainExe', 'Worklapse.exe',
     '--packTitle', 'Worklapse',
     '--packAuthors', 'Colby Johanson',
+    '--channel', $channel,
     '--icon', (Join-Path $appFolder 'Assets\worklapse.ico'),
     # vpk leaves out .pdb files by default; Worklapse's own give crash reports their line numbers. (?!) matches nothing.
     '--exclude', '(?!)',
@@ -144,7 +162,7 @@ if ($NoUpload) {
 # --- Upload --------------------------------------------------------------------------------------------------------
 
 $upload = @('upload', 'github', '--repoUrl', $Repository, '--token', $token, '--outputDir', $releaseFolder,
-    '--tag', "v$version", '--releaseName', "Worklapse $version", '--targetCommitish', $commit, '--publish')
+    '--channel', $channel, '--tag', "v$version", '--releaseName', "Worklapse $version", '--targetCommitish', $commit, '--publish')
 if ($merge) { $upload += '--merge' }
 Invoke-Checked vpk $upload
 Write-Host "Released: $Repository/releases/tag/v$version"

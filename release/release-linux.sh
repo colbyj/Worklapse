@@ -11,16 +11,21 @@
 # python3, the native library's build tools (see native/README.md), and a GitHub token that can write the repository's
 # contents in WORKLAPSE_GITHUB_TOKEN.
 #
-# Usage: release/release-linux.sh [--no-upload]
+# Usage: release/release-linux.sh [--no-upload | --test]
 #   --no-upload  Stops after packing, leaving the release in src/Worklapse.App/bin/velopack-linux to try out.
+#   --test       Packs a build to try out (release/test-linux.sh), in src/Worklapse.App/bin/velopack-linux-test: in
+#                channel linux-test, which GitHub has no releases in, so it never updates itself to the latest release.
+#                Doesn't look at GitHub at all (no version check, no delta) and never uploads.
 
 set -euo pipefail
 
 no_upload=false
+test_build=false
 for arg in "$@"; do
     case "$arg" in
         --no-upload) no_upload=true ;;
-        *) echo "Unknown option: $arg (the only one is --no-upload)" >&2; exit 2 ;;
+        --test) test_build=true; no_upload=true ;;
+        *) echo "Unknown option: $arg (the options are --no-upload and --test)" >&2; exit 2 ;;
     esac
 done
 
@@ -35,6 +40,11 @@ app_folder="$root/src/Worklapse.App"
 project="$app_folder/Worklapse.App.csproj"
 publish_folder="$app_folder/bin/publish/worklapse-linux-x64"
 release_folder="$app_folder/bin/velopack-linux"
+channel='linux'
+if $test_build; then
+    release_folder="$app_folder/bin/velopack-linux-test"
+    channel='linux-test'
+fi
 export PATH="$PATH:$HOME/.dotnet/tools"
 
 fail() { echo "$*" >&2; exit 1; }
@@ -79,7 +89,8 @@ fi
 
 # Clients take only a release newer than theirs, so one that isn't would upload and reach nobody. The same version as
 # the latest is the other OS's release, which this one joins.
-latest_release="$(github_get releases/latest)"
+latest_release=''
+$test_build || latest_release="$(github_get releases/latest)"
 latest=''
 merge=false
 if [[ -n "$latest_release" ]]; then
@@ -100,7 +111,11 @@ if [[ -n "$latest_release" ]]; then
     fi
 fi
 
-echo "Releasing Worklapse $version for Linux${latest:+ (latest on GitHub: $latest)}$($merge && echo ', joining its release')"
+if $test_build; then
+    echo "Packing a test build of Worklapse $version for Linux (channel $channel)"
+else
+    echo "Releasing Worklapse $version for Linux${latest:+ (latest on GitHub: $latest)}$($merge && echo ', joining its release')"
+fi
 
 # --- Build and pack ------------------------------------------------------------------------------------------------
 
@@ -122,6 +137,7 @@ vpk pack \
     --mainExe Worklapse \
     --packTitle Worklapse \
     --packAuthors 'Colby Johanson' \
+    --channel "$channel" \
     --icon "$app_folder/Assets/worklapse.png" \
     --exclude '(?!)' \
     --outputDir "$release_folder"
@@ -134,7 +150,7 @@ fi
 # --- Upload --------------------------------------------------------------------------------------------------------
 
 upload=(upload github --repoUrl "$repository" --token "$WORKLAPSE_GITHUB_TOKEN" --outputDir "$release_folder"
-    --channel linux --tag "v$version" --releaseName "Worklapse $version" --targetCommitish "$commit" --publish)
+    --channel "$channel" --tag "v$version" --releaseName "Worklapse $version" --targetCommitish "$commit" --publish)
 $merge && upload+=(--merge)
 vpk "${upload[@]}"
 echo "Released: $repository/releases/tag/v$version"
