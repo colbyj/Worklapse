@@ -1,0 +1,105 @@
+# Releases Worklapse for Linux and Windows from one commit: run it from the Actions tab (Run workflow, then pick the
+# branch). It runs the same scripts as a release by hand, release/release-linux.sh and then release/release.ps1, so
+# the version is still the <Version> in src/Worklapse.App/Worklapse.App.csproj: raise it and push before running this.
+#
+# The Linux job goes first and makes release v<Version>; the Windows job then joins it (the scripts' --merge). They
+# don't run side by side, since both would see no release yet and both try to make it.
+#
+# Signing needs these repository secrets, for an Azure app registration with a federated credential for this
+# repository (Entra ID > App registrations > Certificates & secrets > Federated credentials > GitHub Actions, entity
+# "Branch" or "Environment" as you run it) and the Artifact Signing (formerly Trusted Signing) Certificate Profile Signer role on the certificate
+# profile: AZURE_CLIENT_ID and AZURE_TENANT_ID. azure/login signs the Azure CLI in, which is the
+# credential azure-signing.json leaves vpk's signer (AzureCliCredential); no secret of Azure's is stored here.
+
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # the scripts make the release and upload its files with this job's GITHUB_TOKEN
+  id-token: write  # azure/login's federated (OIDC) sign-in
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  VPK_VERSION: 1.2.0
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      WORKLAPSE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/../vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install the native library's build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config nasm curl zip unzip tar
+          # The runner image has vcpkg; the targets file looks for it in VCPKG_ROOT.
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/../vcpkg-cache"
+
+      # vcpkg's built libraries, so only a change to the vcpkg files rebuilds libaom and the rest.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../vcpkg-cache
+          key: vcpkg-linux-${{ hashFiles('native/vcpkg.json', 'native/vcpkg-configuration.json') }}
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk --version "$VPK_VERSION"
+
+      - name: Release for Linux
+        run: release/release-linux.sh
+
+  windows:
+    needs: linux
+    runs-on: windows-2025
+    env:
+      WORKLAPSE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\..\vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+
+      # .NET 8 too: vpk's Trusted Signing library runs on it.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Prepare vcpkg's cache folder
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\..\vcpkg-cache" | Out-Null
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\..\vcpkg-cache
+          key: vcpkg-windows-${{ hashFiles('native/vcpkg.json', 'native/vcpkg-configuration.json') }}
+
+      - name: Install vpk
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk --version $env:VPK_VERSION
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          # Signing needs only a token for the tenant; the role on the certificate profile is what allows it.
+          allow-no-subscriptions: true
+
+      - name: Release for Windows
+        shell: pwsh
+        run: release/release.ps1
