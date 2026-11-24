@@ -35,6 +35,8 @@ public partial class App : Application
     private volatile FrameSink? _sink; // the recorder's current one, created on its thread
     private RecordingViewModel? _recording;
     private MainWindow? _mainWindow;
+    private WelcomeWindow? _welcomeWindow;
+    private Hints? _hints;
     private IAppTray? _tray;
     private AppUpdates? _updates;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
@@ -159,6 +161,7 @@ public partial class App : Application
         _announceRecording = _settings.Current.RecordAtStartup;
 
         _desktop = desktop;
+        _hints = new Hints(_settings);
         var recording = _recording = new RecordingViewModel(_recorder, _settings);
         recording.PropertyChanged += (_, _) => UpdateTray();
         recording.PauseToggled += () => _announceRecording = false; // the developer's own doing needs no notice
@@ -175,7 +178,12 @@ public partial class App : Application
         _recorder.Start();
         // Started at login, it stays in the tray (the "recording" notification says it's there).
         if (desktop.Args?.Contains(LoginStartup.Argument) != true)
+        {
             ShowMainWindow(MainView.Overview);
+            // The first start (or the first since an update brought it): what Worklapse records and how a day goes.
+            if (!_settings.Current.WelcomeShown)
+                ShowWelcomeAtStart();
+        }
         ReportLastCrash();
         _ = _updates.CheckAsync();
     }
@@ -310,7 +318,8 @@ public partial class App : Application
     {
         if (_mainWindow is null)
         {
-            var viewModel = new MainViewModel(_recording!, _updates!, CreateDayReview, ShowSettingsAsync, _settings!, _suggestionEngine, view ?? MainView.Overview);
+            var viewModel = new MainViewModel(_recording!, _updates!, CreateDayReview, () => ShowSettingsAsync(), ShowWelcomeAsync, _hints!,
+                _settings!, _suggestionEngine, view ?? MainView.Overview);
             _mainWindow = new MainWindow(viewModel, _settings!, () => QuitAsync());
             _mainWindow.Closed += (_, _) =>
             {
@@ -356,12 +365,26 @@ public partial class App : Application
         }, day);
     }
 
-    private async Task ShowSettingsAsync()
+    /// <summary>The settings as Settings shows them; the welcome window shows its Recording tab.</summary>
+    private SettingsViewModel CreateSettingsViewModel()
     {
         var monitors = _platform!.Screen.GetMonitors();
         // The recording preview captures the primary monitor with a source of its own.
         var sampler = _platform.CreateScreenSource is { } createSource ? new PrimaryScreenSampler(createSource()) : null;
-        var dialog = new SettingsWindow { DataContext = new SettingsViewModel(_settings!, monitors, _updates!, sampler, _platform.KnowsPrimaryMonitor, _pastReading, ShowPastReading) };
+        return new SettingsViewModel(_settings!, monitors, _updates!, sampler, _platform.KnowsPrimaryMonitor, _pastReading, ShowPastReading);
+    }
+
+    private async Task ShowSettingsAsync(int tab = SettingsViewModel.RecordingTab)
+    {
+        // The welcome window shows settings too, and applies them as it closes: one place to change them at a time.
+        if (_welcomeWindow is not null)
+        {
+            _welcomeWindow.Activate();
+            return;
+        }
+        var settings = CreateSettingsViewModel();
+        settings.SelectedTab = tab;
+        var dialog = new SettingsWindow { DataContext = settings };
         var owner = ShowMainWindow();
         await dialog.ShowDialog(owner);
         // Projects and links may have changed (they live in the history, not the settings file).
@@ -369,6 +392,38 @@ public partial class App : Application
         // The recording preview held a few screens of pixels.
         ReleaseMemory();
     }
+
+    /// <summary>
+    /// The welcome window over the main window: what Worklapse does, its Recording settings and how a day goes. Seen once,
+    /// it no longer opens by itself.
+    /// </summary>
+    private async Task ShowWelcomeAsync()
+    {
+        if (_welcomeWindow is not null)
+        {
+            _welcomeWindow.Activate();
+            return;
+        }
+        var owner = ShowMainWindow();
+        var welcome = _welcomeWindow = new WelcomeWindow(CreateSettingsViewModel(), _hints!);
+        try
+        {
+            await welcome.ShowDialog(owner);
+        }
+        finally
+        {
+            _welcomeWindow = null;
+        }
+        if (!_settings!.Current.WelcomeShown)
+            _settings.Save(_settings.Current with { WelcomeShown = true });
+        // The recording preview held a few screens of pixels.
+        ReleaseMemory();
+        if (welcome.SetUpProjects)
+            await ShowSettingsAsync(SettingsViewModel.ProjectsTab);
+    }
+
+    /// <summary>The welcome window at the first start; an error in it is shown, as one in any window is (async void).</summary>
+    private async void ShowWelcomeAtStart() => await ShowWelcomeAsync();
 
     /// <summary>Shows Read Past Days' progress, making its window if it isn't open (closing it leaves the reading going).</summary>
     private void ShowPastReading()

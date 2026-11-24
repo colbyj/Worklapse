@@ -45,9 +45,9 @@ public partial class DayReviewView : UserControl
     private const double ToolButtonSpacing = 5;
 
     // Needed by the XAML loader; the app always uses the other constructor.
-    public DayReviewView() : this(null!, null!, null!) { }
+    public DayReviewView() : this(null!, null!, null!, null!) { }
 
-    public DayReviewView(DayReviewViewModel viewModel, string dataFolder, RecordingViewModel recording)
+    public DayReviewView(DayReviewViewModel viewModel, string dataFolder, RecordingViewModel recording, Hint hint)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -55,6 +55,7 @@ public partial class DayReviewView : UserControl
         if (viewModel is null)
             return; // designer
         Messages.DataContext = recording;
+        Tip.DataContext = hint;
         Indicator.DataContext = recording;
 
         Timeline.Clicked += viewModel.Click;

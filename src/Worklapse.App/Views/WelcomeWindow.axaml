@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Worklapse.App.ViewModels"
+        xmlns:views="using:Worklapse.App.Views"
+        x:Class="Worklapse.App.Views.WelcomeWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Welcome to Worklapse"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="720" Height="720" MinWidth="600" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+  <Window.Styles>
+    <Style Selector="TextBlock.pageHeading">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBlock.step">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </Window.Styles>
+
+  <!-- Three pages: what Worklapse does, what it records (Settings' Recording tab itself), and how a day goes. -->
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Classes="buttonBar" BorderThickness="0" Padding="10,8,10,9">
+      <DockPanel>
+        <TextBlock x:Name="StepText" DockPanel.Dock="Left" Classes="secondary" VerticalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button x:Name="BackButton" Content="Back" Click="OnBack" />
+          <!-- Without a history folder (cleared on the second page) there's nowhere to record to. -->
+          <Button x:Name="NextButton" Classes="accent" IsDefault="True" IsEnabled="{Binding HasDataFolder}" Click="OnNext" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Panel Margin="10,10,10,0">
+      <ScrollViewer x:Name="IntroPage">
+        <StackPanel Margin="10" Spacing="10">
+          <TextBlock Classes="pageHeading" Text="Welcome to Worklapse" />
+          <TextBlock TextWrapping="Wrap"
+                     Text="Worklapse keeps a record of your working day, so you can play it back, see where the time went and log your hours to projects." />
+          <TextBlock TextWrapping="Wrap"
+                     Text="Every few seconds it saves a picture of your screens and notes which app, window and website had the focus. It stops when you lock the screen or leave the keyboard and mouse alone for a few minutes, and counts that time as idle." />
+          <TextBlock TextWrapping="Wrap"
+                     Text="Your recordings stay on this computer: Worklapse doesn't send them anywhere." />
+          <Border Classes="group">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="groupHeader" Text="It's recording now" />
+              <TextBlock TextWrapping="Wrap"
+                         Text="Closing the main window doesn't stop it: Worklapse carries on from its icon in the system tray, where you can open it again, pause recording or quit." />
+              <TextBlock TextWrapping="Wrap"
+                         Text="The round button at the bottom of the main window's left edge pauses and resumes recording too, and shows whether it's recording." />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <DockPanel x:Name="RecordingPage" IsVisible="False">
+        <StackPanel DockPanel.Dock="Top" Margin="10,10,10,0" Spacing="4">
+          <TextBlock Classes="pageHeading" Text="Choose what's recorded" />
+          <TextBlock Classes="hint" Text="You can change these later in Settings, on the Recording tab." />
+        </StackPanel>
+        <views:RecordingSettings x:Name="Recording" />
+      </DockPanel>
+
+      <ScrollViewer x:Name="RoutinePage" IsVisible="False">
+        <StackPanel Margin="10" Spacing="10">
+          <TextBlock Classes="pageHeading" Text="How a day goes" />
+
+          <Border Classes="group">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="step" Text="1. Set up your projects" />
+              <TextBlock TextWrapping="Wrap"
+                         Text="Add the projects you track time for in Settings, on the Projects tab. Then link apps and websites to them on the Applications tab, and their time is given to the project for you." />
+              <Button Content="Set Up Projects…" Click="OnSetUpProjects" HorizontalAlignment="Left" Margin="0,2,0,0" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="group">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="step" Text="2. Review the day" />
+              <TextBlock TextWrapping="Wrap"
+                         Text="Day review plays the day back. Drag across its timeline to select some time, then choose Set Project for it." />
+              <TextBlock TextWrapping="Wrap"
+                         Text="Mark for Deletion takes time that shouldn't count (a game after hours, a video at lunch) out of your totals at once; it's deleted for good when you confirm it on the Marked tab." />
+              <TextBlock TextWrapping="Wrap"
+                         Text="The Suggestions tab offers projects for time that has none, learned from what you've assigned before." />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="group">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="step" Text="3. Log your hours" />
+              <TextBlock TextWrapping="Wrap"
+                         Text="Type the hours to bill for each project on Day review's Time Log tab, or in the Timesheet, which lists each day's projects. Export CSV saves them for a spreadsheet or an invoice." />
+              <TextBlock TextWrapping="Wrap"
+                         Text="The Overview shows your week or month at a glance; click a day to review it." />
+            </StackPanel>
+          </Border>
+
+          <TextBlock Classes="hint"
+                     Text="Each view has a tip under its tool bar until you close it. This window opens again from the question mark on the main window's left edge." />
+          <Button x:Name="ShowTipsButton" Content="Show Tips Again" Click="OnShowTips" HorizontalAlignment="Left" />
+        </StackPanel>
+      </ScrollViewer>
+    </Panel>
+  </DockPanel>
+</Window>

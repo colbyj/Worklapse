@@ -160,6 +160,12 @@ public sealed record WorklapseSettings
     /// </summary>
     public DateTimeOffset? PastReadingReadUpTo { get; init; }
 
+    /// <summary>The welcome window has been seen (it opens by itself at the first start, then only from the rail).</summary>
+    public bool WelcomeShown { get; init; }
+
+    /// <summary>The views whose tip bar was closed, by name ("overview", "dayReview", "timesheet").</summary>
+    public IReadOnlyList<string> DismissedHints { get; init; } = [];
+
     /// <summary>Whether the recorder reads the active window's text.</summary>
     [JsonIgnore]
     public bool ReadsScreen => SuggestProjects && ReadScreenText;
@@ -178,6 +184,7 @@ public sealed record WorklapseSettings
         ThemeStyle = Enum.IsDefined(ThemeStyle) ? ThemeStyle : ThemeStyle.Automatic,
         ThemeMode = Enum.IsDefined(ThemeMode) ? ThemeMode : ThemeMode.Automatic,
         SelectedMonitors = SelectedMonitors ?? [], // "null" in a hand-edited file
+        DismissedHints = DismissedHints ?? [],
         IntervalSeconds = Math.Clamp(IntervalSeconds, 2, 300),
         IdleMinutes = Math.Clamp(IdleMinutes, 1, 120),
         Quality = Math.Clamp(Quality, 0, 63),

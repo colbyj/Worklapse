@@ -1,3 +1,4 @@
+using Worklapse.Core.Diagnostics;
 using Worklapse.Core.Platform;
 
 namespace Worklapse.App.ViewModels;
@@ -14,11 +15,21 @@ public sealed class PrimaryScreenSampler(IScreenSource source) : IDisposable
     /// <summary>The primary monitor as it looks now (a copy); null if it can't be read.</summary>
     public CapturedScreen? Capture()
     {
-        var monitors = source.GetMonitors();
-        var primary = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
-        return primary is not null && source.Capture(primary) is { } capture
-            ? new CapturedScreen(capture.Frame.ToArray(), capture.Width, capture.Height, capture.Hash)
-            : null;
+        try
+        {
+            var monitors = source.GetMonitors();
+            var primary = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
+            return primary is not null && source.Capture(primary) is { } capture
+                ? new CapturedScreen(capture.Frame.ToArray(), capture.Width, capture.Height, capture.Hash)
+                : null;
+        }
+        catch (Exception ex)
+        {
+            // KWin refusing a screenshot, say: Settings and the welcome window then just have no preview. The recorder
+            // reports it as the reason it isn't recording.
+            Log.Error("The recording preview can't capture the screen.", ex);
+            return null;
+        }
     }
 
     public void Dispose() => source.Dispose();

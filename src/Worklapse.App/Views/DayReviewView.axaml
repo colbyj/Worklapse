@@ -260,6 +260,7 @@
     <!-- Below the tool bar, solid: Mica shows only through the tool bar (and the window's rail and title bar). -->
     <DockPanel Background="{DynamicResource UiWindowBrush}">
       <views:RecordingMessages DockPanel.Dock="Top" x:Name="Messages" DataContext="{x:Null}" />
+      <views:HintBar DockPanel.Dock="Top" x:Name="Tip" DataContext="{x:Null}" />
 
       <!-- Timeline: projects above activity; the scroll bar under the lanes, shown only while zoomed in, moves along the day. -->
       <Border DockPanel.Dock="Top" Background="{DynamicResource UiWindowBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1" Padding="8,6,8,0">

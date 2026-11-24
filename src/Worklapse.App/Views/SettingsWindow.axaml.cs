@@ -14,23 +14,13 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         // The preview fills its box at 1:1, so it starts once the box has its size.
-        Opened += (_, _) => Dispatcher.UIThread.Post(StartPreview, DispatcherPriority.Loaded);
+        Opened += (_, _) => Dispatcher.UIThread.Post(Recording.StartPreview, DispatcherPriority.Loaded);
         Closed += (_, _) =>
         {
             (DataContext as SettingsViewModel)?.Preview?.Dispose();
             // Read Past Days carries on in the background.
             (DataContext as SettingsViewModel)?.Detach();
         };
-    }
-
-    private void StartPreview()
-    {
-        if (ViewModel.Preview is not { } preview)
-            return;
-        var (format, quality) = ViewModel.ChosenStorage;
-        var size = PreviewBox.Bounds.Size; // includes its 1 px border
-        preview.Start(RenderScaling, (int)((size.Width - 2) * RenderScaling), (int)((size.Height - 2) * RenderScaling), format, quality,
-            ViewModel.ChosenInterval);
     }
 
     private SettingsViewModel ViewModel => (SettingsViewModel)DataContext!;
@@ -47,25 +37,6 @@ public partial class SettingsWindow : Window
         if (ViewModel.IsDirty)
             ViewModel.Apply();
         Close();
-    }
-
-    private void OnDefaultFolder(object? sender, RoutedEventArgs e) => ViewModel.UseDefaultDataFolder();
-
-    /// <summary>Imports into the history folder in use (not one typed in the box and not applied yet).</summary>
-    private async void OnImportTimeSnapper(object? sender, RoutedEventArgs e)
-    {
-        var applied = ViewModel.AppliedSettings;
-        var import = new TimeSnapperImportViewModel(applied.DataFolder, applied.MaxCaptureLength);
-        await new TimeSnapperImportWindow { DataContext = import }.ShowDialog(this);
-        if (import.Imported)
-            await ViewModel.HistoryImportedAsync();
-    }
-
-    /// <summary>Shows the folder in the box (applied or not) in the file manager.</summary>
-    private async void OnOpenFolder(object? sender, RoutedEventArgs e)
-    {
-        if (ViewModel.DataFolderExists)
-            await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(ViewModel.DataFolder.Trim()));
     }
 
     /// <summary>A window of its own, not owned by this dialog, so it stays open once Settings is closed.</summary>
@@ -124,16 +95,5 @@ public partial class SettingsWindow : Window
     {
         if (e.Source is Control { DataContext: TitleRuleItem rule } && sender is ListBox { DataContext: ProjectItem project })
             project.SelectedRule = rule;
-    }
-
-    private async void OnBrowse(object? sender, RoutedEventArgs e)
-    {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Choose the history folder",
-            AllowMultiple = false,
-        });
-        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
-            ViewModel.DataFolder = path;
     }
 }

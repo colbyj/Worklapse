@@ -92,6 +92,9 @@
                     Fill="{DynamicResource UiTextBrush}" Data="M0,0 H2.5 V8 H0 Z M4.5,0 H7 V8 H4.5 Z" />
             </Panel>
           </Button>
+          <Button Classes="rail" Command="{Binding ShowWelcomeCommand}" ToolTip.Tip="Getting started" AutomationProperties.Name="Getting started">
+            <ic:SymbolIcon Symbol="QuestionCircle" />
+          </Button>
           <Button Classes="rail" Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings" AutomationProperties.Name="Settings">
             <ic:SymbolIcon Symbol="Settings" />
           </Button>

@@ -9,14 +9,6 @@
         CanResize="False"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner">
-  <Window.Styles>
-    <Style Selector="TextBlock.label">
-      <Setter Property="HorizontalAlignment" Value="Right" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="0,0,10,0" />
-    </Style>
-  </Window.Styles>
-
   <DockPanel>
     <Border DockPanel.Dock="Bottom" Classes="buttonBar">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">

@@ -8,6 +8,10 @@ Worklapse was inspired by [TimeSnapper](https://timesnapper.com). Like TimeSnapp
 
 Installers for Windows and a Linux AppImage are on the [releases page](https://github.com/colbyj/Worklapse/releases).
 
+## Getting started
+
+At its first start Worklapse opens a welcome window: what it records, a chance to change that, and how a day of reviewing and logging hours goes. Open it again from the question mark at the bottom of the main window's left edge.
+
 ## Building
 
 Requirements:

@@ -39,8 +39,8 @@ public partial class MainWindow : Window
         _dataFolder = settings.Current.DataFolder;
         _dayStart = settings.Current.DayStart;
 
-        _overview = new OverviewView(viewModel.Overview, viewModel.Recording);
-        _timesheet = new TimesheetView(viewModel.Timesheet, viewModel.Recording);
+        _overview = new OverviewView(viewModel.Overview, viewModel.Recording, viewModel.Hints.Overview);
+        _timesheet = new TimesheetView(viewModel.Timesheet, viewModel.Recording, viewModel.Hints.Timesheet);
         Host.Children.Add(_overview);
         Host.Children.Add(_timesheet);
         KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.W, KeyModifiers.Control), Command = new RelayCommand(Close) });
@@ -96,7 +96,7 @@ public partial class MainWindow : Window
         }
         if (_dayView is null && _viewModel.DayReview is { } day)
         {
-            _dayView = new DayReviewView(day, _settings.Current.DataFolder, _viewModel.Recording);
+            _dayView = new DayReviewView(day, _settings.Current.DataFolder, _viewModel.Recording, _viewModel.Hints.DayReview);
             Host.Children.Add(_dayView);
         }
     }

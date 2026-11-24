@@ -40,6 +40,12 @@
   <Style Selector="TextBlock.strong">
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
+  <!-- A form's labels: right-aligned against the field they name. -->
+  <Style Selector="TextBlock.label">
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,10,0" />
+  </Style>
 
   <!-- Push buttons: Breeze keeps them at their text width with comfortable padding. -->
   <Style Selector="Button">

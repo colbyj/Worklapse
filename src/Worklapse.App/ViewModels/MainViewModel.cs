@@ -21,14 +21,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly Func<DateOnly?, DayReviewViewModel> _createDayReview;
     private readonly Func<Task> _openSettings;
+    private readonly Func<Task> _showWelcome;
     private bool _dayReviewIsFresh; // just made or moved to a day: showing it needs no refresh
 
     /// <param name="createDayReview">Makes Day review on a day, or on the latest day recorded (null).</param>
     public MainViewModel(RecordingViewModel recording, AppUpdates updates, Func<DateOnly?, DayReviewViewModel> createDayReview,
-        Func<Task> openSettings, SettingsStore settings, SuggestionEngine suggestionEngine, MainView first)
+        Func<Task> openSettings, Func<Task> showWelcome, Hints hints, SettingsStore settings, SuggestionEngine suggestionEngine, MainView first)
     {
         Recording = recording;
         Updates = updates;
+        Hints = hints;
+        _showWelcome = showWelcome;
         _createDayReview = createDayReview;
         _openSettings = openSettings;
         Overview = new OverviewViewModel(settings, suggestionEngine, OpenDay);
@@ -41,6 +44,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public RecordingViewModel Recording { get; }
 
     public AppUpdates Updates { get; }
+
+    /// <summary>Each view's tip, under its tool bar until closed.</summary>
+    public Hints Hints { get; }
+
+    /// <summary>The welcome window: what Worklapse records and how a day goes, again.</summary>
+    [RelayCommand]
+    private Task ShowWelcome() => _showWelcome();
 
     // These read their data folder and day start from the settings at each load, so they need nothing after a change of either.
     public OverviewViewModel Overview { get; }

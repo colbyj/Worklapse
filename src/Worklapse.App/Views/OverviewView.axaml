@@ -109,6 +109,7 @@
     <!-- Below the tool bar, solid: Mica shows only through the tool bar (and the window's rail and title bar). -->
     <DockPanel Background="{DynamicResource UiWindowBrush}">
       <views:RecordingMessages DockPanel.Dock="Top" x:Name="Messages" DataContext="{x:Null}" />
+      <views:HintBar DockPanel.Dock="Top" x:Name="Tip" DataContext="{x:Null}" />
 
       <Border DockPanel.Dock="Top" BorderThickness="0,0,0,1" Padding="10,5" IsVisible="{Binding HasError}"
               Background="{x:Static theming:AppBrushes.ErrorBar}" BorderBrush="{x:Static theming:AppBrushes.ErrorBarFrame}">

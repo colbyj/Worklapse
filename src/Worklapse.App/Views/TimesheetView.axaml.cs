@@ -14,9 +14,9 @@ public partial class TimesheetView : UserControl
     private readonly TimesheetViewModel _viewModel;
 
     // Needed by the XAML loader; the app always uses the other constructor.
-    public TimesheetView() : this(null!, null!) { }
+    public TimesheetView() : this(null!, null!, null!) { }
 
-    public TimesheetView(TimesheetViewModel viewModel, RecordingViewModel recording)
+    public TimesheetView(TimesheetViewModel viewModel, RecordingViewModel recording, Hint hint)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -24,6 +24,7 @@ public partial class TimesheetView : UserControl
         if (viewModel is null)
             return; // designer
         Messages.DataContext = recording;
+        Tip.DataContext = hint;
         Indicator.DataContext = recording;
     }
 

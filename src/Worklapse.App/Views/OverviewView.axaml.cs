@@ -7,15 +7,16 @@ namespace Worklapse.App.Views;
 public partial class OverviewView : UserControl
 {
     // Needed by the XAML loader; the app always uses the other constructor.
-    public OverviewView() : this(null!, null!) { }
+    public OverviewView() : this(null!, null!, null!) { }
 
-    public OverviewView(OverviewViewModel viewModel, RecordingViewModel recording)
+    public OverviewView(OverviewViewModel viewModel, RecordingViewModel recording, Hint hint)
     {
         InitializeComponent();
         DataContext = viewModel;
         if (viewModel is null)
             return; // designer
         Messages.DataContext = recording;
+        Tip.DataContext = hint;
         Indicator.DataContext = recording;
     }
 }
