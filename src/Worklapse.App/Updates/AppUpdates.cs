@@ -1,3 +1,4 @@
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Velopack;
@@ -7,18 +8,23 @@ using Worklapse.Core.Diagnostics;
 namespace Worklapse.App.Updates;
 
 /// <summary>
-/// Updates from the repository's GitHub releases: looked for once at start and downloaded in the background, then
-/// installed when Worklapse quits, or at once from the main window's bar (which restarts it). Only an installed
+/// Updates from the repository's GitHub releases: looked for at start and then every few hours (Worklapse can stay in
+/// the tray for days), downloaded in the background, then installed when Worklapse quits, or at once from the main
+/// window's bar (which restarts it). Once one is downloaded it stops looking. Only an installed
 /// Worklapse updates; one run from a build or a publish folder has nothing to update and never looks. Used from the UI
 /// thread.
 /// </summary>
 public sealed partial class AppUpdates : ObservableObject
 {
     private const string Repository = "https://github.com/colbyj/Worklapse";
+    // GitHub allows 60 unauthenticated API requests an hour per address; this is far below that.
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(4);
 
     private readonly Func<Task> _restart;
     private UpdateManager? _manager; // null until an installed Worklapse has looked
     private VelopackAsset? _downloaded;
+    private DispatcherTimer? _timer;
+    private bool _checking;
 
     /// <summary>This Worklapse's version (the release's, which <c>release/release.ps1</c> packs under).</summary>
     public static string CurrentVersion { get; } = typeof(AppUpdates).Assembly.GetName().Version?.ToString(3) ?? "?";
@@ -39,28 +45,52 @@ public sealed partial class AppUpdates : ObservableObject
     [ObservableProperty]
     private bool _isUpToDate;
 
-    /// <summary>Downloads a newer release if there is one. Failing (offline, say) is only logged.</summary>
-    public async Task CheckAsync()
+    /// <summary>Looks for an update now, then every <see cref="CheckInterval"/> until one is downloaded.</summary>
+    public void Start()
     {
+        _timer = new DispatcherTimer { Interval = CheckInterval };
+        _timer.Tick += (_, _) => _ = CheckAsync();
+        _ = CheckAsync();
+    }
+
+    /// <summary>
+    /// Downloads a newer release if there is one. Failing (offline, say) is only logged; the next check tries again.
+    /// </summary>
+    private async Task CheckAsync()
+    {
+        if (_checking || _downloaded is not null)
+            return;
+        _checking = true;
         try
         {
-            var manager = new UpdateManager(new GithubSource(Repository, accessToken: null, prerelease: false));
+            var manager = _manager
+                ?? new UpdateManager(new GithubSource(Repository, accessToken: null, prerelease: false));
             if (!manager.IsInstalled)
+            {
+                _timer?.Stop(); // a build or a publish folder: there's nothing to update, now or later
                 return;
+            }
             _manager = manager;
+            _timer?.Start();
             if (await manager.CheckForUpdatesAsync() is not { } update)
             {
                 IsUpToDate = true;
                 return;
             }
+            IsUpToDate = false;
             await manager.DownloadUpdatesAsync(update);
             _downloaded = update.TargetFullRelease;
+            _timer?.Stop();
             ReadyVersion = _downloaded.Version.ToString();
             Log.Info($"Worklapse {ReadyVersion} is downloaded; it installs when Worklapse quits.");
         }
         catch (Exception ex)
         {
             Log.Error("Looking for an update failed.", ex);
+        }
+        finally
+        {
+            _checking = false;
         }
     }
 

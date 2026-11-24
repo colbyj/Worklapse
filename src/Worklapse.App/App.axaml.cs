@@ -185,7 +185,7 @@ public partial class App : Application
                 ShowWelcomeAtStart();
         }
         ReportLastCrash();
-        _ = _updates.CheckAsync();
+        _updates.Start();
     }
 
     /// <summary>The first time recording is under way after starting by itself, says so (if the settings want that).</summary>
