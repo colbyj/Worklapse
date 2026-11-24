@@ -282,6 +282,24 @@ straight into its `WriteableBitmap`, and closing the window runs an aggressive G
 the OS. `TimelineControl` and `FrameView` are custom-drawn controls; `DayReviewViewModel` holds the playhead,
 selection, summaries and the mark/restore/confirm deletion logic.
 
+### Playing video files without their history (built 2026-11-24)
+
+For `.ivf` files someone sent, without their `worklapse.db`. Other players (VLC) play a segment at its real
+capture times, so they show a still every ten seconds or longer. Settings → About → Troubleshooting → **Open Video
+Files…** opens `VideoFilesWindow`, its own window, not owned by Settings. The entry point is deliberately out of the
+way (developer, 2026-11-24): a pilot user found Worklapse confusing, and this is close to a developer tool. The window
+opens one file or a folder and the folders in it. `IvfLibrary` (Worklapse.Video) reads every AV1 IVF file, groups the
+files by the monitor in their names (`HHmmss-m<n>[-r<k>].ivf`) and orders frames by timestamp. It works out the
+recording's time zone from the file names, because a name is its first capture's local time. `IvfFrameSource` decodes
+like `FrameProvider` does but without the database. `IvfRenderer` runs one per monitor on a thread. The window shows one
+monitor, or **All monitors** (the default when there are several) side by side, left to right in monitor-number order
+and top-aligned, because the files don't record how the monitors were arranged. `IvfPlaylist` steps through every moment
+at which any monitor has a new frame. Each monitor shows its latest frame up to then, or "nothing recorded yet", and the
+status bar names the monitors that changed. Playback goes at a fixed rate (1–30 frames/s), whatever the time between
+frames. `FrameStrip`
+marks each frame on a strip from the first frame to the last. The files carry no app, window title or idle data, so
+the window shows none. There's no export and no file association; both were asked to be left out.
+
 ### How timelapse export works (built 2026-10-21)
 
 Day review's tool bar has **Export Timelapse…** (icon only when the window is too narrow for its label). The dialog

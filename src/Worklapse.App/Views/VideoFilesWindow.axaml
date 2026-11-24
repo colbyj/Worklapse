@@ -1,0 +1,115 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Worklapse.App.Controls"
+        xmlns:ic="using:FluentIcons.Avalonia"
+        x:Class="Worklapse.App.Views.VideoFilesWindow"
+        Title="Video Files — Worklapse"
+        Icon="avares://Worklapse/Assets/worklapse.ico"
+        Width="1100" Height="760" MinWidth="640" MinHeight="400"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource UiChromeBrush}"
+        TransparencyBackgroundFallback="{DynamicResource UiWindowBrush}">
+  <Window.Styles>
+    <Style Selector="ic|SymbolIcon">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+    <Style Selector="TextBlock.toolLabel">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="4,0,4,0" />
+      <Setter Property="Foreground" Value="{DynamicResource UiSecondaryTextBrush}" />
+    </Style>
+  </Window.Styles>
+
+  <!--
+    Plays Worklapse's .ivf files on their own, without the database that goes with them (recordings someone sent):
+    one monitor at a time, in the time order of its frames. There are no apps, window titles or projects to show.
+  -->
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Classes="toolBar">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
+          <StackPanel x:Name="MonitorTools" Orientation="Horizontal" Spacing="2" IsVisible="False">
+            <ic:SymbolIcon Symbol="Desktop" VerticalAlignment="Center" Margin="4,0,0,0" />
+            <ComboBox x:Name="MonitorBox" MinWidth="120" VerticalAlignment="Center" AutomationProperties.Name="Monitor" />
+            <Border Classes="separator" />
+          </StackPanel>
+          <Button Classes="tool" Click="OnZoomOut" ToolTip.Tip="Zoom out" AutomationProperties.Name="Zoom out">
+            <ic:SymbolIcon Symbol="ZoomOut" />
+          </Button>
+          <TextBlock x:Name="ZoomText" VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" />
+          <Button Classes="tool" Click="OnZoomIn" ToolTip.Tip="Zoom in (or scroll over the picture)" AutomationProperties.Name="Zoom in">
+            <ic:SymbolIcon Symbol="ZoomIn" />
+          </Button>
+          <Button Classes="tool" Click="OnFit" ToolTip.Tip="Fit to window" AutomationProperties.Name="Fit to window">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="ScaleFit" />
+              <TextBlock Text="Fit" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="2">
+          <Button Classes="tool" Click="OnOpenFile" ToolTip.Tip="Open one .ivf file" AutomationProperties.Name="Open File">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Document" />
+              <TextBlock Text="Open File…" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Click="OnOpenFolder" ToolTip.Tip="Open every .ivf file in a folder and the folders in it"
+                  AutomationProperties.Name="Open Folder">
+            <StackPanel>
+              <ic:SymbolIcon Symbol="Folder" />
+              <TextBlock Text="Open Folder…" />
+            </StackPanel>
+          </Button>
+
+          <Border Classes="separator" />
+
+          <Button x:Name="FirstButton" Classes="tool" Click="OnFirst" ToolTip.Tip="First frame (Home)" AutomationProperties.Name="First frame">
+            <ic:SymbolIcon Symbol="ArrowPrevious" />
+          </Button>
+          <Button x:Name="PreviousButton" Classes="tool" Click="OnPrevious" ToolTip.Tip="Previous frame (←)" AutomationProperties.Name="Previous frame">
+            <ic:SymbolIcon Symbol="Previous" />
+          </Button>
+          <Button x:Name="PlayButton" Classes="tool" Click="OnTogglePlay" ToolTip.Tip="Play or pause (Space)" AutomationProperties.Name="Play or pause" MinWidth="78">
+            <StackPanel>
+              <ic:SymbolIcon x:Name="PlayIcon" Symbol="Play" />
+              <ic:SymbolIcon x:Name="PauseIcon" Symbol="Pause" IsVisible="False" />
+              <TextBlock x:Name="PlayText" Text="Play" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="NextButton" Classes="tool" Click="OnNext" ToolTip.Tip="Next frame (→)" AutomationProperties.Name="Next frame">
+            <ic:SymbolIcon Symbol="Next" />
+          </Button>
+          <Button x:Name="LastButton" Classes="tool" Click="OnLast" ToolTip.Tip="Last frame (End)" AutomationProperties.Name="Last frame">
+            <ic:SymbolIcon Symbol="ArrowNext" />
+          </Button>
+          <TextBlock Text="Speed:" Classes="toolLabel" />
+          <ComboBox x:Name="SpeedBox" MinWidth="110" VerticalAlignment="Center" AutomationProperties.Name="Speed" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <DockPanel Background="{DynamicResource UiWindowBrush}">
+      <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1" Padding="8,6">
+        <controls:FrameStrip x:Name="Strip" ToolTip.Tip="A tick for each frame; a frame is only stored when the screen changed" />
+      </Border>
+
+      <Border DockPanel.Dock="Bottom" Classes="statusBar">
+        <DockPanel Margin="8,0" MinHeight="22">
+          <TextBlock x:Name="ViewText" DockPanel.Dock="Right" Classes="secondary" VerticalAlignment="Center" Margin="12,0,0,0" />
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock x:Name="FrameTimeText" Classes="strong" />
+            <TextBlock x:Name="FrameText" Classes="secondary" Margin="8,0,0,0" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+        <controls:FrameView x:Name="Frames" />
+        <ScrollBar x:Name="VerticalBar" Grid.Column="1" Orientation="Vertical" AllowAutoHide="False" Visibility="Auto" />
+        <ScrollBar x:Name="HorizontalBar" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" Visibility="Auto" />
+      </Grid>
+    </DockPanel>
+  </DockPanel>
+</Window>

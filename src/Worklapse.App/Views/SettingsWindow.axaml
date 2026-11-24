@@ -730,6 +730,15 @@
                                  ToolTip.Tip="Each component's version, copyright and license" Margin="0,4,0,0" />
               </StackPanel>
             </Border>
+
+            <Border Classes="group">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="groupHeader" Text="Troubleshooting" />
+                <TextBlock Classes="hint" TextWrapping="Wrap"
+                           Text="Play Worklapse's .ivf video files on their own, without the history that goes with them: recordings someone sent you, for example." />
+                <Button Content="Open Video Files…" Click="OnOpenVideoFiles" HorizontalAlignment="Left" Margin="0,4,0,0" />
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

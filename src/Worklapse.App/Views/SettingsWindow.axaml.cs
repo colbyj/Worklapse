@@ -68,6 +68,9 @@ public partial class SettingsWindow : Window
             await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(ViewModel.DataFolder.Trim()));
     }
 
+    /// <summary>A window of its own, not owned by this dialog, so it stays open once Settings is closed.</summary>
+    private void OnOpenVideoFiles(object? sender, RoutedEventArgs e) => new VideoFilesWindow().Show();
+
     private async void OnOpenLicense(object? sender, RoutedEventArgs e) => await OpenFileAsync(AboutViewModel.LicensePath);
 
     private async void OnOpenNotices(object? sender, RoutedEventArgs e) => await OpenFileAsync(AboutViewModel.NoticesPath);
