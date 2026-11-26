@@ -67,6 +67,10 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
   Measured on the four monitors' sizes (3 batches of 20 captures each, then a review of them): after each batch
   401/417/437 MB → 114/134/149 MB; after the review closed 669 → 165 MB; peaks 413–479 → 328–371 MB while
   encoding, 814 → 566 MB while reviewing. Windows' heap returns large blocks by itself.
+  What is left after a batch (~155 MB, level from the third batch on over ten) is not a leak: native memory in use
+  stays at ~2 MB, live managed data at ~18 MB (the sink's previous frame per monitor); the rest is ~70 MB of freed
+  large-object space the GC keeps committed (each segment allocates a new frame-sized array for its staging writer
+  and reader). An aggressive GC brings it to 89 MB. Reusing those arrays would cut it, if it ever matters.
 - The developer's previous TimeSnapper archive: 415,736 captures (Dec 2025 – Oct 2026), 34.7 GB of JPEGs
   at ~85 KB each.
 - Reclaiming space (2026-10-16, copy of real data): deleting 00:12–00:18 from a 90-frame 3440×1440 segment
