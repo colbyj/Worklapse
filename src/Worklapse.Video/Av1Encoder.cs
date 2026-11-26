@@ -77,6 +77,8 @@ public sealed unsafe class Av1Encoder : IDisposable
         {
             WorklapseNative.EncoderDestroy(_handle);
             _handle = 0;
+            // An encoder is a few hundred MB, and encoders are made rarely (one per segment, export or estimate).
+            NativeHeap.Trim();
         }
     }
 }

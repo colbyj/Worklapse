@@ -149,11 +149,14 @@ public sealed class FrameProvider : IDisposable
     public void CloseIdle(TimeSpan idleFor)
     {
         var cutoff = Environment.TickCount64 - (long)idleFor.TotalMilliseconds;
-        foreach (var (monitorId, cursor) in _cursorsByMonitor.Where(c => c.Value.LastUsed <= cutoff).ToList())
+        var idle = _cursorsByMonitor.Where(c => c.Value.LastUsed <= cutoff).ToList();
+        foreach (var (monitorId, cursor) in idle)
         {
             _cursorsByMonitor.Remove(monitorId);
             cursor.Dispose();
         }
+        if (idle.Count > 0)
+            NativeHeap.Trim();
     }
 
     public void Dispose()
@@ -161,6 +164,7 @@ public sealed class FrameProvider : IDisposable
         foreach (var cursor in _cursorsByMonitor.Values)
             cursor.Dispose();
         _cursorsByMonitor.Clear();
+        NativeHeap.Trim();
         foreach (var (_, frame) in _cacheOrder)
             frame.Release();
         _cacheOrder.Clear();

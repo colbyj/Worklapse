@@ -445,12 +445,14 @@ public partial class App : Application
     /// Collects once a window is torn down (or Read Past Days ends) and gives the memory back to the OS. Otherwise the GC
     /// keeps what was left behind committed for a long time, since recording allocates too little to trigger collections.
     /// Finalizers run in between, so what they release (COM objects such as OCR engines) goes in the second collection.
+    /// Then native memory the window's drawing freed is handed back too (on Linux; see <see cref="NativeHeap"/>).
     /// </summary>
     private static void ReleaseMemory() => Dispatcher.UIThread.Post(() =>
     {
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
         GC.WaitForPendingFinalizers();
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        NativeHeap.Trim();
     }, DispatcherPriority.Background);
 
     /// <summary>Once per run, when closing the main window leaves Worklapse running in the tray (if the settings want that).</summary>

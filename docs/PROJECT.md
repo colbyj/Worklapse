@@ -60,6 +60,13 @@ what to do next. It's meant to be enough to pick the work up again in a new sess
 - Day review, all four monitors (2026-10-16, software rendering, private memory): ~88 MB recording only →
   ~640 MB peak while stepping or playing → ~260 MB once decoders close after 15 s idle → ~100 MB after the window
   closes. Before the fix: up to ~2.8–3.1 GB, and memory stayed high after closing.
+- Native memory on Linux (2026-11-26): glibc's malloc keeps what a thread frees in that thread's arena, so the
+  batch encoder's memory stayed resident after every encode (the thread lives as long as the app), and the review's
+  after its decoders closed; a day-old recorder was at ~705 MB, ~400 MB of it in malloc arenas. `NativeHeap.Trim`
+  (`malloc_trim(0)`, 5–9 ms) now runs after an encoder is disposed, after decoders close and in `ReleaseMemory`.
+  Measured on the four monitors' sizes (3 batches of 20 captures each, then a review of them): after each batch
+  401/417/437 MB → 114/134/149 MB; after the review closed 669 → 165 MB; peaks 413–479 → 328–371 MB while
+  encoding, 814 → 566 MB while reviewing. Windows' heap returns large blocks by itself.
 - The developer's previous TimeSnapper archive: 415,736 captures (Dec 2025 – Oct 2026), 34.7 GB of JPEGs
   at ~85 KB each.
 - Reclaiming space (2026-10-16, copy of real data): deleting 00:12–00:18 from a 90-frame 3440×1440 segment

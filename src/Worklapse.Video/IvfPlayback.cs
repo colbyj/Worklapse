@@ -261,12 +261,16 @@ public sealed class IvfFrameSource : IDisposable
     public void CloseIdle(TimeSpan idle)
     {
         if (_decoder is not null && DateTime.UtcNow - _lastUsed >= idle)
+        {
             Close();
+            NativeHeap.Trim();
+        }
     }
 
     public void Dispose()
     {
         Close();
+        NativeHeap.Trim();
         foreach (var entry in _cache)
             entry.Frame.Release();
         _cache.Clear();
