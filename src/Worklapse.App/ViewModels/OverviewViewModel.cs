@@ -28,8 +28,9 @@ public sealed record OverviewDayRow(
     IReadOnlyList<ProjectLaneBlock> Blocks,
     IReadOnlyList<TimelineSpan> Activity,
     double? Now,
-    string ActiveText,
+    string RecordedText,
     string AssignedText,
+    string LoggedText,
     IRelayCommand Open,
     int Suggestions = 0)
 {
@@ -43,8 +44,9 @@ public sealed record OverviewMonthCell(
     string NumberText,
     bool InMonth,
     bool IsToday,
-    string ActiveText,
+    string RecordedText,
     string AssignedText,
+    string LoggedText,
     IReadOnlyList<BarSegment> Bar,
     IRelayCommand Open,
     int Suggestions = 0)
@@ -117,6 +119,14 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
 
     // Counts the periods shown, so working out the suggestions of one shown before stops.
     private int _shown;
+
+    /// <summary>What the Overview's three kinds of time mean, for their tooltips.</summary>
+    public static string RecordedTip { get; } =
+        "Recorded: time Worklapse captured your screen, active or idle, with a project or without one";
+    public static string AssignedTip { get; } =
+        "Assigned: time marked with a project, by its links or by ranges set by hand, idle or unrecorded time inside them included";
+    public static string LoggedTip { get; } =
+        "Logged: time entered in the Timesheet, what you bill or report";
 
     /// <summary>The weekdays' short names, Monday first, over the month grid.</summary>
     public static IReadOnlyList<string> WeekdayNames { get; } =
@@ -265,7 +275,8 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             var span = summary.Extent is { } extent ? $"{Clock(extent.First)} – {Clock(extent.Last)}" : "";
             double? now = day == today ? Seconds(midnight, DateTimeOffset.Now) : null;
             Days.Add(new OverviewDayRow(day, day.ToString("ddd d", CultureInfo.CurrentCulture), span, AxisStart, AxisEnd, blocks, activity, now,
-                HmOrDash(summary.Time.Active), HmOrDash(summary.Time.Assigned), new RelayCommand(() => OpenDay(day)),
+                HmOrDash(summary.Time.Recorded), HmOrDash(summary.Time.Assigned), HmOrDash(data.LoggedByDay.GetValueOrDefault(day)),
+                new RelayCommand(() => OpenDay(day)),
                 data.Suggestions.GetValueOrDefault(day)));
         }
     }
@@ -283,7 +294,7 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
             var number = day.Day.ToString(CultureInfo.CurrentCulture);
             if (!byDay.TryGetValue(day, out var summary))
             {
-                MonthCells.Add(new OverviewMonthCell(day, number, data.Period.Contains(day), day == today, "", "", [], new RelayCommand(() => OpenDay(day))));
+                MonthCells.Add(new OverviewMonthCell(day, number, data.Period.Contains(day), day == today, "", "", "", [], new RelayCommand(() => OpenDay(day))));
                 continue;
             }
             var time = summary.Time;
@@ -292,9 +303,11 @@ public sealed partial class OverviewViewModel(SettingsStore settings, Suggestion
                 .Append(new BarSegment((time.Unassigned.OnTask + time.Unassigned.OffTask).TotalSeconds, AppBrushes.NotRecorded, Hatched: true))
                 .Where(s => s.Value > 0)
                 .ToList();
-            var empty = time.Assigned == TimeSpan.Zero && time.Active == TimeSpan.Zero;
+            var logged = data.LoggedByDay.GetValueOrDefault(day);
+            var empty = time.Recorded == TimeSpan.Zero && time.Assigned == TimeSpan.Zero && logged == TimeSpan.Zero;
             MonthCells.Add(new OverviewMonthCell(day, number, true, day == today,
-                empty ? "" : Hm(time.Active), empty ? "" : Hm(time.Assigned), bar, new RelayCommand(() => OpenDay(day)),
+                empty ? "" : HmOrDash(time.Recorded), empty ? "" : HmOrDash(time.Assigned), empty ? "" : HmOrDash(logged), bar,
+                new RelayCommand(() => OpenDay(day)),
                 data.Suggestions.GetValueOrDefault(day)));
         }
     }
@@ -397,7 +410,8 @@ public sealed record OverviewData(
     Dictionary<DateOnly, string> DayNotes,
     ProjectCatalog Catalog,
     TimeOnly DayStart,
-    Dictionary<DateOnly, int> Suggestions)
+    Dictionary<DateOnly, int> Suggestions,
+    IReadOnlyDictionary<DateOnly, TimeSpan> LoggedByDay)
 {
     /// <summary>
     /// Reads a period with a connection of its own (connections are single-thread); for a background thread. A week
@@ -411,13 +425,15 @@ public sealed record OverviewData(
         var history = new HistoryStore(db, dayStart);
         var projects = new ProjectStore(db);
         var days = DaySummaries.Build(history, projects, period.Start, period.End, maxCaptureLength, withActivity: period.Kind == PeriodKind.Week);
+        var logged = projects.GetLogged(period.Start, period.End);
         return new OverviewData(period, days,
-            PeriodTotals.Build(period, days, projects.GetLogged(period.Start, period.End)),
+            PeriodTotals.Build(period, days, logged),
             projects.GetDayNotes(period.Start, period.End),
             ProjectCatalog.Read(projects),
             dayStart,
             settings.SuggestProjects
                 ? new SuggestionStore(db).CountOpen(days.Select(d => (d.Day, history.DayRange(d.Day).Start, history.DayRange(d.Day).End)))
-                : []);
+                : [],
+            logged.GroupBy(l => l.Day).ToDictionary(g => g.Key, g => g.SumTime(l => l.Logged)));
     }
 }

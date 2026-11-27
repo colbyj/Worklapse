@@ -133,9 +133,17 @@
       <Border DockPanel.Dock="Top" Background="{DynamicResource UiViewBrush}" BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,0,0,1">
         <Panel>
           <StackPanel IsVisible="{Binding IsWeek}">
-            <Grid ColumnDefinitions="134,*,170" Height="22">
+            <Grid ColumnDefinitions="134,*,190" Height="22">
               <controls:HourScale Grid.Column="1" AxisStart="{Binding AxisStart}" AxisEnd="{Binding AxisEnd}" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="2" Text="Assigned · recorded" Classes="secondary" VerticalAlignment="Center" Margin="14,0,0,0" />
+              <!-- Transparent backgrounds so the tooltips show over the whole column, not only the letters. -->
+              <Grid Grid.Column="2" ColumnDefinitions="*,*,*" Margin="8,0,10,0">
+                <TextBlock Text="Recorded" Classes="secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
+                           ToolTip.Tip="{x:Static vm:OverviewViewModel.RecordedTip}" />
+                <TextBlock Grid.Column="1" Text="Assigned" Classes="secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
+                           ToolTip.Tip="{x:Static vm:OverviewViewModel.AssignedTip}" />
+                <TextBlock Grid.Column="2" Text="Logged" Classes="secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Background="Transparent"
+                           ToolTip.Tip="{x:Static vm:OverviewViewModel.LoggedTip}" />
+              </Grid>
             </Grid>
             <ItemsControl ItemsSource="{Binding Days}">
               <ItemsControl.ItemTemplate>
@@ -143,7 +151,7 @@
                   <Button Classes="day" Command="{Binding Open}" Height="44" BorderBrush="{DynamicResource UiSeparatorBrush}"
                           ToolTip.Tip="Open in Day review" AutomationProperties.Name="{Binding DayText, StringFormat='Open {0} in Day review'}">
                     <Border BorderBrush="{DynamicResource UiSeparatorBrush}" BorderThickness="0,1,0,0">
-                      <Grid ColumnDefinitions="134,*,170">
+                      <Grid ColumnDefinitions="134,*,190">
                         <StackPanel VerticalAlignment="Center" Margin="10,0">
                           <TextBlock Text="{Binding DayText}" Classes="strong" />
                           <TextBlock Text="{Binding SpanText}" Classes="secondary" FontSize="11" IsVisible="{Binding !HasSuggestions}" />
@@ -153,10 +161,14 @@
                         <controls:DayStrip Grid.Column="1" VerticalAlignment="Center"
                                            AxisStart="{Binding AxisStart}" AxisEnd="{Binding AxisEnd}"
                                            Blocks="{Binding Blocks}" Activity="{Binding Activity}" Now="{Binding Now}" />
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="14,0,0,0">
-                          <TextBlock Text="{Binding ActiveText}" Classes="strong" MinWidth="36" FontFeatures="+tnum" ToolTip.Tip="Active" />
-                          <TextBlock Text="{Binding AssignedText}" Classes="secondary" FontFeatures="+tnum" ToolTip.Tip="Assigned to projects" />
-                        </StackPanel>
+                        <Grid Grid.Column="2" ColumnDefinitions="*,*,*" VerticalAlignment="Center" Margin="8,0,10,0">
+                          <TextBlock Text="{Binding RecordedText}" Classes="secondary" HorizontalAlignment="Right" FontFeatures="+tnum"
+                                     ToolTip.Tip="{x:Static vm:OverviewViewModel.RecordedTip}" />
+                          <TextBlock Grid.Column="1" Text="{Binding AssignedText}" HorizontalAlignment="Right" FontFeatures="+tnum"
+                                     ToolTip.Tip="{x:Static vm:OverviewViewModel.AssignedTip}" />
+                          <TextBlock Grid.Column="2" Text="{Binding LoggedText}" Classes="strong" HorizontalAlignment="Right" FontFeatures="+tnum"
+                                     ToolTip.Tip="{x:Static vm:OverviewViewModel.LoggedTip}" />
+                        </Grid>
                       </Grid>
                     </Border>
                   </Button>
@@ -193,7 +205,7 @@
                     <Border Classes="monthCell" Classes.out="{Binding !InMonth}">
                       <DockPanel>
                         <controls:ShareBar DockPanel.Dock="Bottom" Segments="{Binding Bar}" Margin="0,0,0,2" />
-                        <DockPanel VerticalAlignment="Top">
+                        <DockPanel DockPanel.Dock="Top">
                           <Border DockPanel.Dock="Left" Classes="dayNumber" Classes.today="{Binding IsToday}">
                             <TextBlock Text="{Binding NumberText}" Classes="strong" HorizontalAlignment="Center" VerticalAlignment="Center" />
                           </Border>
@@ -201,12 +213,16 @@
                                   Margin="4,0,0,0" ToolTip.Tip="{Binding SuggestionsTip}">
                             <TextBlock Text="{Binding Suggestions}" />
                           </Border>
-                          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding ActiveText}" Classes="strong" FontFeatures="+tnum" ToolTip.Tip="Active" />
-                            <TextBlock Text="{Binding AssignedText}" Classes="secondary" FontSize="11" FontFeatures="+tnum" ToolTip.Tip="Assigned to projects"
-                                       VerticalAlignment="Center" />
-                          </StackPanel>
                         </DockPanel>
+                        <!-- Recorded, assigned, logged: the same three as the week's, under the day's number. -->
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding RecordedText}" Classes="secondary" FontSize="11" FontFeatures="+tnum" VerticalAlignment="Center"
+                                     ToolTip.Tip="{x:Static vm:OverviewViewModel.RecordedTip}" />
+                          <TextBlock Text="{Binding AssignedText}" FontSize="11" FontFeatures="+tnum" VerticalAlignment="Center"
+                                     ToolTip.Tip="{x:Static vm:OverviewViewModel.AssignedTip}" />
+                          <TextBlock Text="{Binding LoggedText}" Classes="strong" FontFeatures="+tnum" VerticalAlignment="Center"
+                                     ToolTip.Tip="{x:Static vm:OverviewViewModel.LoggedTip}" />
+                        </StackPanel>
                       </DockPanel>
                     </Border>
                   </Button>
@@ -235,13 +251,16 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <TextBlock Grid.Column="2" Text="Assigned" HorizontalAlignment="Right" />
-              <TextBlock Grid.Column="3" Text="Logged" HorizontalAlignment="Right" />
+              <TextBlock Grid.Column="2" Text="Assigned" HorizontalAlignment="Right" Background="Transparent"
+                         ToolTip.Tip="{x:Static vm:OverviewViewModel.AssignedTip}" />
+              <TextBlock Grid.Column="3" Text="Logged" HorizontalAlignment="Right" Background="Transparent"
+                         ToolTip.Tip="{x:Static vm:OverviewViewModel.LoggedTip}" />
             </Grid>
             <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource UiFrameBrush}" BorderThickness="0,1,0,0">
               <StackPanel Margin="0,0,14,0">
                 <Grid ColumnDefinitions="200,*,70,70" Height="23">
-                  <TextBlock Text="Assigned" Classes="strong" Margin="6,0" VerticalAlignment="Center" />
+                  <TextBlock Text="Assigned" Classes="strong" Margin="6,0" VerticalAlignment="Center" Background="Transparent"
+                             ToolTip.Tip="{x:Static vm:OverviewViewModel.AssignedTip}" />
                   <ItemsControl Grid.Column="1" ItemsSource="{Binding AssignedFooter}" ItemTemplate="{StaticResource OverviewCellTemplate}">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>
@@ -253,7 +272,8 @@
                   <TextBlock Grid.Column="3" Text="{Binding LoggedTotalText}" Classes="strong time" />
                 </Grid>
                 <Grid ColumnDefinitions="200,*,70,70" Height="23">
-                  <TextBlock Text="Recorded" Classes="secondary" Margin="6,0" VerticalAlignment="Center" />
+                  <TextBlock Text="Recorded" Classes="secondary" Margin="6,0" VerticalAlignment="Center" Background="Transparent"
+                             ToolTip.Tip="{x:Static vm:OverviewViewModel.RecordedTip}" />
                   <ItemsControl Grid.Column="1" ItemsSource="{Binding RecordedFooter}" ItemTemplate="{StaticResource OverviewCellTemplate}">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>

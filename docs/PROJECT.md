@@ -919,7 +919,9 @@ Changed after the developer used it (2026-10-19):
   browser's pages of every site included, `MarkReach.TimeOf`) on the day, or inside the selection on its list. The
   selection's own items don't apply: an app's time is scattered, and the selection is one range.
 - The Overview's week rows and month cells show Active · Assigned (was Assigned · recorded; idle time isn't wanted
-  there), from `ProjectTime.Active`.
+  there), from `ProjectTime.Active`. **Changed 2026-11-27:** the developer asked for three, each with a tooltip
+  saying what it means: Recorded (`ProjectTime.Recorded`), Assigned, and Logged (the Timesheet's, per day). The week
+  has a header over the three; the totals table's Assigned / Logged headers and Recorded footer got the same tooltips.
 - The selection's "No project" counts active time only (`MarkReach.Unassigned`), not idle or unrecorded time.
 - **Set Unassigned to ▸** (Set Project button, the timeline's and the rows' menus): sets everything without a
   project in what it acts on to one by hand, idle and unrecorded gaps included, so blocks join (what Join did).
